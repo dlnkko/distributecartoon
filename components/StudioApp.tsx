@@ -13,6 +13,43 @@ function assetSrc(publicPath?: string) {
   return `/api/media/${relative}`;
 }
 
+async function prepareImageFile(file: File) {
+  const type = (file.type || "").toLowerCase();
+  const heic = type.includes("heic") || type.includes("heif") || /\.(heic|heif)$/i.test(file.name);
+  let bitmap: ImageBitmap | null = null;
+  try {
+    bitmap = await createImageBitmap(file);
+  } catch {
+    bitmap = null;
+  }
+  if (!bitmap) {
+    if (heic) throw new Error("Use a JPG or PNG photo.");
+    if (file.size > 3_500_000) throw new Error("That photo is too large. Try a smaller JPG or PNG.");
+    if (!/^image\/(jpeg|jpg|png|webp|gif)$/i.test(type) && type !== "") {
+      throw new Error("Use a JPG, PNG, WEBP, or GIF photo.");
+    }
+    return file;
+  }
+  const max = 2048;
+  const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    bitmap.close();
+    return file;
+  }
+  ctx.drawImage(bitmap, 0, 0, width, height);
+  bitmap.close();
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.88));
+  if (!blob) return file;
+  const stem = file.name.replace(/\.[^.]+$/, "") || "photo";
+  return new File([blob], `${stem}.jpg`, { type: "image/jpeg" });
+}
+
 type Profile = {
   id: string;
   email: string;
@@ -417,21 +454,30 @@ export function StudioApp() {
 
   async function onUploadRef(slot: ReferenceAsset, file: File) {
     if (!project) return;
+    setBusy(true);
     setStatus(`Uploading ${slot.label}…`);
-    const form = new FormData();
-    form.set("projectId", project.id);
-    form.set("kind", slot.kind);
-    form.set("slotId", slot.id);
-    form.set("notes", slot.notes);
-    form.set("file", file);
-    const res = await fetch("/api/refs", { method: "POST", body: form });
-    const json = (await res.json()) as { project?: Project; error?: string };
-    if (json.project) {
-      remember(json.project);
-      setStatus("");
-    } else {
-      setStatus(json.error || "Couldn't upload that image.");
+    try {
+      const image = await prepareImageFile(file);
+      const form = new FormData();
+      form.set("projectId", project.id);
+      form.set("kind", slot.kind);
+      form.set("slotId", slot.id);
+      form.set("notes", slot.notes);
+      form.set("file", image);
+      const res = await fetch("/api/refs", { method: "POST", body: form });
+      const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+      if (json.project) {
+        remember(json.project);
+        setStatus("");
+      } else if (res.status === 413) {
+        setStatus("That photo is too large. Try a smaller JPG or PNG.");
+      } else {
+        setStatus(json.error || "Couldn't upload that image.");
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Couldn't upload that image.");
     }
+    setBusy(false);
   }
 
   async function onLabelRef(slot: ReferenceAsset, label: string) {
@@ -902,7 +948,7 @@ export function StudioApp() {
             refInputs.current[slot.id] = node;
           }}
           type="file"
-          accept="image/*"
+          accept="image/jpeg,image/png,image/webp,image/gif,image/*"
           className="hidden"
           onChange={(event) => {
             const file = event.target.files?.[0];

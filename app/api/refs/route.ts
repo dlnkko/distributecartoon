@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { extensionFromName, publishGenerated, writePublicBuffer } from "@/lib/assets";
+import { normalizeImageMime, storeGeneratedFile } from "@/lib/assets";
 import { loadOwnedProject } from "@/lib/auth";
 import { emptySlot, ensureReferenceSlots, syncReferenceInclusion } from "@/lib/refs";
 import { saveProject } from "@/lib/store";
@@ -7,6 +7,8 @@ import type { ReferenceKind } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 60;
+
+const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
 export async function POST(request: Request) {
   const form = await request.formData();
@@ -23,40 +25,57 @@ export async function POST(request: Request) {
   if ("response" in loaded) return loaded.response;
   const { project } = loaded;
 
-  ensureReferenceSlots(project);
-  let asset = slotId ? project.references.find((item) => item.id === slotId) : undefined;
-  if (!asset) asset = project.references.find((item) => item.kind === kind);
-  if (!asset) {
-    asset = emptySlot(kind);
-    project.references.push(asset);
+  const mime = normalizeImageMime(file.type, file.name);
+  if (!ALLOWED_IMAGE_TYPES.has(mime)) {
+    return NextResponse.json({ error: "Use a JPG, PNG, WEBP, or GIF photo." }, { status: 422 });
   }
 
-  const ext = extensionFromName(file.name);
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const relative = [project.id, "refs", `${asset.kind}-${asset.id}-original${ext}`];
-  const saved = writePublicBuffer(buffer, relative);
-  const hosted = await publishGenerated(project, saved.absolute, relative);
-  asset.kind = kind;
-  asset.originalFileName = saved.fileName;
-  asset.originalPublicPath = hosted || saved.publicPath;
-  asset.status = "ready";
-  if (notes) asset.notes = notes;
-  if (kind === "character") {
-    for (const character of project.characters) {
-      if (character.sourceRefId !== asset.id) continue;
-      delete character.sourceRefId;
-      delete character.portraitFileName;
-      delete character.portraitPublicPath;
-      delete character.portraitRemoteUrl;
-      character.lookConfirmed = false;
-      character.lookRevisionUsed = false;
+  try {
+    ensureReferenceSlots(project);
+    let asset = slotId ? project.references.find((item) => item.id === slotId) : undefined;
+    if (!asset) asset = project.references.find((item) => item.kind === kind);
+    if (!asset) {
+      asset = emptySlot(kind);
+      project.references.push(asset);
     }
-  }
-  project.skippedRefs = false;
-  syncReferenceInclusion(project);
-  await saveProject(project);
 
-  return NextResponse.json({ project, asset });
+    const ext = mime === "image/jpeg" ? ".jpg" : mime === "image/webp" ? ".webp" : mime === "image/gif" ? ".gif" : ".png";
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const relative = [project.id, "refs", `${asset.kind}-${asset.id}-original${ext}`];
+    const saved = await storeGeneratedFile({
+      project,
+      buffer,
+      relativeParts: relative,
+      contentType: mime,
+    });
+    asset.kind = kind;
+    asset.originalFileName = saved.fileName;
+    asset.originalPublicPath = saved.publicPath;
+    if (/^https?:\/\//i.test(saved.publicPath)) asset.originalRemoteUrl = saved.publicPath;
+    asset.status = "ready";
+    if (notes) asset.notes = notes;
+    if (kind === "character") {
+      for (const character of project.characters) {
+        if (character.sourceRefId !== asset.id) continue;
+        delete character.sourceRefId;
+        delete character.portraitFileName;
+        delete character.portraitPublicPath;
+        delete character.portraitRemoteUrl;
+        character.lookConfirmed = false;
+        character.lookRevisionUsed = false;
+      }
+    }
+    project.skippedRefs = false;
+    syncReferenceInclusion(project);
+    await saveProject(project);
+
+    return NextResponse.json({ project, asset });
+  } catch (error) {
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : "Couldn't upload that image." },
+      { status: 500 },
+    );
+  }
 }
 
 export async function PATCH(request: Request) {

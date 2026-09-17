@@ -1,4 +1,4 @@
-import { downloadToPublic, extensionFromUrl, publishGenerated } from "./assets";
+import { downloadToPublic, extensionFromUrl } from "./assets";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, uploadKieFile } from "./kie";
 import { clampClipDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { getProject, saveProject } from "./store";
@@ -20,10 +20,7 @@ async function persistImage(project: Project, remoteUrl: string, parts: string[]
   const withExt = [...parts];
   const last = withExt.at(-1) || "image";
   withExt[withExt.length - 1] = last.endsWith(ext) ? last : `${last}${ext}`;
-  const saved = await downloadToPublic(remoteUrl, withExt);
-  const hosted = await publishGenerated(project, saved.absolute, withExt);
-  if (hosted) saved.publicPath = hosted;
-  return saved;
+  return downloadToPublic(remoteUrl, withExt, project);
 }
 
 async function persistVideo(project: Project, remoteUrl: string, parts: string[]) {
@@ -31,10 +28,7 @@ async function persistVideo(project: Project, remoteUrl: string, parts: string[]
   const withExt = [...parts];
   const last = withExt.at(-1) || "clip";
   withExt[withExt.length - 1] = last.endsWith(ext) ? last : `${last}${ext}`;
-  const saved = await downloadToPublic(remoteUrl, withExt);
-  const hosted = await publishGenerated(project, saved.absolute, withExt);
-  if (hosted) saved.publicPath = hosted;
-  return saved;
+  return downloadToPublic(remoteUrl, withExt, project);
 }
 
 function isHttpUrl(value?: string) {
