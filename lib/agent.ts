@@ -1,10 +1,10 @@
 import OpenAI from "openai";
 import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
-import { generateBatchFrame, generateBatchVideo, summarizeLibrary } from "./pipeline";
-import { englishSpeakerName, packedScenePrompt } from "./style";
+import { generateBatchVideo, summarizeLibrary } from "./pipeline";
+import { englishExtraName, englishSpeakerName, packedScenePrompt } from "./style";
 import { clipDurationForScenes, estimateSceneSeconds, parseDurationFromText, shouldGenerateOneShot } from "./timing";
-import { ensureReferenceSlots, promptReadyReferences, syncReferenceInclusion } from "./refs";
+import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import type { AgentMode, Batch, Character, Project, Scene, ScriptRefCue, VisualStyle } from "./types";
@@ -16,46 +16,49 @@ Language: always reply in English, clear and concrete.
 Pipeline real:
 1. PRIMERO el guion. No pidas imágenes ni generes video si aún no hay script.
 2. Extraer escenas, diálogos, locaciones y personajes.
-3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. La description del personaje es SOLO apariencia (especie, color, ropa), sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú.
-4. El first frame de cada tanda es el instante INICIAL de la primera escena de esa tanda (escena 1 del storyboard en un one-shot). Mismo plano y ángulo cinematográficos que el campo camera de esa escena. No muestres el clímax ni el final. La animación de Seedance parte de ese still. Seedance 2.5 R2V sí recibe las fotos y/o el video de los demás personajes del clip.
+3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto a Pixar o claymation; nunca inventes pelo, piel, ropa ni especie. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a Narrator or unseen voice-over: if the girl on screen is narrating, those lines belong to her, do not invent a separate Narrator look. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
+4. NO first-frame still. Only character look portraits are generated. Seedance 2.5 R2V receives those portraits plus product/logo/location photos when the script uses them. The system maps files to @Image1, @Image2, @Image3 in upload order and writes those tags INSIDE the scenes when that person or object is on screen. Do not dump "@Image2 is Guy. Match his design..." at the start of the prompt.
 5. Duración de cada ESCENA: si hay diálogo, el tiempo es el de decirlo con calma. Si casi no pasa nada (un beat, un insert, un corte), 2 a 3 segundos, según complejidad, intención y relevancia. No alargues una escena vacía ni comprimas una frase hablada.
 6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, empaqueta en clips de 4-30s.
 7. Si el guion es largo (más de 30s), con varias escenas y diálogos, estructura varios clips de 4-30s. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
 8. El aspect ratio del proyecto (16:9 o 9:16) ya lo aplica el sistema. No lo cambies salvo que el usuario lo pida.
-9. Animar con Seedance 2.5 Reference-to-Video. El sistema etiqueta @Image1, @Image2 y @Video1 según el orden de archivos subidos.
+9. Animar con Seedance 2.5 Reference-to-Video. Menciona @ImageN / @VideoN en la escena en la que aparecen, no en un preámbulo.
 10. El sistema tagea internamente cada clip por las voces de los leads que hablan ahí. En la siguiente tanda sube COMO MÁXIMO un @Video1: el clip anterior donde estén las voces de los personajes que participan en esa tanda. No adjunta varios videos ni clips de gente que no habla en la escena nueva.
 
 Logo, product, and location:
 - Do NOT generate a standalone product/logo/location still when a photo is uploaded. No packshot, no product-only restyle.
 - Do NOT put them in prompts just because a slot or photo exists.
-- Only if the SCRIPT mentions that product, logo, or location, and a photo is attached, the system labels it @Image2, @Image3, etc. as a LOOK REFERENCE.
-- In first frames AND video, DRAW that object inside the scene in the current pixar or claymation style. The photo is identity (shape, colors, mark). The short is animation. Do not paste the photo photoreal as-is.
-- Mention them in video_prompt only in the SCENE the script involves. Never invent a logo on set.
-- Do not wait for photos. If the script does not need them, go to first frame and video.
+- Only if the SCRIPT mentions that product, logo, or location, and a photo is attached, mention that @Image tag in the SCENE where it appears.
+- Keep the EXACT packaging form of the attached product photo: a stand-up pouch stays a pouch, a sachet stays a sachet, a bottle stays a bottle. Never turn a pouch into a bottle, jar, or tub. Same silhouette, closure, label layout, colors, and branding, drawn in pixar or claymation. Do not paste the photo photoreal as-is.
+- Never invent a logo on set. Do not wait for photos.
 
 Reglas de prompt Seedance 2.5 (obligatorias):
-- El video_prompt EMPIEZA EXACTAMENTE con una sola ancla: "@Image1 is the first frame of this shot. Keep the same claymation style as seen in @Image1 for every scene. Do not switch look. No background music. Ambient sound and dialogue only." o la versión pixar. Luego SCENE 1. No repitas el ancla dentro de cada SCENE. Nunca pidas soundtrack, score ni background music.
-- Las etiquetas @ImageN y @VideoN las inyecta el sistema. En video_prompt NO escribas Image 1 is / Keep identity / Keep the same style, look, lighting.
-- Un logo nunca lleva "keep identity, costume, face and body". Va como marca en set, empaque o inserto, reconocible, dibujada en el estilo del corto, y solo si el guion lo pide.
-- Cada cambio de escena/ángulo va así: SCENE 1 (5s): [plano y ángulo cinematográfico]. acción. The man says: "línea". CUT. SCENE 2 (4s): ...
-- Respeta estimated_seconds de cada escena en el video_prompt: SCENE N (Xs). Esa duración es la que eligió el usuario.
-- Dirección como corto profesional: establishing wide, closer para emoción, OTS o two-shot en diálogo, tracking/lateral motivado, hold en la cara mientras habla. Cambia de plano en el CUT, no a mitad de frase.
-- El video_prompt va 100% en inglés, salvo las comillas del diálogo si el guion está en otro idioma. Nunca mezcles español fuera de esas comillas. Nombres cortos en inglés (Luna, Milo, the man). Nunca "Hombre de 40 años".
-- Cada línea de diálogo una sola vez: the man says: "Wow, that's amazing!" Nunca repitas el nombre ni "says:".
-- Usa planos y ángulos reales (wide, medium, close-up, insert, two-shot, OTS, high angle, low angle, tracking, lateral, dutch, POV) para dinamismo cuando la historia lo pida.
+- El video_prompt EMPIEZA EXACTAMENTE así: "Pixar style throughout the whole video." o "Claymation style throughout the whole video." Luego SCENE 1. Nada de first frame. Nada de listar todos los @Image al inicio.
+- Dentro de cada escena, nombra @ImageN cuando ese personaje, producto, logo o locación entra o se usa. Ejemplo: SCENE 1. Eye level, medium shot. @Image1 appears in the gym drinking creatine. CUT. SCENE 2. Dutch angle, full shot. After @Image1 stops drinking, his friend @Image2 appears with @Image3 which is the creatine gummies product.
+- El sistema inyecta los números @ImageN. En video_prompt usa los nombres de personaje/producto; el sistema los sustituye.
+- Cada cambio de escena: SCENE 1 (5s). [English camera names only]. action. The man says: "line". CUT. SCENE 2 (4s). ...
+- Respeta estimated_seconds: SCENE N (Xs).
+- El diálogo o voiceover EMPIEZA en el segundo 0. SCENE 1 abre con la primera línea hablada, sin intro muda.
+- Dentro de cada escena, nombra el producto/logo/locación con @ImageN cuando aparece en ESA escena, igual que los personajes. Nunca lo dejes solo al final del prompt.
+- Cámara: varía el plano y el ángulo en CADA escena. Usa SOLO nombres en inglés: extreme wide shot, wide shot, full shot, medium full shot, medium shot, medium close-up, close-up, extreme close-up, insert, two-shot, over the shoulder, POV, eye level, low angle, high angle, bird's eye, worm's eye, dutch angle, pan, tilt, dolly, tracking shot, steadicam, crane, zoom, handheld, dolly zoom. Nunca nombres en español.
+- Acción visible: si alguien come una gomita o usa el producto, muestra la acción completa (mano, pack, boca). Nunca cortes a la gomita ya dentro de la boca.
+- Física real: cuerpos y máquinas funcionan como en la vida. En una treadmill el personaje mira la consola y corre hacia adelante; la banda se mueve hacia atrás bajo los pies. Nunca al revés, never moonwalk. Igual de preciso con bicis, coches, escaleras, líquidos, puertas, gravedad y dirección del movimiento. Nada de motion espejada ni atravesar objetos.
+- Coherencia de edad/tamaño: si un personaje empieza tiny, baby, kitten o chiquito, MANTÉN ese tamaño en cada escena siguiente hasta que OTRA escena diga explícitamente que ya creció. No lo agrandes a mitad de un clip sin ese beat de crecimiento.
+- Quién está en cuadro: en character_names solo los principals de ESA escena; en extra_names perros, gatos u otros secundarios visibles. El sistema escribe una frase breve: "Only Maya and Luke participate in this scene." o "Only the dogs, cats and Maya participate in this scene."
+- Time-lapse / montage: permitido, pero NUNCA como lista con bullets. Cada beat es una frase física completa. El sistema inserta CUT y un plano distinto entre beats. Ejemplo malo: "A fast claymation time-lapse:" y cuatro guiones. Ejemplo bueno en el summary: "Young Luke falls asleep sprawled across Maya's homework papers, tiny body stretched over the notebooks. A stop-motion growth change shows him larger on the same table, same markings, only scale changes. Older Luke bats at a red laser dot darting across the wooden floor, paws reaching and missing. Older Luke curls up on Maya's lap while they watch a movie on the couch."
+- El video_prompt va 100% en inglés, salvo las comillas del diálogo si el guion está en otro idioma. Nombres cortos en inglés (Luna, Milo, the man). Nunca "Hombre de 40 años".
+- Cada línea de diálogo una sola vez. No repeated lines. Nunca soundtrack ni background music.
 - Super breve. Nada de "cinematic masterpiece".
 - Ejemplo Pixar:
-  @Image1 is the first frame of this shot. Keep the same pixar style as seen in @Image1 for every scene. Do not switch look. No background music. Ambient sound and dialogue only. SCENE 1 (6s): Wide shot, eye level. Luna holds a red balloon over the sunset city. Luna says: "Si te suelto, ¿vas a volver?" CUT. SCENE 2 (4s): Tracking shot, lateral angle. The balloon rises through clotheslines as she runs to the railing.
+  Pixar style throughout the whole video. SCENE 1 (6s). Eye level, medium shot. Luna says: "Si te suelto, ¿vas a volver?" Luna holds a red balloon over the sunset city. CUT. SCENE 2 (4s). Tracking shot, full shot. The balloon rises through clotheslines as she runs to the railing.
 - Ejemplo claymation:
-  @Image1 is the first frame of this shot. Keep the same claymation style as seen in @Image1 for every scene. Do not switch look. No background music. Ambient sound and dialogue only. SCENE 1: Wide shot, eye-level, gentle lateral tracking. A 40-year-old man walks along the beach, then suddenly notices a big dolphin far out in the sea. CUT. SCENE 2: Close-up, eye-level. The man's face becomes happy and amazed as he looks toward the dolphin. The 40-year-old man says: "Wow, that's amazing!"
+  Claymation style throughout the whole video. SCENE 1 (5s). Wide shot, eye level. A 40-year-old man walks along the beach, then suddenly notices a big dolphin far out in the sea. CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The 40-year-old man says: "Wow, that's amazing!"
 
 Herramientas:
-- Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad.
-- No uses stylize_reference. Nunca generes una imagen solo del producto. El estilo Pixar/claymation se aplica dentro del first frame de la escena y del clip.
+- Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad. En camera usa solo nombres en inglés y cambia de plano en cada escena. En summaries, the product keeps the attached packaging (pouch vs bottle). Show complete physical actions. Spell out how machines and bodies move in the real world (treadmill direction, gravity, no reversed motion). Keep age/size locked until a later scene shows growth. List every on-screen principal in character_names and background animals/people in extra_names. Never write a time-lapse as a bullet list; write each beat as a full physical sentence.
+- No uses stylize_reference. Nunca generes una imagen solo del producto ni un first frame de la escena.
 - Usa plan_video_batches cuando el usuario ya aprobó las escenas. Si targetDurationSeconds es 30 o menos, exactamente UNA tanda con todas las escenas. Si es más de 30, empaqueta en clips de 4-30s.
-- generate_batch_frame crea el first frame de la PRIMERA escena de esa tanda: el instante de apertura, con plano y ángulo cinematográficos (wide, medium, close-up, two-shot, OTS, high/low angle, eye level, dutch). Solo quien está en ese beat inicial. Los retratos ya los aprobó el usuario.
-- Prompt de IMAGEN (first frame): SIEMPRE en inglés, super breve. Empieza EXACTAMENTE con "claymation style" o "pixar style", luego shot size y ángulo, luego SOLO el beat de apertura de la escena 1 y la locación. Still congelado para que el video continúe desde ahí. Si el guion menciona un producto/logo/locación con foto, dibújalo DENTRO del plano en ese estilo. Ejemplo claymation: claymation style, wide shot, eye level, dog standing in the rain at the start of the scene, looking down the empty street. Ejemplo pixar: pixar style, wide shot, eye level, Luna on a sunset rooftop holding a red balloon, looking at the city. Nada de "cinematic masterpiece".
-- generate_video_batch anima UNA tanda con Seedance 2.5 reference-to-video. Respeta 4-30s. Cuando termine, el video YA está en el proyecto. No inventes URLs.
+- generate_video_batch anima UNA tanda con Seedance 2.5 reference-to-video. Respeta 4-30s. Cuando termine, el video YA está en el proyecto. No inventes URLs. No llames generate_batch_frame.
 
 Nunca inventes URLs. Nunca digas que ya existe un video si la herramienta no lo creó. No uses markdown con asteriscos; escribe texto plano con saltos de línea. No hagas chat libre. No preguntes nada fuera del flujo.`;
 
@@ -63,7 +66,10 @@ const PLAN_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
+Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. Do not invent a separate Narrator if an on-screen character is speaking. At most 4 leads. Put background names in extra_names, not character_names.
+Every scene must list who is on screen. Keep a character the same age and size until a later scene explicitly shows they grew. Never write time-lapse as bullets; write each beat as a full physical sentence.
 Make scene times add up to the project's targetDurationSeconds.
+Put the hook spoken line in scene 1 so audio starts at 0s.
 Then STOP. Do not plan batches. Do not generate frames or video. Do not ask questions.`;
 
 const PRODUCE_PROMPT = `${SYSTEM_PROMPT}
@@ -71,7 +77,7 @@ const PRODUCE_PROMPT = `${SYSTEM_PROMPT}
 Current task: PRODUCE.
 The user already approved the storyboard. Do NOT rewrite or re-extract scenes.
 If targetDurationSeconds is 30 or less, call plan_video_batches with EXACTLY one batch covering every scene at that duration (Seedance 2.5 one-shot). Otherwise pack into 4-30s clips whose durations add up to targetDurationSeconds.
-Then call generate_batch_frame and generate_video_batch for each batch in order until all clips exist.
+Then call generate_video_batch for each batch in order until all clips exist. Do not generate a first-frame still.
 Do not ask questions. Do not chat.`;
 
 const tools: OpenAI.Responses.Tool[] = [
@@ -94,7 +100,8 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "extract_storyboard",
-    description: "Guarda personajes y escenas extraídos del guion.",
+    description:
+      "Guarda personajes y escenas extraídos del guion. Solo 1-4 leads (is_extra false): speakers and named story principals. Crowd, b-roll, montage, and numbered extras must be is_extra true.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -113,7 +120,11 @@ const tools: OpenAI.Responses.Tool[] = [
                   "Visual appearance of this character alone: species, colors, clothes. No plot, no other characters, no fight or scene.",
               },
               voice_notes: { type: "string" },
-              is_extra: { type: "boolean" },
+              is_extra: {
+                type: "boolean",
+                description:
+                  "True for unseen narrators/voice-over with no on-screen body, crowd, b-roll, montage, numbered extras (Dog 2, Owner 3), and background pets/people. Do not create a separate Narrator if an on-screen character is the one speaking. False only for story principals who need a look.",
+              },
               look_known: { type: "boolean" },
             },
             required: ["name", "description", "is_extra", "look_known"],
@@ -129,13 +140,23 @@ const tools: OpenAI.Responses.Tool[] = [
               title: { type: "string" },
               summary: {
                 type: "string",
-                description: "What happens, starting with the opening beat of the scene. Later action can follow after that.",
+                description:
+                  "What happens, starting with the opening beat. Show complete physical actions (hands, pack, mouth). Keep real-world physics: treadmill runners face the console and the belt moves backward under the feet, never the wrong way. Same care for bikes, cars, stairs, pouring, gravity. Keep the attached product packaging: a pouch stays a pouch, never call it a bottle unless the photo is a bottle. If a character starts tiny/baby, keep that size here unless THIS scene is the explicit growth. Never write a time-lapse as a bullet list: write each montage beat as a full physical sentence with bodies, hands/paws, and set dressing.",
               },
               location: { type: "string" },
-              character_names: { type: "array", items: { type: "string" } },
-              extra_names: { type: "array", items: { type: "string" } },
+              character_names: {
+                type: "array",
+                items: { type: "string" },
+                description: "Only the scene's story principals who are on screen. The system will say Only NAME participate in this scene.",
+              },
+              extra_names: {
+                type: "array",
+                items: { type: "string" },
+                description: "Background animals or people who appear, e.g. dogs, cats, basset hounds. The system will say Only the dogs, cats and NAME participate in this scene.",
+              },
               dialogue: {
                 type: "array",
+                description: "Spoken lines. Scene 1 must include the opening hook so audio starts at 0s. Never repeat the same line twice.",
                 items: {
                   type: "object",
                   additionalProperties: false,
@@ -154,7 +175,7 @@ const tools: OpenAI.Responses.Tool[] = [
               camera: {
                 type: "string",
                 description:
-                  "Cinematic shot SIZE and ANGLE for the OPENING of this scene (this is also the first-frame still). Examples: wide shot, eye level; medium close-up, low angle; two-shot, over the shoulder; tracking shot, lateral.",
+                  "English shot SIZE and ANGLE names only, different for each scene. Examples: eye level, medium shot; dutch angle, full shot; over the shoulder, medium close-up; low angle, close-up; tracking shot, wide shot; insert; bird's eye. Never Spanish names.",
               },
             },
             required: [
@@ -163,6 +184,7 @@ const tools: OpenAI.Responses.Tool[] = [
               "summary",
               "location",
               "character_names",
+              "extra_names",
               "dialogue",
               "estimated_seconds",
               "camera",
@@ -279,12 +301,11 @@ const tools: OpenAI.Responses.Tool[] = [
               video_prompt: {
                 type: "string",
                 description:
-                  "English only. SCENE 1 must continue from the first-frame still with the same cinematic camera. Then CUT to later scenes. Do not repeat the style lock or @Image1 notes inside each scene. Dialogue once. Never repeat says. No Spanish. No soundtrack.",
+                  "English only. Starts with Pixar/Claymation style throughout the whole video. Then SCENE 1 (Xs). English camera. Brief Only X participate line. Action with names later injected as @Image. CUT between scenes. Time-lapse beats also get CUT plus a new camera, never a bullet list. Keep age/size locked until an explicit growth beat. Keep attached product packaging. Show full physical actions. Dialogue once. No first frame. No soundtrack.",
               },
               frame_prompt: {
                 type: "string",
-                description:
-                  'Opening still of the FIRST scene only. Format: "claymation style, wide shot, eye level, opening beat" or "pixar style, close-up, low angle, opening beat". Shot size and angle required. Not the climax of the scene.',
+                description: "Unused. Leave empty. No first-frame still is generated.",
               },
               pacing_notes: { type: "string" },
             },
@@ -295,7 +316,6 @@ const tools: OpenAI.Responses.Tool[] = [
               "character_names",
               "introduces_new_lead",
               "video_prompt",
-              "frame_prompt",
               "camera_plan",
             ],
           },
@@ -308,8 +328,7 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "generate_batch_frame",
-    description:
-      "Creates the first frame of this clip from the opening instant of the first scene, matching that scene's cinematic camera.",
+    description: "Deprecated. Do not call. Character looks are enough; video starts from scene action.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -489,7 +508,7 @@ function toolsFor(mode: AgentMode) {
   const names =
     mode === "plan"
       ? ["extract_storyboard"]
-      : ["plan_video_batches", "generate_batch_frame", "generate_video_batch"];
+      : ["plan_video_batches", "generate_video_batch"];
   return tools.filter((tool) => tool.type === "function" && names.includes(tool.name));
 }
 
@@ -534,7 +553,7 @@ async function executeTool(
           slug,
           description: String(item.description || ""),
           voiceNotes: String(item.voice_notes || ""),
-          isExtra: Boolean(item.is_extra),
+          isExtra: Boolean(item.is_extra) || isUnseenVoice({ name, description: String(item.description || ""), voiceNotes: String(item.voice_notes || "") }),
           lookConfirmed: false,
           lookRevisionUsed: Boolean(prior?.lookRevisionUsed),
           sourceRefId: prior?.sourceRefId,
@@ -563,12 +582,13 @@ async function executeTool(
           summary,
           location: String(item.location || ""),
           characterNames: ((item.character_names as string[]) || []).map((name) => englishSpeakerName(name)),
-          extraNames: (item.extra_names as string[]) || [],
+          extraNames: ((item.extra_names as string[]) || []).map((name) => englishExtraName(name)),
           dialogue,
           estimatedSeconds: Math.max(2, raw > 0 ? raw : computed),
           camera: String(item.camera || ""),
         };
       }) as Scene[];
+      refineStoryLeads(project);
       const cue =
         typeof project.targetDurationSeconds === "number"
           ? clampTotalDuration(project.targetDurationSeconds)
@@ -702,19 +722,7 @@ async function executeTool(
       return { batches: project.batches.length, prompts: project.batches.map((batch) => batch.videoPrompt) };
     }
     case "generate_batch_frame": {
-      project.workflowStep = "produce";
-      const batch = await generateBatchFrame(project, Number(args.batch_index), onStatus, abortSignal);
-      if (batch.framePublicPath) {
-        project.messages.push({
-          id: createId("msg"),
-          role: "assistant",
-          content: `First frame is ready.`,
-          createdAt: new Date().toISOString(),
-          attachments: [{ kind: "image", src: batch.framePublicPath, label: `Frame ${batch.index}` }],
-        });
-        await saveProject(project);
-      }
-      return { index: batch.index, file: batch.frameFileName, path: batch.framePublicPath, delivered: true };
+      return { skipped: true, reason: "No first-frame still. Character looks are enough." };
     }
     case "generate_video_batch": {
       project.workflowStep = "produce";

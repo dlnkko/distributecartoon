@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { createId, nowIso, normalizeAspectRatio } from "./ids";
-import { ensureReferenceSlots, syncReferenceInclusion } from "./refs";
+import { ensureReferenceSlots, isUnseenVoice, syncReferenceInclusion } from "./refs";
 import type { AspectRatio, Project, VisualStyle, WorkflowStep } from "./types";
 
 const projectsDir = () => path.join(process.cwd(), "data", "projects");
@@ -70,7 +70,7 @@ export function inferWorkflowStep(project: Project): WorkflowStep {
   if (project.batches.some((batch) => batch.videoPublicPath || batch.status === "generating_video" || batch.status === "generating_frame")) {
     return "produce";
   }
-  if (project.characters.some((character) => !character.isExtra && (character.portraitPublicPath || character.portraitRemoteUrl) && !character.lookConfirmed)) {
+  if (project.characters.some((character) => !character.isExtra && !isUnseenVoice(character) && (character.portraitPublicPath || character.portraitRemoteUrl) && !character.lookConfirmed)) {
     return "cast";
   }
   return "review";

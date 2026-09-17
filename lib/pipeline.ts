@@ -3,7 +3,7 @@ import { generateGptImage25Flare, generateSeedance25ReferenceVideo, uploadKieFil
 import { clampClipDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { getProject, saveProject } from "./store";
 import { characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
-import { assignCharacterSourcePhotos, promptReadyReferences } from "./refs";
+import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
@@ -109,7 +109,7 @@ function previousBatch(project: Project, batch: Batch) {
 }
 
 export function leadCharacters(project: Project) {
-  return project.characters.filter((character) => !character.isExtra);
+  return project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character));
 }
 
 type LookResult = {
@@ -139,20 +139,22 @@ async function createCharacterLook(
   source?: ReferenceAsset,
 ): Promise<LookResult> {
   throwIfAborted(abortSignal);
+  const photo = source || project.references.find((item) => item.id === character.sourceRefId);
   const inputUrls: string[] = [];
   if (revisionNotes) {
     const prior = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
     if (prior) inputUrls.push(prior);
-  } else if (source) {
-    const photo = await resolveUploadUrl(source.originalRemoteUrl, source.originalPublicPath, abortSignal);
-    if (photo) inputUrls.push(photo);
+  } else if (photo) {
+    const url = await resolveUploadUrl(photo.originalRemoteUrl, photo.originalPublicPath, abortSignal);
+    if (!url) throw new Error(`Couldn't upload the ${photo.label} photo for ${character.name}.`);
+    inputUrls.push(url);
   }
-  const fromPhoto = Boolean(!revisionNotes && source && inputUrls.length);
+  const fromPhoto = Boolean(!revisionNotes && photo && inputUrls.length);
   const remoteUrl = await generateGptImage25Flare({
     prompt: revisionNotes
       ? characterLookRevisionPrompt(character, project.style, revisionNotes)
       : fromPhoto
-        ? characterLookFromPhotoPrompt(character, project.style)
+        ? characterLookFromPhotoPrompt(character, project.style, photo?.label)
         : characterLookPrompt(character, project.style),
     aspectRatio: "1:1",
     resolution: "2K",
@@ -169,7 +171,7 @@ async function createCharacterLook(
     publicPath: saved.publicPath,
     remoteUrl,
     fromPhoto,
-    source,
+    source: photo,
     revisionNotes,
   };
 }
@@ -207,6 +209,7 @@ async function requestLooks(
 }
 
 export async function ensureCharacterLooks(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
+  refineStoryLeads(project);
   const leads = leadCharacters(project);
   const sources = assignCharacterSourcePhotos(project);
   const pending = leads.filter((character) => characterNeedsLook(character, sources.get(character.id)));
@@ -408,23 +411,15 @@ function pickCastVideo(project: Project, batch: Batch): { batch: Batch; names: s
 function batchCastNames(project: Project, batch: Batch) {
   const fromScenes = batch.sceneIndexes.flatMap((index) => {
     const scene = project.scenes.find((item) => item.index === index);
-    return scene?.characterNames || [];
+    if (!scene) return [];
+    return [...(scene.characterNames || []), ...(scene.dialogue || []).map((line) => line.speaker)];
   });
-  return leadNames(project, [...batch.characterNames, ...fromScenes]);
+  return leadNames(project, [...fromScenes, ...batch.characterNames]);
 }
 
 async function collectReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries: PromptRef[] = [];
   const videoEntries: PromptRef[] = [];
-
-  const frameUrl = await resolveUploadUrl(batch.frameRemoteUrl, batch.framePublicPath, abortSignal);
-  if (frameUrl) {
-    imageEntries.push({
-      url: frameUrl,
-      kind: "frame",
-      name: "opening frame",
-    });
-  }
 
   for (const name of batchCastNames(project, batch)) {
     const character = findCharacter(project, name);
@@ -578,10 +573,6 @@ async function runGenerateBatchVideo(
         break;
       }
     }
-  }
-
-  if (!batch.frameRemoteUrl) {
-    await generateBatchFrame(project, batchIndex, onStatus, abortSignal);
   }
 
   throwIfAborted(abortSignal);

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, ArchivedVideo, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
+import { isUnseenVoice } from "@/lib/refs";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -135,7 +136,10 @@ async function showReadyNotification(title: string) {
 
 function missingCastLooks(project: Project) {
   return project.characters.filter(
-    (character) => !character.isExtra && !(character.portraitPublicPath || character.portraitRemoteUrl),
+    (character) =>
+      !character.isExtra &&
+      !isUnseenVoice(character) &&
+      !(character.portraitPublicPath || character.portraitRemoteUrl),
   );
 }
 
@@ -502,7 +506,7 @@ export function StudioApp() {
         resetGeneration: true,
       });
       if (!saved) return;
-      const leads = saved.characters.filter((character) => !character.isExtra);
+      const leads = saved.characters.filter((character) => !character.isExtra && !isUnseenVoice(character));
       if (!leads.length) {
         await patchProject({ workflowStep: "produce" });
         setBusy(false);
@@ -513,7 +517,10 @@ export function StudioApp() {
       if (json.project) {
         remember(json.project);
         const missing = json.project.characters.filter(
-          (character) => !character.isExtra && !(character.portraitPublicPath || character.portraitRemoteUrl),
+          (character) =>
+            !character.isExtra &&
+            !isUnseenVoice(character) &&
+            !(character.portraitPublicPath || character.portraitRemoteUrl),
         );
         setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
       } else {
@@ -850,7 +857,7 @@ export function StudioApp() {
 
           {step === "cast" ? (
             <CastStep
-              characters={project.characters.filter((character) => !character.isExtra)}
+              characters={project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character))}
               busy={busy}
               onBack={() => void patchProject({ workflowStep: "review" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
@@ -1044,9 +1051,9 @@ function ScriptStep({
 
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex flex-wrap items-center gap-3">
-        <h3 className="display text-3xl md:text-4xl">Add the script</h3>
-        <div className="relative" ref={infoRef}>
+      <div ref={infoRef}>
+        <div className="flex flex-wrap items-center gap-3">
+          <h3 className="display text-3xl md:text-4xl">Add the script</h3>
           <button
             type="button"
             aria-label="Script input info"
@@ -1060,21 +1067,19 @@ function ScriptStep({
           >
             <InfoIcon />
           </button>
-          {infoOpen ? (
-            <div className="absolute left-0 top-[calc(100%+12px)] z-20 w-[min(18.5rem,calc(100vw-3rem))] rounded-2xl border border-[var(--line)] bg-white p-4 text-sm leading-6 text-[var(--ink)] shadow-[0_18px_50px_rgba(28,25,23,0.12)] sm:left-[calc(100%+12px)] sm:top-1/2 sm:-translate-y-1/2">
-              <p>
-                You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.
-              </p>
-              <button
-                type="button"
-                onClick={() => setInfoOpen(false)}
-                className="btn-secondary mt-3 rounded-full px-3 py-1.5 text-xs font-medium"
-              >
-                Got it
-              </button>
-            </div>
-          ) : null}
         </div>
+        {infoOpen ? (
+          <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-4 text-sm leading-6 text-[var(--ink)] shadow-[0_18px_50px_rgba(28,25,23,0.12)]">
+            <p>You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.</p>
+            <button
+              type="button"
+              onClick={() => setInfoOpen(false)}
+              className="btn-secondary mt-3 rounded-full px-3 py-1.5 text-xs font-medium"
+            >
+              Got it
+            </button>
+          </div>
+        ) : null}
       </div>
       <p className="mt-2 text-sm text-[var(--muted)]">Upload a PDF or Word file, or type the script or storyboard.</p>
 
@@ -1453,8 +1458,9 @@ function CastStep({
       <div>
         <h3 className="display text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Each look is that character alone: one pose, plain background. Never a scene with someone else. If you uploaded
-          a real photo for that role, we adapted it to this style. Approve them, or change each character once.
+          Only the main characters in the story appear here — not crowd, b-roll, or background extras. Each look is that
+          character alone: one pose, plain background. If you uploaded a real photo for that role, we adapted it to this
+          style. Approve them, or change each character once.
         </p>
       </div>
 
@@ -2028,7 +2034,7 @@ function VideoStage({
                   <div className="absolute inset-0 grid place-items-center px-4">
                     <p className="status-breathe text-center text-sm font-medium tracking-wide text-white">
                       <span className="status-dots">
-                        {status === "generating_frame" ? "Painting the first frame" : "Animating this shot"}
+                        {waiting ? "Animating this shot" : "Waiting"}
                       </span>
                     </p>
                   </div>
@@ -2039,7 +2045,7 @@ function VideoStage({
                 <div className="shimmer absolute inset-0 opacity-40" />
                 <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
                 <p className="status-breathe relative px-3 text-center text-sm text-white/80">
-                  <span className="status-dots">{waiting ? "Setting the stage" : "Waiting"}</span>
+                  <span className="status-dots">{waiting ? "Animating this shot" : "Waiting"}</span>
                 </p>
               </div>
             )}

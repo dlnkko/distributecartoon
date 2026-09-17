@@ -7,6 +7,7 @@ import {
   leadCharacters,
   reviseCharacterLook,
 } from "@/lib/pipeline";
+import { refineStoryLeads } from "@/lib/refs";
 import { saveProject } from "@/lib/store";
 
 export const runtime = "nodejs";
@@ -43,6 +44,7 @@ export async function POST(request: Request) {
     }
 
     project.workflowStep = "cast";
+    refineStoryLeads(project);
     await saveProject(project);
     if (leadCharacters(project).length) {
       await ensureCharacterLooks(project, () => undefined, request.signal);
