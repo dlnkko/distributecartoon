@@ -16,6 +16,7 @@ type Profile = {
   id: string;
   email: string;
   displayName: string;
+  avatarUrl?: string;
   credits: number;
   plan: string;
 };
@@ -619,8 +620,13 @@ export function StudioApp() {
             onClick={() => setAccountOpen(true)}
             className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-white"
           >
-            <span className="grid h-9 w-9 place-items-center rounded-full bg-[var(--ink)] text-sm text-white">
-              {(profile?.displayName || "A").slice(0, 1).toUpperCase()}
+            <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-[var(--ink)] text-sm text-white">
+              {profile?.avatarUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={profile.avatarUrl} alt="" className="h-full w-full object-cover" />
+              ) : (
+                (profile?.displayName || "A").slice(0, 1).toUpperCase()
+              )}
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium">Account</span>

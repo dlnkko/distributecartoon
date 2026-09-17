@@ -8,13 +8,14 @@ export async function GET() {
   const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")
-    .select("id, email, display_name, credits, plan")
+    .select("id, email, display_name, avatar_url, credits, plan")
     .eq("id", user.id)
     .maybeSingle();
   return NextResponse.json({
     id: user.id,
     email: data?.email || user.email,
     displayName: data?.display_name || user.email.split("@")[0] || "Account",
+    avatarUrl: data?.avatar_url || "",
     credits: data?.credits ?? 120,
     plan: data?.plan || "free",
   });

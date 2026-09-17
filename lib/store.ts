@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { createClient } from "@/lib/supabase/server";
 import { createId, nowIso, normalizeAspectRatio } from "./ids";
 import { ensureReferenceSlots, syncReferenceInclusion } from "./refs";
 import type { AspectRatio, Project, VisualStyle, WorkflowStep } from "./types";
@@ -12,6 +13,25 @@ function ensureDir() {
 
 function fileFor(id: string) {
   return path.join(projectsDir(), `${id}.json`);
+}
+
+function writeLocal(project: Project) {
+  try {
+    ensureDir();
+    writeFileSync(fileFor(project.id), JSON.stringify(project, null, 2), "utf8");
+  } catch {
+    // Vercel and similar hosts have an ephemeral filesystem.
+  }
+}
+
+function readLocal(id: string): Project | null {
+  try {
+    const file = fileFor(id);
+    if (!existsSync(file)) return null;
+    return JSON.parse(readFileSync(file, "utf8")) as Project;
+  } catch {
+    return null;
+  }
 }
 
 export function normalizeProject(project: Project): Project {
@@ -85,8 +105,39 @@ export function resetStoryboard(project: Project) {
   delete project.lastVideoRemoteUrl;
 }
 
-export function createProject(style: VisualStyle = "pixar", aspectRatio: AspectRatio = "16:9", ownerId?: string): Project {
-  ensureDir();
+async function persistRemote(project: Project) {
+  if (!project.ownerId) return;
+  const supabase = await createClient();
+  const { error } = await supabase.from("projects").upsert(
+    {
+      id: project.id,
+      owner_id: project.ownerId,
+      title: project.title,
+      style: project.style,
+      payload: project,
+      updated_at: project.updatedAt,
+    },
+    { onConflict: "id" },
+  );
+  if (error) throw new Error(error.message);
+}
+
+async function readRemote(id: string): Promise<Project | null> {
+  try {
+    const supabase = await createClient();
+    const { data, error } = await supabase.from("projects").select("payload").eq("id", id).maybeSingle();
+    if (error || !data?.payload) return null;
+    return data.payload as Project;
+  } catch {
+    return null;
+  }
+}
+
+export async function createProject(
+  style: VisualStyle = "pixar",
+  aspectRatio: AspectRatio = "16:9",
+  ownerId?: string,
+): Promise<Project> {
   const stamp = nowIso();
   const project: Project = {
     id: createId("proj"),
@@ -113,45 +164,76 @@ export function createProject(style: VisualStyle = "pixar", aspectRatio: AspectR
     updatedAt: stamp,
   };
   ensureReferenceSlots(project);
-  saveProject(project);
+  await saveProject(project);
   return project;
 }
 
-export function saveProject(project: Project) {
-  ensureDir();
+export async function saveProject(project: Project) {
   normalizeProject(project);
   project.updatedAt = nowIso();
-  writeFileSync(fileFor(project.id), JSON.stringify(project, null, 2), "utf8");
+  writeLocal(project);
+  await persistRemote(project);
   return project;
 }
 
-export function getProject(id: string): Project | null {
-  const file = fileFor(id);
-  if (!existsSync(file)) return null;
-  const project = JSON.parse(readFileSync(file, "utf8")) as Project;
+export async function getProject(id: string): Promise<Project | null> {
+  const remote = await readRemote(id);
+  const project = remote || readLocal(id);
+  if (!project) return null;
   const missingSlots = !Array.isArray(project.references) || project.references.length === 0;
   normalizeProject(project);
-  if (missingSlots && (project.scriptText || project.scenes.length)) saveProject(project);
+  if (missingSlots && (project.scriptText || project.scenes.length)) await saveProject(project);
+  else writeLocal(project);
   return project;
 }
 
-export function listProjects(ownerId?: string): Project[] {
-  ensureDir();
-  const projects = readdirSync(projectsDir())
-    .filter((name) => name.endsWith(".json"))
-    .map((name) => {
-      const project = JSON.parse(readFileSync(path.join(projectsDir(), name), "utf8")) as Project;
-      const missingSlots = !Array.isArray(project.references) || project.references.length === 0;
-      normalizeProject(project);
-      if (missingSlots && (project.scriptText || project.scenes.length)) saveProject(project);
-      return project;
-    })
-    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  if (!ownerId) return projects;
-  return projects.filter((item) => !item.ownerId || item.ownerId === ownerId);
+export async function listProjects(ownerId?: string): Promise<Project[]> {
+  if (ownerId) {
+    try {
+      const supabase = await createClient();
+      const { data, error } = await supabase
+        .from("projects")
+        .select("payload")
+        .eq("owner_id", ownerId)
+        .order("updated_at", { ascending: false });
+      if (!error && data) {
+        return data
+          .map((row) => normalizeProject(row.payload as Project))
+          .filter((item) => item.id);
+      }
+    } catch {
+      // Fall through to local files in development.
+    }
+  }
+
+  try {
+    ensureDir();
+    const projects = readdirSync(projectsDir())
+      .filter((name) => name.endsWith(".json"))
+      .map((name) => {
+        const project = JSON.parse(readFileSync(path.join(projectsDir(), name), "utf8")) as Project;
+        normalizeProject(project);
+        return project;
+      })
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    if (!ownerId) return projects;
+    return projects.filter((item) => !item.ownerId || item.ownerId === ownerId);
+  } catch {
+    return [];
+  }
 }
 
-export function deleteProject(id: string) {
-  const file = fileFor(id);
-  if (existsSync(file)) unlinkSync(file);
+export async function deleteProject(id: string) {
+  try {
+    const supabase = await createClient();
+    await supabase.from("projects").delete().eq("id", id);
+  } catch {
+    // Local-only cleanup still runs.
+  }
+  try {
+    const file = fileFor(id);
+    if (existsSync(file)) unlinkSync(file);
+  } catch {
+    // Ignore missing local files.
+  }
 }

@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
-import { extensionFromName, writePublicBuffer } from "@/lib/assets";
+import { extensionFromName, publishGenerated, writePublicBuffer } from "@/lib/assets";
+import { loadOwnedProject } from "@/lib/auth";
 import { emptySlot, ensureReferenceSlots, syncReferenceInclusion } from "@/lib/refs";
-import { getProject, saveProject } from "@/lib/store";
+import { saveProject } from "@/lib/store";
 import type { ReferenceKind } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -18,8 +19,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Missing project or image." }, { status: 400 });
   }
 
-  const project = getProject(projectId);
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  const loaded = await loadOwnedProject(projectId);
+  if ("response" in loaded) return loaded.response;
+  const { project } = loaded;
 
   ensureReferenceSlots(project);
   let asset = slotId ? project.references.find((item) => item.id === slotId) : undefined;
@@ -31,10 +33,12 @@ export async function POST(request: Request) {
 
   const ext = extensionFromName(file.name);
   const buffer = Buffer.from(await file.arrayBuffer());
-  const saved = writePublicBuffer(buffer, [project.id, "refs", `${asset.kind}-${asset.id}-original${ext}`]);
+  const relative = [project.id, "refs", `${asset.kind}-${asset.id}-original${ext}`];
+  const saved = writePublicBuffer(buffer, relative);
+  const hosted = await publishGenerated(project, saved.absolute, relative);
   asset.kind = kind;
   asset.originalFileName = saved.fileName;
-  asset.originalPublicPath = saved.publicPath;
+  asset.originalPublicPath = hosted || saved.publicPath;
   asset.status = "ready";
   if (notes) asset.notes = notes;
   if (kind === "character") {
@@ -50,7 +54,7 @@ export async function POST(request: Request) {
   }
   project.skippedRefs = false;
   syncReferenceInclusion(project);
-  saveProject(project);
+  await saveProject(project);
 
   return NextResponse.json({ project, asset });
 }
@@ -65,12 +69,13 @@ export async function PATCH(request: Request) {
     label?: string;
   };
   if (!body.projectId) return NextResponse.json({ error: "Missing project" }, { status: 400 });
-  const project = getProject(body.projectId);
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  const loaded = await loadOwnedProject(body.projectId);
+  if ("response" in loaded) return loaded.response;
+  const { project } = loaded;
 
   if (body.skipAll) {
     project.skippedRefs = true;
-    saveProject(project);
+    await saveProject(project);
     return NextResponse.json({ project });
   }
 
@@ -93,6 +98,6 @@ export async function PATCH(request: Request) {
     }
   }
   syncReferenceInclusion(project);
-  saveProject(project);
+  await saveProject(project);
   return NextResponse.json({ project, asset });
 }

@@ -1,12 +1,13 @@
 import { NextResponse } from "next/server";
 import { isAbortError } from "@/lib/abort";
+import { loadOwnedProject } from "@/lib/auth";
 import {
   confirmCharacterLooks,
   ensureCharacterLooks,
   leadCharacters,
   reviseCharacterLook,
 } from "@/lib/pipeline";
-import { getProject, saveProject } from "@/lib/store";
+import { saveProject } from "@/lib/store";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -19,34 +20,35 @@ export async function POST(request: Request) {
     confirm?: boolean;
   };
   if (!body.projectId) return NextResponse.json({ error: "Missing project." }, { status: 400 });
-  const project = getProject(body.projectId);
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  const loaded = await loadOwnedProject(body.projectId);
+  if ("response" in loaded) return loaded.response;
+  const { project } = loaded;
   if (!project.scenes.length) {
     return NextResponse.json({ error: "Review scenes before casting." }, { status: 400 });
   }
 
   try {
     if (body.confirm) {
-      confirmCharacterLooks(project);
+      await confirmCharacterLooks(project);
       project.workflowStep = "produce";
-      saveProject(project);
+      await saveProject(project);
       return NextResponse.json({ project });
     }
 
     if (body.characterId) {
       await reviseCharacterLook(project, body.characterId, String(body.notes || ""), () => undefined, request.signal);
       project.workflowStep = "cast";
-      saveProject(project);
+      await saveProject(project);
       return NextResponse.json({ project });
     }
 
     project.workflowStep = "cast";
-    saveProject(project);
+    await saveProject(project);
     if (leadCharacters(project).length) {
       await ensureCharacterLooks(project, () => undefined, request.signal);
     }
     project.workflowStep = "cast";
-    saveProject(project);
+    await saveProject(project);
     return NextResponse.json({ project });
   } catch (error) {
     if (isAbortError(error) || request.signal.aborted) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
+import { loadOwnedProject } from "@/lib/auth";
 import { extractScriptText } from "@/lib/script";
-import { getProject, resetStoryboard, saveProject } from "@/lib/store";
+import { resetStoryboard, saveProject } from "@/lib/store";
 
 export const runtime = "nodejs";
 
@@ -11,8 +12,9 @@ export async function POST(request: Request) {
   if (!projectId || !(file instanceof File)) {
     return NextResponse.json({ error: "Missing project or file." }, { status: 400 });
   }
-  const project = getProject(projectId);
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
+  const loaded = await loadOwnedProject(projectId);
+  if ("response" in loaded) return loaded.response;
+  const { project } = loaded;
 
   const text = await extractScriptText(file);
   if (!text) {
@@ -23,6 +25,6 @@ export async function POST(request: Request) {
   project.scriptName = file.name;
   project.scriptText = text;
   project.workflowStep = "script";
-  saveProject(project);
+  await saveProject(project);
   return NextResponse.json({ project, preview: text.slice(0, 1200) });
 }

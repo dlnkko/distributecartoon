@@ -500,7 +500,7 @@ async function executeTool(
         project.targetDurationSeconds = clampTotalDuration(args.target_seconds);
         project.durationPending = false;
       }
-      saveProject(project);
+      await saveProject(project);
       return {
         style: project.style,
         aspectRatio: project.aspectRatio,
@@ -582,7 +582,7 @@ async function executeTool(
       ensureReferenceSlots(project);
       syncReferenceInclusion(project);
       project.workflowStep = "review";
-      saveProject(project);
+      await saveProject(project);
       return {
         characters: project.characters.length,
         scenes: project.scenes.length,
@@ -595,13 +595,13 @@ async function executeTool(
     }
     case "propose_reference_slots": {
       ensureReferenceSlots(project);
-      saveProject(project);
+      await saveProject(project);
       return { slots: project.references };
     }
     case "update_reference_usage": {
       if (args.skip_all) {
         project.skippedRefs = true;
-        saveProject(project);
+        await saveProject(project);
         return { skipped: true };
       }
       const asset = project.references.find((item) => item.id === args.ref_id || item.label.toLowerCase() === String(args.label || "").toLowerCase());
@@ -623,7 +623,7 @@ async function executeTool(
         }
       }
       syncReferenceInclusion(project);
-      saveProject(project);
+      await saveProject(project);
       return { asset, attached: promptReadyReferences(project).map((item) => item.label) };
     }
     case "update_character_look": {
@@ -633,7 +633,7 @@ async function executeTool(
       if (args.description) character.description = String(args.description);
       if (args.voice_notes) character.voiceNotes = String(args.voice_notes);
       if (typeof args.look_confirmed === "boolean") character.lookConfirmed = args.look_confirmed;
-      saveProject(project);
+      await saveProject(project);
       return { character };
     }
     case "plan_video_batches": {
@@ -688,7 +688,7 @@ async function executeTool(
         return next;
       });
       collapseToOneShot(project, previous);
-      saveProject(project);
+      await saveProject(project);
       return { batches: project.batches.length, prompts: project.batches.map((batch) => batch.videoPrompt) };
     }
     case "generate_batch_frame": {
@@ -702,7 +702,7 @@ async function executeTool(
           createdAt: new Date().toISOString(),
           attachments: [{ kind: "image", src: batch.framePublicPath, label: `Frame ${batch.index}` }],
         });
-        saveProject(project);
+        await saveProject(project);
       }
       return { index: batch.index, file: batch.frameFileName, path: batch.framePublicPath, delivered: true };
     }
@@ -724,7 +724,7 @@ async function executeTool(
             },
           ],
         });
-        saveProject(project);
+        await saveProject(project);
       }
       return {
         index: result.batch.index,
@@ -765,7 +765,7 @@ export async function runAgent(options: {
   }
   if (mode === "plan") options.project.workflowStep = "setup";
   if (mode === "produce") options.project.workflowStep = "produce";
-  saveProject(options.project);
+  await saveProject(options.project);
 
   const { openaiApiKey, openaiModel } = getSecrets();
   if (!openaiApiKey) {
@@ -866,7 +866,7 @@ export async function runAgent(options: {
       throw new Error("Couldn't extract scenes from that script.");
     }
     options.project.workflowStep = "review";
-    saveProject(options.project);
+    await saveProject(options.project);
     options.onEvent({ type: "project", project: options.project });
     return;
   }
@@ -885,6 +885,6 @@ export async function runAgent(options: {
     });
   }
   options.project.workflowStep = "produce";
-  saveProject(options.project);
+  await saveProject(options.project);
   options.onEvent({ type: "project", project: options.project });
 }

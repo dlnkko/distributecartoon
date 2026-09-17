@@ -1,33 +1,31 @@
 import { NextResponse } from "next/server";
-import { getAuthUser } from "@/lib/auth";
+import { getAuthUser, loadOwnedProject } from "@/lib/auth";
 import { normalizeAspectRatio, clampTotalDuration, createId } from "@/lib/ids";
-import { createProject, deleteProject, getProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
+import { createProject, deleteProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
 import type { AspectRatio, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (id) {
-    const project = getProject(id);
-    if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    if (user && project.ownerId && project.ownerId !== user.id) {
-      return NextResponse.json({ error: "Project not found" }, { status: 404 });
-    }
-    return NextResponse.json(project);
+    const loaded = await loadOwnedProject(id);
+    if ("response" in loaded) return loaded.response;
+    return NextResponse.json(loaded.project);
   }
-  return NextResponse.json(listProjects(user?.id));
+  return NextResponse.json(await listProjects(user.id));
 }
 
 export async function POST(request: Request) {
   const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const body = (await request.json().catch(() => ({}))) as { style?: VisualStyle; aspectRatio?: AspectRatio };
-  const project = createProject(body.style || "pixar", normalizeAspectRatio(body.aspectRatio), user?.id);
+  const project = await createProject(body.style || "pixar", normalizeAspectRatio(body.aspectRatio), user.id);
   return NextResponse.json(project);
 }
 
 export async function PATCH(request: Request) {
-  const user = await getAuthUser();
   const body = (await request.json().catch(() => ({}))) as {
     projectId?: string;
     style?: VisualStyle;
@@ -40,11 +38,9 @@ export async function PATCH(request: Request) {
     resetGeneration?: boolean;
   };
   if (!body.projectId) return NextResponse.json({ error: "Missing project" }, { status: 400 });
-  const project = getProject(body.projectId);
-  if (!project) return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  if (user && project.ownerId && project.ownerId !== user.id) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
+  const loaded = await loadOwnedProject(body.projectId);
+  if ("response" in loaded) return loaded.response;
+  const { user, project } = loaded;
   if (body.clearScript) {
     resetStoryboard(project);
     project.scriptText = "";
@@ -95,20 +91,17 @@ export async function PATCH(request: Request) {
       delete project.lastVideoRemoteUrl;
     }
   }
-  if (user && !project.ownerId) project.ownerId = user.id;
-  saveProject(project);
+  if (!project.ownerId) project.ownerId = user.id;
+  await saveProject(project);
   return NextResponse.json(project);
 }
 
 export async function DELETE(request: Request) {
-  const user = await getAuthUser();
   const { searchParams } = new URL(request.url);
   const id = searchParams.get("id");
   if (!id) return NextResponse.json({ error: "Missing id" }, { status: 400 });
-  const project = getProject(id);
-  if (user && project?.ownerId && project.ownerId !== user.id) {
-    return NextResponse.json({ error: "Project not found" }, { status: 404 });
-  }
-  deleteProject(id);
+  const loaded = await loadOwnedProject(id);
+  if ("response" in loaded) return loaded.response;
+  await deleteProject(id);
   return NextResponse.json({ ok: true });
 }

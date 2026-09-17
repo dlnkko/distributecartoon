@@ -1,4 +1,4 @@
-import { downloadToPublic, extensionFromUrl } from "./assets";
+import { downloadToPublic, extensionFromUrl, publishGenerated } from "./assets";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, uploadKieFile } from "./kie";
 import { clampClipDuration, slugify, normalizeAspectRatio } from "./ids";
 import { saveProject } from "./store";
@@ -15,20 +15,26 @@ function findCharacter(project: Project, name: string) {
   return project.characters.find((character) => character.name.toLowerCase() === needle);
 }
 
-async function persistImage(remoteUrl: string, parts: string[]) {
+async function persistImage(project: Project, remoteUrl: string, parts: string[]) {
   const ext = extensionFromUrl(remoteUrl, ".png");
   const withExt = [...parts];
   const last = withExt.at(-1) || "image";
   withExt[withExt.length - 1] = last.endsWith(ext) ? last : `${last}${ext}`;
-  return downloadToPublic(remoteUrl, withExt);
+  const saved = await downloadToPublic(remoteUrl, withExt);
+  const hosted = await publishGenerated(project, saved.absolute, withExt);
+  if (hosted) saved.publicPath = hosted;
+  return saved;
 }
 
-async function persistVideo(remoteUrl: string, parts: string[]) {
+async function persistVideo(project: Project, remoteUrl: string, parts: string[]) {
   const ext = extensionFromUrl(remoteUrl, ".mp4");
   const withExt = [...parts];
   const last = withExt.at(-1) || "clip";
   withExt[withExt.length - 1] = last.endsWith(ext) ? last : `${last}${ext}`;
-  return downloadToPublic(remoteUrl, withExt);
+  const saved = await downloadToPublic(remoteUrl, withExt);
+  const hosted = await publishGenerated(project, saved.absolute, withExt);
+  if (hosted) saved.publicPath = hosted;
+  return saved;
 }
 
 function isHttpUrl(value?: string) {
@@ -37,6 +43,7 @@ function isHttpUrl(value?: string) {
 
 async function resolveUploadUrl(remoteUrl?: string, publicPath?: string, abortSignal?: AbortSignal) {
   if (isHttpUrl(remoteUrl)) return remoteUrl;
+  if (isHttpUrl(publicPath)) return publicPath;
   if (publicPath) {
     try {
       return await uploadKieFile(publicPath, abortSignal);
@@ -65,7 +72,7 @@ function leadNames(project: Project, names: string[]) {
   });
 }
 
-export function resetInFlightBatches(project: Project) {
+export async function resetInFlightBatches(project: Project) {
   let changed = false;
   for (const batch of project.batches) {
     if (batch.status === "generating_video" || batch.status === "generating_frame") {
@@ -73,14 +80,14 @@ export function resetInFlightBatches(project: Project) {
       changed = true;
     }
   }
-  if (changed) saveProject(project);
+  if (changed) await saveProject(project);
   return project;
 }
 
-function restoreBatchAfterAbort(project: Project, batch: Batch) {
+async function restoreBatchAfterAbort(project: Project, batch: Batch) {
   if (batch.videoPublicPath) batch.status = "done";
   else batch.status = "planned";
-  saveProject(project);
+  await saveProject(project);
 }
 
 function previousBatch(project: Project, batch: Batch) {
@@ -123,7 +130,7 @@ export async function generateCharacterLook(
     inputUrls,
     abortSignal,
   });
-  const saved = await persistImage(remoteUrl, [
+  const saved = await persistImage(project, remoteUrl, [
     project.id,
     "characters",
     `${character.slug}-look-${Date.now()}`,
@@ -135,7 +142,7 @@ export async function generateCharacterLook(
   if (revisionNotes) character.lookRevisionUsed = true;
   else if (fromPhoto && source) character.sourceRefId = source.id;
   else delete character.sourceRefId;
-  saveProject(project);
+  await saveProject(project);
   return character;
 }
 
@@ -174,11 +181,11 @@ export async function reviseCharacterLook(
   return generateCharacterLook(project, character, onStatus, abortSignal, change);
 }
 
-export function confirmCharacterLooks(project: Project) {
+export async function confirmCharacterLooks(project: Project) {
   for (const character of leadCharacters(project)) {
     character.lookConfirmed = true;
   }
-  saveProject(project);
+  await saveProject(project);
   return project;
 }
 
@@ -215,7 +222,7 @@ export async function generateBatchFrame(project: Project, batchIndex: number, o
   const batch = project.batches.find((item) => item.index === batchIndex);
   if (!batch) throw new Error(`Batch ${batchIndex} does not exist.`);
   batch.status = "generating_frame";
-  saveProject(project);
+  await saveProject(project);
 
   try {
     const inputUrls = await collectFrameInputs(project, batch, abortSignal);
@@ -230,15 +237,15 @@ export async function generateBatchFrame(project: Project, batchIndex: number, o
     });
 
     const fileStem = `batch-${String(batchIndex).padStart(2, "0")}-frame`;
-    const saved = await persistImage(remoteUrl, [project.id, "frames", fileStem]);
+    const saved = await persistImage(project, remoteUrl, [project.id, "frames", fileStem]);
     batch.frameFileName = saved.fileName;
     batch.framePublicPath = saved.publicPath;
     batch.frameRemoteUrl = remoteUrl;
     batch.status = "planned";
-    saveProject(project);
+    await saveProject(project);
     return batch;
   } catch (error) {
-    if (isAbortError(error)) restoreBatchAfterAbort(project, batch);
+    if (isAbortError(error)) await restoreBatchAfterAbort(project, batch);
     throw error;
   }
 }
@@ -434,7 +441,7 @@ export async function generateBatchVideo(
 
   throwIfAborted(abortSignal);
   batch.status = "generating_video";
-  saveProject(project);
+  await saveProject(project);
 
   try {
     const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
@@ -464,7 +471,7 @@ export async function generateBatchVideo(
 
     const people = uniqueNames(batch.characterNames).map((name) => slugify(name)).join("_") || "scene";
     const fileStem = `batch-${String(batchIndex).padStart(2, "0")}-${people}`;
-    const saved = await persistVideo(remoteUrl, [project.id, "batches", fileStem]);
+    const saved = await persistVideo(project, remoteUrl, [project.id, "batches", fileStem]);
 
     batch.videoFileName = saved.fileName;
     batch.videoPublicPath = saved.publicPath;
@@ -481,10 +488,10 @@ export async function generateBatchVideo(
       remoteUrl,
     });
 
-    saveProject(project);
+    await saveProject(project);
     return { batch, prompt };
   } catch (error) {
-    if (isAbortError(error)) restoreBatchAfterAbort(project, batch);
+    if (isAbortError(error)) await restoreBatchAfterAbort(project, batch);
     throw error;
   }
 }

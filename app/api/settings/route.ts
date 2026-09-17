@@ -1,25 +1,13 @@
 import { NextResponse } from "next/server";
-import { providerStatus, saveSecrets } from "@/lib/config";
+import { getAuthUser } from "@/lib/auth";
+import { providerStatus } from "@/lib/config";
 
 export async function GET() {
+  const user = await getAuthUser();
+  if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   return NextResponse.json(providerStatus());
 }
 
-export async function POST(request: Request) {
-  const body = (await request.json()) as {
-    openaiApiKey?: string;
-    kieApiKey?: string;
-    falKey?: string;
-    openaiModel?: string;
-  };
-  const next = saveSecrets({
-    ...(body.openaiApiKey ? { openaiApiKey: body.openaiApiKey } : {}),
-    ...(body.kieApiKey ? { kieApiKey: body.kieApiKey } : {}),
-    ...(body.falKey ? { falKey: body.falKey } : {}),
-    ...(body.openaiModel ? { openaiModel: body.openaiModel } : {}),
-  });
-  return NextResponse.json({
-    ...providerStatus(),
-    saved: Boolean(next.openaiApiKey || next.kieApiKey || next.falKey),
-  });
+export async function POST() {
+  return NextResponse.json({ error: "Keys are configured on the server." }, { status: 403 });
 }
