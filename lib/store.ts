@@ -67,7 +67,16 @@ export function normalizeProject(project: Project): Project {
 export function inferWorkflowStep(project: Project): WorkflowStep {
   if (!project.scriptText?.trim() && project.scenes.length === 0) return "script";
   if (!project.scenes.length) return "setup";
-  if (project.batches.some((batch) => batch.videoPublicPath || batch.status === "generating_video" || batch.status === "generating_frame")) {
+  if (
+    project.batches.some(
+      (batch) =>
+        batch.videoPublicPath ||
+        batch.videoRemoteUrl ||
+        batch.kieVideoTaskId ||
+        batch.status === "generating_video" ||
+        batch.status === "generating_frame",
+    )
+  ) {
     return "produce";
   }
   if (project.characters.some((character) => !character.isExtra && !isUnseenVoice(character) && (character.portraitPublicPath || character.portraitRemoteUrl) && !character.lookConfirmed)) {
@@ -76,19 +85,31 @@ export function inferWorkflowStep(project: Project): WorkflowStep {
   return "review";
 }
 
-export function archiveReadyVideos(project: Project) {
+export function ensureArchivedVideo(project: Project, batch: Project["batches"][number]) {
+  const src = batch.videoPublicPath || batch.videoRemoteUrl;
+  if (!src) return;
   project.archivedVideos = Array.isArray(project.archivedVideos) ? project.archivedVideos : [];
+  const existing = project.archivedVideos.find((item) => item.id === batch.id || item.publicPath === src || item.publicPath === batch.videoRemoteUrl);
+  if (existing) {
+    existing.publicPath = src;
+    existing.posterPath = batch.framePublicPath || existing.posterPath;
+    existing.duration = batch.duration || existing.duration;
+    return;
+  }
+  project.archivedVideos.push({
+    id: batch.id,
+    title: project.title,
+    publicPath: src,
+    posterPath: batch.framePublicPath,
+    duration: batch.duration,
+    index: batch.index,
+    createdAt: nowIso(),
+  });
+}
+
+export function archiveReadyVideos(project: Project) {
   for (const batch of project.batches) {
-    if (!batch.videoPublicPath) continue;
-    project.archivedVideos.push({
-      id: batch.id,
-      title: project.title,
-      publicPath: batch.videoPublicPath,
-      posterPath: batch.framePublicPath,
-      duration: batch.duration,
-      index: batch.index,
-      createdAt: nowIso(),
-    });
+    ensureArchivedVideo(project, batch);
   }
 }
 

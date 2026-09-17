@@ -1,7 +1,7 @@
 import { isAbortError } from "@/lib/abort";
 import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
-import { resetInFlightBatches } from "@/lib/pipeline";
+import { recoverPendingVideos, resetInFlightBatches } from "@/lib/pipeline";
 import { getProject, saveProject } from "@/lib/store";
 import type { AgentMode, StudioEvent } from "@/lib/types";
 
@@ -29,6 +29,7 @@ export async function POST(request: Request) {
 
   if (body.mode === "produce") {
     project.workflowStep = "produce";
+    await recoverPendingVideos(project);
     await saveProject(project);
   }
 
@@ -70,9 +71,15 @@ export async function POST(request: Request) {
             if (event.type === "project" && event.project) send({ type: "project", project: event.project });
           },
         });
+        if (body.mode === "produce") {
+          const latest = (await getProject(project.id)) || project;
+          await recoverPendingVideos(latest);
+          send({ type: "project", project: latest });
+        }
         send({ type: "done" });
       } catch (error) {
         await resetInFlightBatches(project);
+        await recoverPendingVideos(project);
         send({
           type: "error",
           text: isAbortError(error) || request.signal.aborted ? "Stopped." : error instanceof Error ? error.message : String(error),

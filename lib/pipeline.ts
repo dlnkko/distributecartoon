@@ -1,7 +1,8 @@
 import { downloadToPublic, extensionFromUrl } from "./assets";
-import { generateGptImage25Flare, generateSeedance25ReferenceVideo, uploadKieFile } from "./kie";
+import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, createId, slugify, normalizeAspectRatio } from "./ids";
-import { getProject, saveProject } from "./store";
+import { ensureArchivedVideo, getProject, saveProject } from "./store";
+import { batchAwaitingVideo, realKieVideoTaskId } from "./video-jobs";
 import { characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
@@ -73,6 +74,110 @@ export async function resetInFlightBatches(project: Project) {
     if (batch.status === "generating_video" || batch.status === "generating_frame") {
       batch.status = batch.kieVideoTaskId ? "generating_video" : "planned";
       changed = true;
+    }
+  }
+  if (changed) await saveProject(project);
+  return project;
+}
+
+async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: string) {
+  if (!batch.videoPublicPath) {
+    try {
+      const people = uniqueNames(batch.characterNames).map((name) => slugify(name)).join("_") || "scene";
+      const fileStem = `batch-${String(batch.index).padStart(2, "0")}-${people}`;
+      const saved = await persistVideo(project, remoteUrl, [project.id, "batches", fileStem]);
+      batch.videoFileName = saved.fileName;
+      batch.videoPublicPath = saved.publicPath;
+      project.lastVideoFileName = saved.fileName;
+      project.lastVideoPublicPath = saved.publicPath;
+    } catch {
+      // Kie already has the file; the player can use the remote URL until we persist later.
+    }
+    batch.videoRemoteUrl = remoteUrl;
+    project.lastVideoRemoteUrl = remoteUrl;
+  } else if (!batch.videoRemoteUrl) {
+    batch.videoRemoteUrl = remoteUrl;
+  }
+  delete batch.kieVideoTaskId;
+  batch.status = "done";
+  project.workflowStep = "produce";
+  assignClipToCharacters(project, batch, {
+    id: `clip_${batch.index}`,
+    fileName: batch.videoFileName || `batch-${batch.index}.mp4`,
+    publicPath: batch.videoPublicPath || batch.videoRemoteUrl!,
+    remoteUrl: batch.videoRemoteUrl || remoteUrl,
+  });
+  ensureArchivedVideo(project, batch);
+}
+
+export async function recoverPendingVideos(project: Project, options?: { wait?: boolean }) {
+  let changed = false;
+  for (const batch of project.batches) {
+    if (batch.videoPublicPath) {
+      if (batch.status !== "done") {
+        batch.status = "done";
+        changed = true;
+      }
+      const before = project.archivedVideos?.length || 0;
+      ensureArchivedVideo(project, batch);
+      if ((project.archivedVideos?.length || 0) !== before) changed = true;
+      continue;
+    }
+    if (batch.videoRemoteUrl) {
+      try {
+        await attachGeneratedVideo(project, batch, batch.videoRemoteUrl);
+      } catch {
+        batch.status = "done";
+        project.workflowStep = "produce";
+        project.lastVideoRemoteUrl = batch.videoRemoteUrl;
+        ensureArchivedVideo(project, batch);
+      }
+      changed = true;
+      continue;
+    }
+    const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
+    if (!taskId) {
+      if (batch.kieVideoTaskId === "pending" || batchAwaitingVideo(batch)) {
+        batch.status = "generating_video";
+        project.workflowStep = "produce";
+        changed = true;
+      }
+      continue;
+    }
+    try {
+      if (options?.wait) {
+        const remoteUrl = await waitForTask(taskId, undefined, "video");
+        if (remoteUrl) {
+          await attachGeneratedVideo(project, batch, remoteUrl);
+          changed = true;
+        }
+        continue;
+      }
+      const peek = await peekKieTask(taskId);
+      if (peek.status === "success") {
+        await attachGeneratedVideo(project, batch, peek.url);
+        changed = true;
+      } else if (peek.status === "fail") {
+        delete batch.kieVideoTaskId;
+        batch.status = "error";
+        batch.error = peek.error;
+        changed = true;
+      } else {
+        batch.status = "generating_video";
+        project.workflowStep = "produce";
+        changed = true;
+      }
+    } catch (error) {
+      if (error instanceof Error && /generation failed/i.test(error.message)) {
+        delete batch.kieVideoTaskId;
+        batch.status = "error";
+        batch.error = error.message;
+        changed = true;
+      } else {
+        batch.status = "generating_video";
+        project.workflowStep = "produce";
+        changed = true;
+      }
     }
   }
   if (changed) await saveProject(project);
@@ -467,14 +572,16 @@ function assignClipToCharacters(
   for (const name of names) {
     const character = findCharacter(project, name);
     if (!character || character.isExtra) continue;
-    character.clips.push({
-      id: clip.id,
-      fileName: clip.fileName,
-      publicPath: clip.publicPath,
-      remoteUrl: clip.remoteUrl,
-      batchIndex: batch.index,
-      characterNames: names,
-    });
+    if (!character.clips.some((item) => item.batchIndex === batch.index)) {
+      character.clips.push({
+        id: clip.id,
+        fileName: clip.fileName,
+        publicPath: clip.publicPath,
+        remoteUrl: clip.remoteUrl,
+        batchIndex: batch.index,
+        characterNames: names,
+      });
+    }
     if (names.length === 1) {
       character.latestVideoFileName = clip.fileName;
       character.latestVideoPublicPath = clip.publicPath;
@@ -544,7 +651,12 @@ async function runGenerateBatchVideo(
   }
 
   if (batch.videoPublicPath || batch.videoRemoteUrl) {
-    batch.status = "done";
+    if (batch.videoRemoteUrl && !batch.videoPublicPath) {
+      await attachGeneratedVideo(project, batch, batch.videoRemoteUrl);
+    } else {
+      batch.status = "done";
+      ensureArchivedVideo(project, batch);
+    }
     await saveProject(project);
     return { batch, prompt };
   }
@@ -558,7 +670,7 @@ async function runGenerateBatchVideo(
 
   if (batch.kieVideoTaskId === "pending") {
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      await abortableDelay(1500, abortSignal);
+      await abortableDelay(1500);
       const again = await getProject(project.id);
       const other = again?.batches.find((item) => item.index === batchIndex);
       if (other && (other.videoPublicPath || other.videoRemoteUrl)) return finishExisting(other);
@@ -569,16 +681,15 @@ async function runGenerateBatchVideo(
     }
   }
 
-  throwIfAborted(abortSignal);
   batch.status = "generating_video";
+  project.workflowStep = "produce";
   if (!batch.kieVideoTaskId) {
     batch.kieVideoTaskId = "pending";
   }
   await saveProject(project);
 
   try {
-    const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
-    throwIfAborted(abortSignal);
+    const { imageEntries, videoEntries } = await collectReferences(project, batch);
     const labeled = labeledReferencePrompt({
       images: imageEntries,
       videos: videoEntries,
@@ -598,34 +709,15 @@ async function runGenerateBatchVideo(
       referenceVideoUrls: videoEntries.slice(0, 1).map((item) => item.url),
       generateAudio: true,
       resolution: "480p",
-      abortSignal,
       existingTaskId: batch.kieVideoTaskId !== "pending" ? batch.kieVideoTaskId : undefined,
       onTaskCreated: async (taskId) => {
         batch.kieVideoTaskId = taskId;
+        batch.status = "generating_video";
+        project.workflowStep = "produce";
         await saveProject(project);
       },
     });
-    throwIfAborted(abortSignal);
-
-    const people = uniqueNames(batch.characterNames).map((name) => slugify(name)).join("_") || "scene";
-    const fileStem = `batch-${String(batchIndex).padStart(2, "0")}-${people}`;
-    const saved = await persistVideo(project, remoteUrl, [project.id, "batches", fileStem]);
-
-    batch.videoFileName = saved.fileName;
-    batch.videoPublicPath = saved.publicPath;
-    batch.videoRemoteUrl = remoteUrl;
-    batch.status = "done";
-    project.lastVideoFileName = saved.fileName;
-    project.lastVideoPublicPath = saved.publicPath;
-    project.lastVideoRemoteUrl = remoteUrl;
-
-    assignClipToCharacters(project, batch, {
-      id: `clip_${batch.index}`,
-      fileName: saved.fileName,
-      publicPath: saved.publicPath,
-      remoteUrl,
-    });
-
+    await attachGeneratedVideo(project, batch, remoteUrl);
     await saveProject(project);
     return { batch, prompt: labeled };
   } catch (error) {

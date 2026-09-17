@@ -735,13 +735,14 @@ async function executeTool(
           index: existing.index,
           duration: existing.duration,
           file: existing.videoFileName,
-          path: existing.videoPublicPath,
+          path: existing.videoPublicPath || existing.videoRemoteUrl,
           delivered: true,
           reused: true,
         };
       }
-      const result = await generateBatchVideo(project, Number(args.batch_index), onStatus, args.duration, abortSignal);
-      if (result.batch.videoPublicPath) {
+      const result = await generateBatchVideo(project, Number(args.batch_index), onStatus, args.duration);
+      const deliveredSrc = result.batch.videoPublicPath || result.batch.videoRemoteUrl;
+      if (deliveredSrc) {
         project.messages.push({
           id: createId("msg"),
           role: "assistant",
@@ -750,7 +751,7 @@ async function executeTool(
           attachments: [
             {
               kind: "video",
-              src: result.batch.videoPublicPath,
+              src: deliveredSrc,
               poster: result.batch.framePublicPath,
               label: project.title || "Video",
             },
@@ -762,7 +763,7 @@ async function executeTool(
         index: result.batch.index,
         duration: result.batch.duration,
         file: result.batch.videoFileName,
-        path: result.batch.videoPublicPath,
+        path: deliveredSrc,
         promptUsed: result.prompt,
         delivered: true,
       };

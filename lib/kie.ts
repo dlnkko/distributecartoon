@@ -82,6 +82,24 @@ function extractResultUrl(data: KieTaskResponse["data"]) {
   return parsed.resultUrls?.[0] || parsed.resultUrl || parsed.url || extra.resultUrls?.[0] || extra.resultUrl || extra.url || "";
 }
 
+export async function peekKieTask(taskId: string): Promise<{ status: "success"; url: string } | { status: "fail"; error: string } | { status: "pending" }> {
+  const response = await fetch(`${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
+    headers: authHeaders(),
+  });
+  if (!response.ok) return { status: "pending" };
+  const json = (await response.json()) as KieTaskResponse;
+  const state = json.data?.state;
+  if (state === "success") {
+    const url = extractResultUrl(json.data);
+    if (url) return { status: "success", url };
+    return { status: "pending" };
+  }
+  if (state === "fail") {
+    return { status: "fail", error: json.data?.failMsg || json.msg || "Video generation failed." };
+  }
+  return { status: "pending" };
+}
+
 export async function waitForTask(taskId: string, signal?: AbortSignal, kind: "image" | "video" = "image") {
   const started = Date.now();
   let delay = 2500;
@@ -197,8 +215,8 @@ export async function generateSeedance25ReferenceVideo(options: {
     };
     if (options.referenceImageUrls?.length) input.reference_image_urls = options.referenceImageUrls.slice(0, 30);
     if (options.referenceVideoUrls?.length) input.reference_video_urls = options.referenceVideoUrls.slice(0, 1);
-    taskId = await createTask("bytedance/seedance-2-5", input, options.abortSignal);
+    taskId = await createTask("bytedance/seedance-2-5", input);
     await options.onTaskCreated?.(taskId);
   }
-  return waitForTask(taskId, options.abortSignal, "video");
+  return waitForTask(taskId, undefined, "video");
 }

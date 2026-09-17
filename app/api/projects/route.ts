@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser, loadOwnedProject } from "@/lib/auth";
 import { normalizeAspectRatio, clampTotalDuration, createId } from "@/lib/ids";
+import { recoverPendingVideos } from "@/lib/pipeline";
 import { createProject, deleteProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
 import type { AspectRatio, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 
@@ -12,9 +13,23 @@ export async function GET(request: Request) {
   if (id) {
     const loaded = await loadOwnedProject(id);
     if ("response" in loaded) return loaded.response;
-    return NextResponse.json(loaded.project);
+    try {
+      return NextResponse.json(await recoverPendingVideos(loaded.project));
+    } catch {
+      return NextResponse.json(loaded.project);
+    }
   }
-  return NextResponse.json(await listProjects(user.id));
+  const list = await listProjects(user.id);
+  await Promise.all(
+    list.map(async (project) => {
+      try {
+        await recoverPendingVideos(project);
+      } catch {
+        // Keep the last saved project if Kie is unreachable.
+      }
+    }),
+  );
+  return NextResponse.json(list);
 }
 
 export async function POST(request: Request) {
