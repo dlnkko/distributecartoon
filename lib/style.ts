@@ -185,7 +185,7 @@ const CAMERA_MOVES: Array<[RegExp, string]> = [
 const CAMERA_VARIETY = [
   "Eye level, medium shot",
   "Dutch angle, full shot",
-  "Over the shoulder, medium close-up",
+  "Eye level, two-shot",
   "Low angle, close-up",
   "High angle, wide shot",
   "Eye level, insert",
@@ -244,6 +244,37 @@ export function cinematicCamera(scene?: Scene, fallback = "wide shot, eye level"
     if (next) return next;
   }
   return label;
+}
+
+function sceneOnScreenNames(scene?: Scene, project?: Project) {
+  if (!scene) return [] as string[];
+  const unseen = new Set(
+    (project?.characters || [])
+      .filter((character) => character.isExtra || isUnseenVoice(character))
+      .map((character) => character.name.trim().toLowerCase()),
+  );
+  return [...new Set((scene.characterNames || []).map((name) => name.trim()).filter(Boolean))].filter(
+    (name) => !unseen.has(name.toLowerCase()),
+  );
+}
+
+function pickSingleSubjectCamera(used: string[]) {
+  return (
+    CAMERA_VARIETY.find(
+      (item) =>
+        !/over the shoulder|two-shot/i.test(item) &&
+        !used.some((prev) => prev.toLowerCase() === item.toLowerCase()),
+    ) || "Eye level, medium shot"
+  );
+}
+
+function safeCinematicCamera(scene?: Scene, fallback = "wide shot, eye level", used: string[] = [], project?: Project) {
+  let camera = cinematicCamera(scene, fallback, used);
+  const names = sceneOnScreenNames(scene, project);
+  if (/over the shoulder|two-shot/i.test(camera) && names.length < 2) {
+    return pickSingleSubjectCamera(used);
+  }
+  return camera;
 }
 
 function openingAction(scene?: Scene) {
@@ -451,6 +482,22 @@ function alreadyHas(text: string, lock: string) {
   return text.toLowerCase().includes(lock.slice(0, 28).toLowerCase());
 }
 
+function withNoClone(action: string, camera: string, scene?: Scene, project?: Project) {
+  let next = action.trim();
+  const names = sceneOnScreenNames(scene, project);
+  const oneBody = "Never invent extra copies of anyone. Each character has exactly one body in frame.";
+  if (!alreadyHas(next, oneBody)) next += ` ${oneBody}`;
+  if (/over the shoulder/i.test(camera) && names.length >= 2) {
+    const lock = `Over-the-shoulder: camera behind ${names[0]}, only ${names[0]}'s shoulder and the back of the head in the foreground, looking at ${names[1]}. ${names[1]} is the only face in frame. Never show ${names[0]}'s face. Never duplicate anyone.`;
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+  if (/\btwo-shot\b/i.test(camera) && names.length >= 2) {
+    const lock = `Two-shot of ${names[0]} and ${names[1]}, two different characters, not twins of the same person.`;
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+  return next;
+}
+
 function ensurePhysicalLogic(summary: string, context = "") {
   let text = summary.trim();
   if (!text) return text;
@@ -480,14 +527,14 @@ function ensurePhysicalLogic(summary: string, context = "") {
   if (/\b(swim|swimming|pool)\b/.test(blob)) {
     locks.push("The body is in the water. Arms and legs stroke forward in the travel direction.");
   }
-  if (
-    locks.length ||
-    /\b(run|running|walk|walking|jog|sprint|jump|climb|pedal|drive|driving)\b/.test(blob)
-  ) {
+  if (/\b(gate|door|window|drawer|lid|hatch|hinge|cabinet|fridge|fence)\b/.test(blob)) {
     locks.push(
-      "Keep real-world physics: feet plant on surfaces, weight stays grounded, props stay in hands, no mirrored or reversed motion, no clipping through objects.",
+      "Hinged or sliding objects move only through empty air. Keep every body outside the moving path. Solids never pass through a body or another solid.",
     );
   }
+  locks.push(
+    "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection.",
+  );
 
   for (const lock of locks) {
     if (!alreadyHas(text, lock)) text += ` ${lock}`;
@@ -503,14 +550,7 @@ function scenePropCues(project: Project, sceneIndex: number) {
 
 function sceneCastLine(scene?: Scene, project?: Project) {
   if (!scene) return "";
-  const unseen = new Set(
-    (project?.characters || [])
-      .filter((character) => character.isExtra || isUnseenVoice(character))
-      .map((character) => character.name.trim().toLowerCase()),
-  );
-  const principals = [...new Set((scene.characterNames || []).map((name) => name.trim()).filter(Boolean))].filter(
-    (name) => !unseen.has(name.toLowerCase()),
-  );
+  const principals = sceneOnScreenNames(scene, project);
   const extras = [...new Set((scene.extraNames || []).map((name) => name.trim()).filter(Boolean))]
     .filter((name) => name && !principals.some((lead) => lead.toLowerCase() === name.toLowerCase()))
     .map((name) => name.replace(/^(the|a|an)\s+/i, "").trim())
@@ -524,9 +564,9 @@ function sceneCastLine(scene?: Scene, project?: Project) {
   return `Only ${ordered.slice(0, -1).join(", ")} and ${ordered[ordered.length - 1]} participate in this scene.`;
 }
 
-const YOUNG_MARK = /\b(tiny|baby|kitten|puppy|newborn|young|chiquit|beb[eé]|rescued kitten)\b/i;
+const YOUNG_MARK = /\b(tiny|baby|kitten|puppy|newborn|young|infant|toddler|chiquit|beb[eé])\b/i;
 const GROWN_MARK =
-  /\b(grown|older|adult|full[- ]grown|larger|grew|grows|years later|time has passed|now grown|three years)\b/i;
+  /\b(grown|older|adult|full[- ]grown|larger|grew|grows|years later|time has passed|now grown)\b/i;
 
 function sceneAgeBlob(scene?: Scene) {
   return `${scene?.title || ""} ${scene?.summary || ""}`;
@@ -772,20 +812,26 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
     .map((index, i) => {
       const scene = sceneByIndex(project, index);
       const fallback = CAMERA_VARIETY[i % CAMERA_VARIETY.length];
-      const camera = cinematicCamera(scene, fallback, usedCameras);
+      const camera = safeCinematicCamera(scene, fallback, usedCameras, project);
       usedCameras.push(camera);
       const summary = rewriteProductContainers(scene?.summary || scene?.title || "", project);
       const montage = expandMontageAction(summary, camera);
-      const visual = withAgeContinuity(
-        withOnScreenProps(
-          montage
-            ? ensurePhysicalLogic(montage, `${scene?.title || ""} ${scene?.location || ""}`)
-            : ensurePhysicalLogic(ensureVisibleAction(summary), `${scene?.title || ""} ${scene?.location || ""}`),
+      const space = `${scene?.title || ""} ${scene?.location || ""}`;
+      const visual = withNoClone(
+        withAgeContinuity(
+          withOnScreenProps(
+            montage
+              ? ensurePhysicalLogic(montage, space)
+              : ensurePhysicalLogic(ensureVisibleAction(summary), space),
+            project,
+            index,
+          ),
           project,
           index,
         ),
+        camera,
+        scene,
         project,
-        index,
       );
       const lines = (scene?.dialogue || [])
         .filter((line) => line.speaker && line.line)
@@ -799,7 +845,7 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body}`.replace(/\s+/g, " ").trim();
     })
     .join(" CUT. ");
-  return `${videoStyleLead(project.style)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} Keep each character the same age, size, and proportions until a later scene explicitly shows they grew. ${videoAudioLead()}`.replace(/\s{2,}/g, " ").trim();
+  return `${videoStyleLead(project.style)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} Keep each character the same age, size, and proportions until a later scene explicitly shows they grew. Obey real-world physics and blocking in every scene. Never clip solids through bodies. Never clone or duplicate a character. ${videoAudioLead()}`.replace(/\s{2,}/g, " ").trim();
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
