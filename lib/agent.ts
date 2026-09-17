@@ -16,8 +16,8 @@ Language: always reply in English, clear and concrete.
 Pipeline real:
 1. PRIMERO el guion. No pidas imágenes ni generes video si aún no hay script.
 2. Extraer escenas, diálogos, locaciones y personajes.
-3. El sistema genera un retrato por lead (una sola pose, fondo gris claro). El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú.
-4. El first frame de cada tanda solo incluye al personaje que actúa en ESE plano de apertura. No metas retratos de otros. Seedance 2.5 R2V sí recibe las fotos y/o el video de los demás personajes del clip.
+3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. La description del personaje es SOLO apariencia (especie, color, ropa), sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú.
+4. El first frame de cada tanda es el instante INICIAL de la primera escena de esa tanda (escena 1 del storyboard en un one-shot). Mismo plano y ángulo cinematográficos que el campo camera de esa escena. No muestres el clímax ni el final. La animación de Seedance parte de ese still. Seedance 2.5 R2V sí recibe las fotos y/o el video de los demás personajes del clip.
 5. Duración de cada ESCENA: si hay diálogo, el tiempo es el de decirlo con calma. Si casi no pasa nada (un beat, un insert, un corte), 2 a 3 segundos, según complejidad, intención y relevancia. No alargues una escena vacía ni comprimas una frase hablada.
 6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, empaqueta en clips de 4-30s.
 7. Si el guion es largo (más de 30s), con varias escenas y diálogos, estructura varios clips de 4-30s. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
@@ -53,8 +53,8 @@ Herramientas:
 - Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad.
 - No uses stylize_reference. Nunca generes una imagen solo del producto. El estilo Pixar/claymation se aplica dentro del first frame de la escena y del clip.
 - Usa plan_video_batches cuando el usuario ya aprobó las escenas. Si targetDurationSeconds es 30 o menos, exactamente UNA tanda con todas las escenas. Si es más de 30, empaqueta en clips de 4-30s.
-- generate_batch_frame crea el first frame de la primera escena de esa tanda. Solo el personaje que actúa en ese plano. Los retratos ya los aprobó el usuario.
-- Prompt de IMAGEN (first frame): SIEMPRE en inglés, super breve. Empieza EXACTAMENTE con "claymation style" o "pixar style", luego plano y/o ángulo, luego acción y línea. Si el guion menciona un producto/logo/locación con foto, dibújalo DENTRO del plano en ese estilo, no como ficha ni packshot. Ejemplo claymation: claymation style, wide shot, dog in the rain alone, looking sad. Ejemplo pixar: pixar style, wide shot, Luna on a sunset rooftop holding a red balloon, looking at the city. Nada de "cinematic masterpiece".
+- generate_batch_frame crea el first frame de la PRIMERA escena de esa tanda: el instante de apertura, con plano y ángulo cinematográficos (wide, medium, close-up, two-shot, OTS, high/low angle, eye level, dutch). Solo quien está en ese beat inicial. Los retratos ya los aprobó el usuario.
+- Prompt de IMAGEN (first frame): SIEMPRE en inglés, super breve. Empieza EXACTAMENTE con "claymation style" o "pixar style", luego shot size y ángulo, luego SOLO el beat de apertura de la escena 1 y la locación. Still congelado para que el video continúe desde ahí. Si el guion menciona un producto/logo/locación con foto, dibújalo DENTRO del plano en ese estilo. Ejemplo claymation: claymation style, wide shot, eye level, dog standing in the rain at the start of the scene, looking down the empty street. Ejemplo pixar: pixar style, wide shot, eye level, Luna on a sunset rooftop holding a red balloon, looking at the city. Nada de "cinematic masterpiece".
 - generate_video_batch anima UNA tanda con Seedance 2.5 reference-to-video. Respeta 4-30s. Cuando termine, el video YA está en el proyecto. No inventes URLs.
 
 Nunca inventes URLs. Nunca digas que ya existe un video si la herramienta no lo creó. No uses markdown con asteriscos; escribe texto plano con saltos de línea. No hagas chat libre. No preguntes nada fuera del flujo.`;
@@ -107,7 +107,11 @@ const tools: OpenAI.Responses.Tool[] = [
             additionalProperties: false,
             properties: {
               name: { type: "string", description: "Short English name, e.g. Luna or Marco. Never a Spanish description like Hombre de 40 años." },
-              description: { type: "string" },
+              description: {
+                type: "string",
+                description:
+                  "Visual appearance of this character alone: species, colors, clothes. No plot, no other characters, no fight or scene.",
+              },
               voice_notes: { type: "string" },
               is_extra: { type: "boolean" },
               look_known: { type: "boolean" },
@@ -123,7 +127,10 @@ const tools: OpenAI.Responses.Tool[] = [
             properties: {
               index: { type: "integer" },
               title: { type: "string" },
-              summary: { type: "string" },
+              summary: {
+                type: "string",
+                description: "What happens, starting with the opening beat of the scene. Later action can follow after that.",
+              },
               location: { type: "string" },
               character_names: { type: "array", items: { type: "string" } },
               extra_names: { type: "array", items: { type: "string" } },
@@ -146,7 +153,8 @@ const tools: OpenAI.Responses.Tool[] = [
               },
               camera: {
                 type: "string",
-                description: "English shot/angle only, e.g. wide shot, eye level or tracking shot, lateral.",
+                description:
+                  "Cinematic shot SIZE and ANGLE for the OPENING of this scene (this is also the first-frame still). Examples: wide shot, eye level; medium close-up, low angle; two-shot, over the shoulder; tracking shot, lateral.",
               },
             },
             required: [
@@ -271,12 +279,12 @@ const tools: OpenAI.Responses.Tool[] = [
               video_prompt: {
                 type: "string",
                 description:
-                  "English only. Starts once with: @Image1 is the first frame of this shot. Keep the same claymation/pixar style as seen in @Image1 for every scene. Do not switch look. No background music. Ambient sound and dialogue only. Then SCENE 1 / CUT / SCENE 2. Do not repeat the style lock or @Image1 notes inside each scene. Dialogue once. Never repeat says. No Spanish. No soundtrack.",
+                  "English only. SCENE 1 must continue from the first-frame still with the same cinematic camera. Then CUT to later scenes. Do not repeat the style lock or @Image1 notes inside each scene. Dialogue once. Never repeat says. No Spanish. No soundtrack.",
               },
               frame_prompt: {
                 type: "string",
                 description:
-                  'English only, super brief. Format: "claymation style, wide shot, action" or "pixar style, wide shot, action". Style words first, then shot/angle, then action and line.',
+                  'Opening still of the FIRST scene only. Format: "claymation style, wide shot, eye level, opening beat" or "pixar style, close-up, low angle, opening beat". Shot size and angle required. Not the climax of the scene.',
               },
               pacing_notes: { type: "string" },
             },
@@ -300,7 +308,8 @@ const tools: OpenAI.Responses.Tool[] = [
     type: "function",
     strict: false,
     name: "generate_batch_frame",
-    description: "Creates the first frame of this clip. Only the character acting in that opening shot.",
+    description:
+      "Creates the first frame of this clip from the opening instant of the first scene, matching that scene's cinematic camera.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -683,6 +692,7 @@ async function executeTool(
             videoFileName: prior.videoFileName,
             videoPublicPath: prior.videoPublicPath,
             videoRemoteUrl: prior.videoRemoteUrl,
+            kieVideoTaskId: prior.kieVideoTaskId,
           };
         }
         return next;
@@ -708,6 +718,19 @@ async function executeTool(
     }
     case "generate_video_batch": {
       project.workflowStep = "produce";
+      const existing = project.batches.find((item) => item.index === Number(args.batch_index));
+      if (existing?.videoPublicPath || existing?.videoRemoteUrl) {
+        existing.status = "done";
+        await saveProject(project);
+        return {
+          index: existing.index,
+          duration: existing.duration,
+          file: existing.videoFileName,
+          path: existing.videoPublicPath,
+          delivered: true,
+          reused: true,
+        };
+      }
       const result = await generateBatchVideo(project, Number(args.batch_index), onStatus, args.duration, abortSignal);
       if (result.batch.videoPublicPath) {
         project.messages.push({

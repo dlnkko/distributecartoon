@@ -1,10 +1,10 @@
 import { downloadToPublic, extensionFromUrl, publishGenerated } from "./assets";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, uploadKieFile } from "./kie";
-import { clampClipDuration, slugify, normalizeAspectRatio } from "./ids";
-import { saveProject } from "./store";
+import { clampClipDuration, createId, slugify, normalizeAspectRatio } from "./ids";
+import { getProject, saveProject } from "./store";
 import { characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { assignCharacterSourcePhotos, promptReadyReferences } from "./refs";
-import { isAbortError, throwIfAborted } from "./abort";
+import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
@@ -75,8 +75,9 @@ function leadNames(project: Project, names: string[]) {
 export async function resetInFlightBatches(project: Project) {
   let changed = false;
   for (const batch of project.batches) {
+    if (batch.status === "generating_video" && batch.kieVideoTaskId) continue;
     if (batch.status === "generating_video" || batch.status === "generating_frame") {
-      batch.status = "planned";
+      batch.status = batch.kieVideoTaskId ? "generating_video" : "planned";
       changed = true;
     }
   }
@@ -86,9 +87,20 @@ export async function resetInFlightBatches(project: Project) {
 
 async function restoreBatchAfterAbort(project: Project, batch: Batch) {
   if (batch.videoPublicPath) batch.status = "done";
+  else if (batch.kieVideoTaskId) batch.status = "generating_video";
   else batch.status = "planned";
   await saveProject(project);
 }
+
+function copyVideoFields(target: Batch, source: Batch) {
+  target.videoFileName = source.videoFileName;
+  target.videoPublicPath = source.videoPublicPath;
+  target.videoRemoteUrl = source.videoRemoteUrl;
+  target.kieVideoTaskId = source.kieVideoTaskId;
+  if (source.videoPublicPath || source.videoRemoteUrl) target.status = "done";
+}
+
+const videoLocks = new Map<string, Promise<{ batch: Batch; prompt: string }>>();
 
 function previousBatch(project: Project, batch: Batch) {
   return project.batches
@@ -100,14 +112,32 @@ export function leadCharacters(project: Project) {
   return project.characters.filter((character) => !character.isExtra);
 }
 
-export async function generateCharacterLook(
+type LookResult = {
+  fileName: string;
+  publicPath: string;
+  remoteUrl: string;
+  fromPhoto: boolean;
+  source?: ReferenceAsset;
+  revisionNotes?: string;
+};
+
+function applyLookToCharacter(character: Character, look: LookResult) {
+  character.portraitFileName = look.fileName;
+  character.portraitPublicPath = look.publicPath;
+  character.portraitRemoteUrl = look.remoteUrl;
+  character.lookConfirmed = false;
+  if (look.revisionNotes) character.lookRevisionUsed = true;
+  else if (look.fromPhoto && look.source) character.sourceRefId = look.source.id;
+  else delete character.sourceRefId;
+}
+
+async function createCharacterLook(
   project: Project,
   character: Character,
-  onStatus: StatusFn,
   abortSignal?: AbortSignal,
   revisionNotes?: string,
   source?: ReferenceAsset,
-) {
+): Promise<LookResult> {
   throwIfAborted(abortSignal);
   const inputUrls: string[] = [];
   if (revisionNotes) {
@@ -117,7 +147,6 @@ export async function generateCharacterLook(
     const photo = await resolveUploadUrl(source.originalRemoteUrl, source.originalPublicPath, abortSignal);
     if (photo) inputUrls.push(photo);
   }
-  onStatus(revisionNotes ? `Updating ${character.name}…` : `Casting ${character.name}…`);
   const fromPhoto = Boolean(!revisionNotes && source && inputUrls.length);
   const remoteUrl = await generateGptImage25Flare({
     prompt: revisionNotes
@@ -133,35 +162,92 @@ export async function generateCharacterLook(
   const saved = await persistImage(project, remoteUrl, [
     project.id,
     "characters",
-    `${character.slug}-look-${Date.now()}`,
+    `${character.slug}-look-${Date.now()}-${createId("look")}`,
   ]);
-  character.portraitFileName = saved.fileName;
-  character.portraitPublicPath = saved.publicPath;
-  character.portraitRemoteUrl = remoteUrl;
-  character.lookConfirmed = false;
-  if (revisionNotes) character.lookRevisionUsed = true;
-  else if (fromPhoto && source) character.sourceRefId = source.id;
-  else delete character.sourceRefId;
+  return {
+    fileName: saved.fileName,
+    publicPath: saved.publicPath,
+    remoteUrl,
+    fromPhoto,
+    source,
+    revisionNotes,
+  };
+}
+
+function characterNeedsLook(character: Character, source?: ReferenceAsset) {
+  const hasLook = Boolean(character.portraitRemoteUrl || character.portraitPublicPath);
+  const sameSource = source ? character.sourceRefId === source.id : !character.sourceRefId;
+  return !(hasLook && sameSource);
+}
+
+export async function generateCharacterLook(
+  project: Project,
+  character: Character,
+  onStatus: StatusFn,
+  abortSignal?: AbortSignal,
+  revisionNotes?: string,
+  source?: ReferenceAsset,
+) {
+  onStatus(revisionNotes ? `Updating ${character.name}…` : `Casting ${character.name}…`);
+  const look = await createCharacterLook(project, character, abortSignal, revisionNotes, source);
+  applyLookToCharacter(character, look);
   await saveProject(project);
   return character;
+}
+
+async function requestLooks(
+  project: Project,
+  characters: Character[],
+  sources: Map<string, ReferenceAsset>,
+  abortSignal?: AbortSignal,
+) {
+  return Promise.allSettled(
+    characters.map((character) => createCharacterLook(project, character, abortSignal, undefined, sources.get(character.id))),
+  );
 }
 
 export async function ensureCharacterLooks(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   const leads = leadCharacters(project);
   const sources = assignCharacterSourcePhotos(project);
-  for (const character of leads) {
-    throwIfAborted(abortSignal);
-    const source = sources.get(character.id);
-    const hasLook = Boolean(character.portraitRemoteUrl || character.portraitPublicPath);
-    const sameSource = source ? character.sourceRefId === source.id : !character.sourceRefId;
-    if (hasLook && sameSource) continue;
-    try {
-      await generateCharacterLook(project, character, onStatus, abortSignal, undefined, source);
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      onStatus(`Couldn't cast ${character.name}. Continuing with the description.`);
+  const pending = leads.filter((character) => characterNeedsLook(character, sources.get(character.id)));
+  if (!pending.length) return project.characters;
+
+  onStatus(
+    pending.length === 1 ? `Casting ${pending[0].name}…` : `Casting ${pending.map((character) => character.name).join(", ")}…`,
+  );
+
+  let settled = await requestLooks(project, pending, sources, abortSignal);
+  const retry: Character[] = [];
+  let abortError: unknown;
+  for (let index = 0; index < pending.length; index += 1) {
+    const result = settled[index];
+    if (result.status === "fulfilled") {
+      applyLookToCharacter(pending[index], result.value);
+      continue;
     }
+    if (isAbortError(result.reason)) abortError = result.reason;
+    else retry.push(pending[index]);
   }
+  await saveProject(project);
+  if (abortError) throw abortError;
+
+  if (retry.length && !abortSignal?.aborted) {
+    onStatus(`Retrying ${retry.map((character) => character.name).join(", ")}…`);
+    settled = await requestLooks(project, retry, sources, abortSignal);
+    abortError = undefined;
+    for (let index = 0; index < retry.length; index += 1) {
+      const result = settled[index];
+      if (result.status === "fulfilled") {
+        applyLookToCharacter(retry[index], result.value);
+        continue;
+      }
+      if (isAbortError(result.reason)) abortError = result.reason;
+      else onStatus(`Couldn't cast ${retry[index].name}.`);
+    }
+    await saveProject(project);
+    if (abortError) throw abortError;
+  }
+
   return project.characters;
 }
 
@@ -201,7 +287,8 @@ async function collectFrameInputs(project: Project, batch: Batch, abortSignal?: 
     const url = await resolveUploadUrl(character?.portraitRemoteUrl, character?.portraitPublicPath, abortSignal);
     if (url) inputUrls.push(url);
   }
-  for (const asset of promptReadyReferences(project, batch.sceneIndexes.slice(0, 1))) {
+  const openingScene = batch.sceneIndexes.length ? [Math.min(...batch.sceneIndexes)] : [];
+  for (const asset of promptReadyReferences(project, openingScene)) {
     const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
     if (url) inputUrls.push(url);
   }
@@ -226,7 +313,7 @@ export async function generateBatchFrame(project: Project, batchIndex: number, o
 
   try {
     const inputUrls = await collectFrameInputs(project, batch, abortSignal);
-    onStatus(`Generating the first frame of scene ${batch.sceneIndexes[0] || 1}…`);
+    onStatus(`Generating the first frame of scene ${batch.sceneIndexes.length ? Math.min(...batch.sceneIndexes) : 1}…`);
     throwIfAborted(abortSignal);
     const remoteUrl = await generateGptImage25Flare({
       prompt: sceneFramePrompt(project, batch),
@@ -424,9 +511,33 @@ export async function generateBatchVideo(
   durationOverride?: unknown,
   abortSignal?: AbortSignal,
 ) {
+  const key = `${project.id}:${batchIndex}`;
+  const inflight = videoLocks.get(key);
+  if (inflight) return inflight;
+  const job: Promise<{ batch: Batch; prompt: string }> = runGenerateBatchVideo(
+    project,
+    batchIndex,
+    onStatus,
+    durationOverride,
+    abortSignal,
+  ).finally(() => {
+    if (videoLocks.get(key) === job) videoLocks.delete(key);
+  });
+  videoLocks.set(key, job);
+  return job;
+}
+
+async function runGenerateBatchVideo(
+  project: Project,
+  batchIndex: number,
+  onStatus: StatusFn,
+  durationOverride?: unknown,
+  abortSignal?: AbortSignal,
+): Promise<{ batch: Batch; prompt: string }> {
   throwIfAborted(abortSignal);
-  const batch = project.batches.find((item) => item.index === batchIndex);
-  if (!batch) throw new Error(`Batch ${batchIndex} does not exist.`);
+  const foundBatch = project.batches.find((item) => item.index === batchIndex);
+  if (!foundBatch) throw new Error(`Batch ${batchIndex} does not exist.`);
+  const batch: Batch = foundBatch;
   if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     batch.duration = clampClipDuration(project.targetDurationSeconds, batch.duration || 8);
   } else if (durationOverride !== undefined) {
@@ -435,30 +546,67 @@ export async function generateBatchVideo(
     batch.duration = clampClipDuration(batch.duration, 8);
   }
 
+  const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt);
+
+  async function finishExisting(source: Batch) {
+    copyVideoFields(batch, source);
+    await saveProject(project);
+    return { batch, prompt };
+  }
+
+  if (batch.videoPublicPath || batch.videoRemoteUrl) {
+    batch.status = "done";
+    await saveProject(project);
+    return { batch, prompt };
+  }
+
+  const fresh = await getProject(project.id);
+  const freshBatch = fresh?.batches.find((item) => item.index === batchIndex);
+  if (freshBatch && (freshBatch.videoPublicPath || freshBatch.videoRemoteUrl)) {
+    return finishExisting(freshBatch);
+  }
+  if (freshBatch?.kieVideoTaskId) batch.kieVideoTaskId = freshBatch.kieVideoTaskId;
+
+  if (batch.kieVideoTaskId === "pending") {
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      await abortableDelay(1500, abortSignal);
+      const again = await getProject(project.id);
+      const other = again?.batches.find((item) => item.index === batchIndex);
+      if (other && (other.videoPublicPath || other.videoRemoteUrl)) return finishExisting(other);
+      if (other?.kieVideoTaskId && other.kieVideoTaskId !== "pending") {
+        batch.kieVideoTaskId = other.kieVideoTaskId;
+        break;
+      }
+    }
+  }
+
   if (!batch.frameRemoteUrl) {
     await generateBatchFrame(project, batchIndex, onStatus, abortSignal);
   }
 
   throwIfAborted(abortSignal);
   batch.status = "generating_video";
+  if (!batch.kieVideoTaskId) {
+    batch.kieVideoTaskId = "pending";
+  }
   await saveProject(project);
 
   try {
     const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
     throwIfAborted(abortSignal);
-    const prompt = labeledReferencePrompt({
+    const labeled = labeledReferencePrompt({
       images: imageEntries,
       videos: videoEntries,
       style: project.style,
       project,
       sceneIndexes: batch.sceneIndexes,
-      videoPrompt: packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt),
+      videoPrompt: prompt,
     });
 
     const voiceNote = videoEntries[0]?.name ? ` Voice ref: ${videoEntries[0].name}.` : "";
     onStatus(`Animating the video (${batch.duration}s)…${voiceNote}`);
     const remoteUrl = await generateSeedance25ReferenceVideo({
-      prompt,
+      prompt: labeled,
       duration: batch.duration,
       aspectRatio: normalizeAspectRatio(project.aspectRatio),
       referenceImageUrls: imageEntries.map((item) => item.url),
@@ -466,6 +614,11 @@ export async function generateBatchVideo(
       generateAudio: true,
       resolution: "480p",
       abortSignal,
+      existingTaskId: batch.kieVideoTaskId !== "pending" ? batch.kieVideoTaskId : undefined,
+      onTaskCreated: async (taskId) => {
+        batch.kieVideoTaskId = taskId;
+        await saveProject(project);
+      },
     });
     throwIfAborted(abortSignal);
 
@@ -489,9 +642,17 @@ export async function generateBatchVideo(
     });
 
     await saveProject(project);
-    return { batch, prompt };
+    return { batch, prompt: labeled };
   } catch (error) {
-    if (isAbortError(error)) await restoreBatchAfterAbort(project, batch);
+    if (isAbortError(error)) {
+      await restoreBatchAfterAbort(project, batch);
+      throw error;
+    }
+    if (error instanceof Error && /generation failed/i.test(error.message)) {
+      delete batch.kieVideoTaskId;
+      batch.status = "error";
+      await saveProject(project);
+    }
     throw error;
   }
 }

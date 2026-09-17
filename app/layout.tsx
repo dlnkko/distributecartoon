@@ -15,6 +15,7 @@ const syne = Syne({
 export const metadata: Metadata = {
   title: "distribute.to",
   description: "Turn scripts into Pixar or claymation shorts.",
+  manifest: "/manifest.webmanifest",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

@@ -117,6 +117,7 @@ export type Batch = {
   videoFileName?: string;
   videoPublicPath?: string;
   videoRemoteUrl?: string;
+  kieVideoTaskId?: string;
 };
 
 export type ArchivedVideo = {

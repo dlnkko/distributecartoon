@@ -1,6 +1,6 @@
 import { getSecrets } from "./config";
 import { readPublicFile } from "./assets";
-import { abortableDelay, throwIfAborted } from "./abort";
+import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 
 const KIE_BASE = "https://api.kie.ai";
 const KIE_UPLOAD = "https://kieai.redpandaai.co";
@@ -68,26 +68,50 @@ async function createTask(model: string, input: Record<string, unknown>, signal?
   return json.data.taskId;
 }
 
-async function waitForTask(taskId: string, signal?: AbortSignal, kind: "image" | "video" = "image") {
+function extractResultUrl(data: KieTaskResponse["data"]) {
+  if (!data) return "";
+  let parsed: { resultUrls?: string[]; resultUrl?: string; url?: string } = {};
+  if (data.resultJson) {
+    try {
+      parsed = JSON.parse(data.resultJson) as typeof parsed;
+    } catch {
+      parsed = {};
+    }
+  }
+  const extra = data as KieTaskResponse["data"] & { resultUrls?: string[]; resultUrl?: string; url?: string };
+  return parsed.resultUrls?.[0] || parsed.resultUrl || parsed.url || extra.resultUrls?.[0] || extra.resultUrl || extra.url || "";
+}
+
+export async function waitForTask(taskId: string, signal?: AbortSignal, kind: "image" | "video" = "image") {
   const started = Date.now();
   let delay = 2500;
   const limit = kind === "video" ? 15 * 60 * 1000 : 8 * 60 * 1000;
+  let emptySuccess = 0;
   while (Date.now() - started < limit) {
     throwIfAborted(signal);
-    const response = await fetch(`${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
-      headers: authHeaders(),
-      signal,
-    });
-    const json = (await response.json()) as KieTaskResponse;
-    const state = json.data?.state;
-    if (state === "success") {
-      const parsed = json.data?.resultJson ? (JSON.parse(json.data.resultJson) as { resultUrls?: string[] }) : {};
-      const urls: string[] = parsed.resultUrls || [];
-      if (!urls[0]) throw new Error(`Kie finished without a ${kind} URL.`);
-      return urls[0];
-    }
-    if (state === "fail") {
-      throw new Error(json.data?.failMsg || json.msg || `${kind} generation failed.`);
+    try {
+      const response = await fetch(`${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
+        headers: authHeaders(),
+        signal,
+      });
+      if (!response.ok) {
+        await abortableDelay(delay, signal);
+        delay = Math.min(delay + 1000, kind === "video" ? 12000 : 8000);
+        continue;
+      }
+      const json = (await response.json()) as KieTaskResponse;
+      const state = json.data?.state;
+      if (state === "success") {
+        const url = extractResultUrl(json.data);
+        if (url) return url;
+        emptySuccess += 1;
+        if (emptySuccess > 8) throw new Error(`Kie finished without a ${kind} URL.`);
+      } else if (state === "fail") {
+        throw new Error(json.data?.failMsg || json.msg || `${kind} generation failed.`);
+      }
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      if (error instanceof Error && /generation failed|without a /i.test(error.message)) throw error;
     }
     await abortableDelay(delay, signal);
     delay = Math.min(delay + 1000, kind === "video" ? 12000 : 8000);
@@ -156,20 +180,25 @@ export async function generateSeedance25ReferenceVideo(options: {
   generateAudio?: boolean;
   resolution?: "480p" | "720p" | "1080p";
   abortSignal?: AbortSignal;
+  existingTaskId?: string;
+  onTaskCreated?: (taskId: string) => void | Promise<void>;
 }) {
-  const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
-  const input: Record<string, unknown> = {
-    prompt: options.prompt,
-    duration,
-    aspect_ratio: options.aspectRatio || "16:9",
-    resolution: "480p",
-    generate_audio: options.generateAudio !== false,
-    output_format: "mp4",
-    nsfw_checker: false,
-  };
-  if (options.referenceImageUrls?.length) input.reference_image_urls = options.referenceImageUrls.slice(0, 30);
-  if (options.referenceVideoUrls?.length) input.reference_video_urls = options.referenceVideoUrls.slice(0, 1);
-
-  const taskId = await createTask("bytedance/seedance-2-5", input, options.abortSignal);
+  let taskId = options.existingTaskId?.trim() || "";
+  if (!taskId || taskId === "pending") {
+    const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
+    const input: Record<string, unknown> = {
+      prompt: options.prompt,
+      duration,
+      aspect_ratio: options.aspectRatio || "16:9",
+      resolution: "480p",
+      generate_audio: options.generateAudio !== false,
+      output_format: "mp4",
+      nsfw_checker: false,
+    };
+    if (options.referenceImageUrls?.length) input.reference_image_urls = options.referenceImageUrls.slice(0, 30);
+    if (options.referenceVideoUrls?.length) input.reference_video_urls = options.referenceVideoUrls.slice(0, 1);
+    taskId = await createTask("bytedance/seedance-2-5", input, options.abortSignal);
+    await options.onTaskCreated?.(taskId);
+  }
   return waitForTask(taskId, options.abortSignal, "video");
 }

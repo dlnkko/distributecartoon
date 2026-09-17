@@ -17,7 +17,7 @@ export function videoAudioLead() {
 }
 
 export function videoStyleLead(style: VisualStyle, frameTag = "@Image1") {
-  return `${frameTag} is the first frame of this shot. Keep the same ${imageStyleLead(style)} as seen in ${frameTag} for every scene. Do not switch look. ${videoAudioLead()}`;
+  return `${frameTag} is the first frame of this shot, the opening instant of scene 1. Animate forward from that still. Hold the same cinematic camera until CUT. Keep the same ${imageStyleLead(style)} as seen in ${frameTag} for every scene. Do not switch look. ${videoAudioLead()}`;
 }
 
 export function styleGuide(style: VisualStyle) {
@@ -27,7 +27,9 @@ export function styleGuide(style: VisualStyle) {
 function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style\.?\s*/i, "")
-    .replace(/^@Image\d+\s+is the first frame of this shot\.?\s*/i, "")
+    .replace(/^@Image\d+\s+is the first frame of this shot(?:,[^.]+)?\.?\s*/i, "")
+    .replace(/^Animate forward from that still\.?\s*/i, "")
+    .replace(/^Hold the same cinematic camera until CUT\.?\s*/i, "")
     .replace(
       /^Keep (?:the same )?(?:pixar|claymation) style(?: as seen in [@#]\s*Image\s*\d+)?(?: for (?:the entire video|every scene))?\.?\s*/i,
       "",
@@ -42,17 +44,13 @@ function stripVideoStyleLead(text: string) {
 function stripSceneStyleLocks(text: string) {
   return text
     .replace(/\s*Keep the same style(?:, look, lighting and characters)? as seen in [@#]\s*Image\s*\d+\.?\s*/gi, " ")
-    .replace(/\s*@Image\d+\s+is the first frame of this shot\.?\s*/gi, " ")
+    .replace(/\s*@Image\d+\s+is the first frame of this shot(?:,[^.]+)?\.?\s*/gi, " ")
+    .replace(/\s*Animate forward from that still\.?\s*/gi, " ")
+    .replace(/\s*Hold the same cinematic camera until CUT\.?\s*/gi, " ")
     .replace(/\s*No background music\.?\s*/gi, " ")
     .replace(/\s*(?:Natural )?ambient sound and dialogue only\.?\s*/gi, " ")
     .replace(/\s{2,}/g, " ")
     .trim();
-}
-
-function staleImagePrompt(text: string) {
-  return /character sheet|turnaround|cinematic still|stop-motion claymation|Pixar 3D animation|no watermark|no collage/i.test(
-    text,
-  );
 }
 
 function joinPromptParts(parts: Array<string | undefined>) {
@@ -64,12 +62,30 @@ function joinPromptParts(parts: Array<string | undefined>) {
     .replace(/,\s*,/g, ", ");
 }
 
+function appearanceForLook(character: Character) {
+  const name = character.name.trim();
+  let text = (character.description || "").trim();
+  text = text
+    .replace(/\b(claymation|pixar|stop-motion)\s+(style\s+)?/gi, "")
+    .replace(/\b(engaged in|involved in)\b[\s\S]*/gi, "")
+    .replace(/\b(fight|fighting|scuffle|brawl|chase|chasing|wrestling|playing with|interacting)\b[\s\S]*/gi, "")
+    .replace(/\b(?:with|and|versus|vs\.?)\s+(?:a|an|the)\s+[\w'-]+/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[,.\s]+|[,.\s]+$/g, "")
+    .trim();
+  if (!text || text.toLowerCase() === name.toLowerCase()) return name;
+  return `${name}, ${text}`;
+}
+
+const SOLO_LOOK =
+  "exactly one character in frame, isolated solo portrait, no other people or animals, not a scene, not a fight, not a two-shot, no interaction";
+
 export function characterLookPrompt(character: Character, style: VisualStyle) {
   return joinPromptParts([
     imageStyleLead(style),
-    "one character only",
-    character.name,
-    character.description,
+    `solo portrait of ${character.name} only`,
+    appearanceForLook(character),
+    SOLO_LOOK,
     "single three-quarter standing pose, full character clearly visible, face hair wardrobe and body readable",
     "looking at camera, even studio lighting",
     "plain light gray seamless background",
@@ -80,11 +96,11 @@ export function characterLookPrompt(character: Character, style: VisualStyle) {
 export function characterLookFromPhotoPrompt(character: Character, style: VisualStyle) {
   return joinPromptParts([
     imageStyleLead(style),
-    "adapt this real photo into that style",
-    "keep the same identity as the reference photo",
-    "one character only",
-    character.name,
-    character.description,
+    `image-to-image: restyle only the main subject as ${character.name}`,
+    "if the photo shows more than one subject, keep only this character and omit everyone else",
+    "keep the same identity as that one subject",
+    appearanceForLook(character),
+    SOLO_LOOK,
     "single three-quarter standing pose, full character clearly visible",
     "plain light gray seamless background, even studio lighting",
     "one image, one pose, no grid, no collage, no character sheet",
@@ -94,10 +110,11 @@ export function characterLookFromPhotoPrompt(character: Character, style: Visual
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
   return joinPromptParts([
     imageStyleLead(style),
-    `Keep this same character, ${character.name}`,
+    `Keep this same character, ${character.name}, alone`,
     "apply only these look changes:",
     notes.trim(),
-    "single three-quarter standing pose, one character only, full character clearly visible",
+    SOLO_LOOK,
+    "single three-quarter standing pose, full character clearly visible",
     "plain light gray seamless background, even studio lighting",
     "one image, one pose, no grid, no collage, no character sheet, no multiple expressions",
   ]);
@@ -120,20 +137,52 @@ function mentionIndex(text: string, name: string) {
   return typeof match?.index === "number" ? match.index : -1;
 }
 
+function firstSceneIndex(batch: Batch) {
+  const indexes = batch.sceneIndexes.map((index) => Number(index)).filter((index) => Number.isFinite(index) && index > 0);
+  return indexes.length ? Math.min(...indexes) : 1;
+}
+
+export function cinematicCamera(scene?: Scene, fallback = "wide shot, eye level") {
+  const raw = (scene?.camera || "").replace(/\.+$/g, "").trim();
+  if (!raw) return fallback;
+  const hasSize =
+    /\b(extreme wide|establishing|ews|wide|full shot|long shot|medium wide|cowboy|medium close-?up|medium|close-?up|ecu|extreme close|insert|two[- ]shot|ots|over[- ]the[- ]shoulder|pov)\b/i.test(
+      raw,
+    );
+  const hasAngle =
+    /\b(eye[- ]level|high angle|low angle|dutch|canted|bird'?s[- ]eye|worm'?s[- ]eye|overhead|ground level|top[- ]down|side angle|lateral)\b/i.test(
+      raw,
+    );
+  const parts = [raw];
+  if (!hasSize) parts.unshift("wide shot");
+  if (!hasAngle) parts.push("eye level");
+  return parts.join(", ");
+}
+
+function openingAction(scene?: Scene) {
+  const summary = (scene?.summary || scene?.title || "").trim();
+  if (!summary) return "the scene is just beginning";
+  const beat = summary
+    .split(/\b(?:then|suddenly|until|before|after that|later|meanwhile|cut to)\b/i)[0]
+    .split(/[.!;]/)[0]
+    .trim();
+  return beat || summary;
+}
+
 export function openingFrameCharacters(project: Project, batch: Batch): string[] {
-  const scene = sceneByIndex(project, batch.sceneIndexes[0]);
+  const scene = sceneByIndex(project, firstSceneIndex(batch));
   if (!scene) return [];
   const leads = (scene.characterNames.length
     ? scene.characterNames
     : project.characters.filter((character) => !character.isExtra).map((character) => character.name)
   ).filter((name, index, all) => name.trim() && all.findIndex((other) => other.toLowerCase() === name.toLowerCase()) === index);
-  const blob = `${scene.summary} ${scene.title} ${scene.camera}`;
+  const beat = openingAction(scene);
   const hits = leads
-    .map((name) => ({ name, at: mentionIndex(blob, name) }))
+    .map((name) => ({ name, at: mentionIndex(beat, name) }))
     .filter((item) => item.at >= 0)
     .sort((a, b) => a.at - b.at);
-  const twoShot = /\b(two[- ]shot|2-shot|ots|over[- ]the[- ]shoulder)\b/i.test(scene.camera || "");
-  if (hits.length) return (twoShot ? hits.slice(0, 2) : hits.slice(0, 1)).map((item) => item.name);
+  if (hits.length >= 2) return hits.slice(0, 2).map((item) => item.name);
+  if (hits.length) return [hits[0].name];
   const speaker = scene.dialogue[0]?.speaker?.trim() || "";
   if (speaker) {
     const match = leads.find(
@@ -146,38 +195,21 @@ export function openingFrameCharacters(project: Project, batch: Batch): string[]
 
 export function sceneFramePrompt(project: Project, batch: Batch) {
   const lead = imageStyleLead(project.style);
-  const firstIndex = batch.sceneIndexes[0];
+  const firstIndex = firstSceneIndex(batch);
   const scene = sceneByIndex(project, firstIndex);
-  const camera = (scene?.camera || batch.cameraPlan || "wide shot").replace(/\.+$/g, "").trim() || "wide shot";
+  const camera = cinematicCamera(scene);
   const opening = openingFrameCharacters(project, batch);
   const looks = opening
     .map((name) => {
       const character = project.characters.find((item) => item.name.toLowerCase() === name.toLowerCase());
-      return character?.description ? `${character.name}, ${character.description}` : name;
+      return character ? appearanceForLook(character) : name;
     })
     .filter(Boolean)
     .join(", ");
-  const openingSet = new Set(opening.map((name) => name.toLowerCase()));
-  const firstLine = scene?.dialogue[0];
-  const line =
-    firstLine && openingSet.has(firstLine.speaker.trim().toLowerCase())
-      ? spokenCue(speakerLabel(project, firstLine.speaker), firstLine.line)
-      : "";
+  const beat = openingAction(scene);
   const onlyShot = opening.length
-    ? `Only ${opening.join(" and ")} in this shot. Do not add any other characters.`
-    : "Do not add any character who is not performing this opening action.";
-  const fallback = joinPromptParts([camera, looks, scene?.location, scene?.summary, line, onlyShot]);
-  const stored = (batch.framePrompt || "").trim();
-  let rest = "";
-  if (stored && !staleImagePrompt(stored)) {
-    rest = stripVideoStyleLead(stored);
-    if (!/^(wide|medium|close-up|close up|insert|two-shot|ots|high angle|low angle|tracking|lateral|dutch|pov|eye[- ]level)\b/i.test(rest)) {
-      rest = joinPromptParts([camera, rest]);
-    }
-    rest = joinPromptParts([rest, onlyShot]);
-  } else {
-    rest = fallback;
-  }
+    ? `Only ${opening.join(" and ")} in this opening frame. Do not add any other characters.`
+    : "Do not add any character who is not in this opening beat.";
   const refs = promptReadyReferences(project, firstIndex ? [firstIndex] : [])
     .map((item) =>
       item.kind === "logo"
@@ -187,9 +219,16 @@ export function sceneFramePrompt(project: Project, batch: Batch) {
     .join(", ");
   return joinPromptParts([
     lead,
-    rest,
+    "cinematic still",
+    camera,
+    `opening instant of scene ${firstIndex}`,
+    beat,
+    looks,
+    scene?.location,
+    onlyShot,
     refs,
-    "Keep the opening character consistent with the attached look reference. If a previous frame is attached, keep location and lighting continuity. English prompt only.",
+    "frozen first frame at the very start of this scene, before later action, so the animation can continue from this still",
+    "match the attached character look, hold eyelines and blocking, English prompt only",
   ]);
 }
 
@@ -312,14 +351,15 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], exis
     : sceneIndexes
         .map((index, i) => {
           const scene = sceneByIndex(project, index);
-          const camera = scene?.camera || "Wide shot, eye level";
+          const camera = cinematicCamera(scene);
           const action = scene?.summary || "";
           const lines = (scene?.dialogue || [])
             .filter((line) => line.speaker && line.line)
             .map((line) => spokenCue(speakerLabel(project, line.speaker), line.line))
             .join(" ");
           const seconds = Math.max(2, Math.round(scene?.estimatedSeconds || 4));
-          return `SCENE ${i + 1} (${seconds}s): ${camera}. ${action} ${lines}`.replace(/\s+/g, " ").trim();
+          const start = i === 0 ? "Start from the first-frame still. " : "";
+          return `SCENE ${i + 1} (${seconds}s): ${camera}. ${start}${action} ${lines}`.replace(/\s+/g, " ").trim();
         })
         .join(" CUT. ");
   const timed = injectSceneDurations(

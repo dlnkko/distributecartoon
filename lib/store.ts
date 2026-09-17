@@ -57,7 +57,7 @@ export function normalizeProject(project: Project): Project {
     project.workflowStep = inferWorkflowStep(project);
   }
   ensureReferenceSlots(project);
-  if (project.title === "Nuevo corto") project.title = "New short";
+  if (project.title === "Nuevo corto" || project.title === "New short") project.title = "New video";
   if (project.scriptText || project.scenes.length) {
     syncReferenceInclusion(project);
   }
@@ -141,7 +141,7 @@ export async function createProject(
   const stamp = nowIso();
   const project: Project = {
     id: createId("proj"),
-    title: "New short",
+    title: "New video",
     style,
     aspectRatio: normalizeAspectRatio(aspectRatio),
     scriptName: "",

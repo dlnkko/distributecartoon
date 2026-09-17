@@ -106,6 +106,80 @@ function isFileScript(name?: string) {
   return /\.(pdf|docx?|txt|md)$/i.test(name);
 }
 
+async function registerNotifyWorker() {
+  if (!("serviceWorker" in navigator)) return null;
+  try {
+    return await navigator.serviceWorker.register("/sw.js");
+  } catch {
+    return null;
+  }
+}
+
+async function showReadyNotification(title: string) {
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const options: NotificationOptions = {
+    body: `${title || "Your video"} has finished generating.`,
+    tag: "distribute-to-ready",
+  };
+  try {
+    const registration = await navigator.serviceWorker?.ready;
+    if (registration?.showNotification) {
+      await registration.showNotification("Your video is ready", options);
+      return;
+    }
+  } catch {
+    // Fall through to the page notification.
+  }
+  new Notification("Your video is ready", options);
+}
+
+function missingCastLooks(project: Project) {
+  return project.characters.filter(
+    (character) => !character.isExtra && !(character.portraitPublicPath || character.portraitRemoteUrl),
+  );
+}
+
+async function fetchCast(projectId: string, signal: AbortSignal) {
+  const res = await fetch("/api/cast", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ projectId }),
+    signal,
+  });
+  return (await res.json()) as { project?: Project; error?: string };
+}
+
+async function loadProjectById(projectId: string, signal: AbortSignal) {
+  const res = await fetch(`/api/projects?id=${encodeURIComponent(projectId)}`, { signal });
+  const json = (await res.json()) as Project | { error?: string };
+  if (json && "id" in json && json.id) return json as Project;
+  return null;
+}
+
+async function requestCastLooks(projectId: string, signal: AbortSignal) {
+  let json: { project?: Project; error?: string };
+  try {
+    json = await fetchCast(projectId, signal);
+  } catch (error) {
+    if ((error as Error).name === "AbortError") throw error;
+    const recovered = await loadProjectById(projectId, signal);
+    json = recovered
+      ? { project: recovered }
+      : { error: error instanceof Error ? error.message : "Couldn't cast those characters." };
+  }
+  if (json.project && missingCastLooks(json.project).length) {
+    try {
+      const retry = await fetchCast(projectId, signal);
+      if (retry.project) json = retry;
+    } catch (error) {
+      if ((error as Error).name === "AbortError") throw error;
+      const recovered = await loadProjectById(projectId, signal);
+      if (recovered) json = { project: recovered };
+    }
+  }
+  return json;
+}
+
 export function StudioApp() {
   const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
@@ -122,9 +196,15 @@ export function StudioApp() {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const refInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const projectRef = useRef<Project | null>(null);
+  const settingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notifyReadyRef = useRef(false);
+  const [notifyReady, setNotifyReady] = useState(false);
+  const [notifyHint, setNotifyHint] = useState("");
 
   useEffect(() => {
     void boot();
+    void registerNotifyWorker();
   }, []);
 
   useEffect(() => {
@@ -141,10 +221,30 @@ export function StudioApp() {
   }, [project?.id]);
 
   function remember(next: Project) {
+    projectRef.current = next;
     setProject(next);
     setProjects((current) => {
       const rest = current.filter((item) => item.id !== next.id);
       return [next, ...rest];
+    });
+  }
+
+  async function persistLatestSettings() {
+    if (settingsTimer.current) {
+      clearTimeout(settingsTimer.current);
+      settingsTimer.current = null;
+    }
+    const current = projectRef.current;
+    if (!current) return;
+    await fetch("/api/projects", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        projectId: current.id,
+        style: current.style,
+        aspectRatio: current.aspectRatio,
+        targetDurationSeconds: current.targetDurationSeconds,
+      }),
     });
   }
 
@@ -153,6 +253,7 @@ export function StudioApp() {
     if (meRes.ok) setProfile((await meRes.json()) as Profile);
     const list = (await projectsRes.json()) as Project[];
     if (list[0]) {
+      projectRef.current = list[0];
       setProjects(list);
       setProject(list[0]);
       return;
@@ -163,6 +264,7 @@ export function StudioApp() {
       body: JSON.stringify({ style: "pixar" }),
     });
     const fresh = (await created.json()) as Project;
+    projectRef.current = fresh;
     setProjects([fresh]);
     setProject(fresh);
   }
@@ -181,21 +283,42 @@ export function StudioApp() {
   }
 
   async function patchProject(payload: Record<string, unknown>) {
-    if (!project) return project;
+    const current = projectRef.current;
+    if (!current) return current;
+    await persistLatestSettings();
+    const latest = projectRef.current ?? current;
     const res = await fetch("/api/projects", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: project.id, ...payload }),
+      body: JSON.stringify({
+        projectId: latest.id,
+        style: latest.style,
+        aspectRatio: latest.aspectRatio,
+        targetDurationSeconds: latest.targetDurationSeconds,
+        ...payload,
+      }),
     });
     const json = (await res.json()) as Project;
-    remember(json);
-    return json;
+    const live = projectRef.current;
+    const merged = {
+      ...json,
+      ...(live && live.id === json.id
+        ? {
+            style: live.style,
+            aspectRatio: live.aspectRatio,
+            targetDurationSeconds: live.targetDurationSeconds,
+          }
+        : {}),
+    };
+    remember(merged);
+    return merged;
   }
 
   async function run(mode: AgentMode) {
     if (!project || busy) return;
     setBusy(true);
-    setStatus(mode === "plan" ? "Splitting into scenes…" : "Generating video…");
+    if (mode === "produce") setStatus("Generating video…");
+    else setStatus("");
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -224,7 +347,9 @@ export function StudioApp() {
           const line = chunk.replace(/^data: /, "").trim();
           if (!line) continue;
           const event = JSON.parse(line) as { type: string; text?: string; project?: Project };
-          if (event.type === "status" && event.text) setStatus(event.text);
+          if (event.type === "status" && event.text && mode === "produce") {
+            setStatus(event.text);
+          }
           if (event.type === "project" && event.project) {
             remember(event.project);
             if (event.project.scenes.length) setScenesDraft(event.project.scenes.map(cloneScene));
@@ -235,7 +360,14 @@ export function StudioApp() {
           }
         }
       }
-      if (!lastError) setStatus("");
+      if (!lastError) {
+        setStatus("");
+        const latest = projectRef.current;
+        const videoReady = Boolean(latest?.batches.some((batch) => batch.videoPublicPath));
+        if (mode === "produce" && notifyReadyRef.current && videoReady) {
+          void showReadyNotification(latest?.title || "New video");
+        }
+      }
     } catch (error) {
       if ((error as Error).name === "AbortError") setStatus("Stopped.");
       else setStatus(error instanceof Error ? error.message : "Request failed.");
@@ -320,10 +452,8 @@ export function StudioApp() {
       return;
     }
     setBusy(true);
-    setStatus("Saving script…");
     if (uploaded && !text) {
       await patchProject({ workflowStep: "setup" });
-      setStatus("");
       setBusy(false);
       return;
     }
@@ -335,7 +465,6 @@ export function StudioApp() {
     const json = (await saved.json()) as { project?: Project; error?: string };
     if (json.project) {
       remember(json.project);
-      setStatus("");
     } else {
       setStatus(json.error || "Couldn't save that script.");
     }
@@ -351,8 +480,9 @@ export function StudioApp() {
   }
 
   async function continueFromSetup() {
-    if (!project || busy) return;
-    const seconds = Math.min(300, Math.max(5, Math.round(project.targetDurationSeconds || 15)));
+    const current = projectRef.current;
+    if (!current || busy) return;
+    const seconds = Math.min(300, Math.max(5, Math.round(current.targetDurationSeconds || 15)));
     await patchProject({ targetDurationSeconds: seconds, workflowStep: "setup" });
     await run("plan");
   }
@@ -360,7 +490,6 @@ export function StudioApp() {
   async function continueFromReview() {
     if (!project || busy) return;
     setBusy(true);
-    setStatus("Saving scenes…");
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -380,17 +509,13 @@ export function StudioApp() {
         await run("produce");
         return;
       }
-      setStatus("Casting characters…");
-      const res = await fetch("/api/cast", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: saved.id }),
-        signal: controller.signal,
-      });
-      const json = (await res.json()) as { project?: Project; error?: string };
+      const json = await requestCastLooks(saved.id, controller.signal);
       if (json.project) {
         remember(json.project);
-        setStatus("");
+        const missing = json.project.characters.filter(
+          (character) => !character.isExtra && !(character.portraitPublicPath || character.portraitRemoteUrl),
+        );
+        setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
       } else {
         setStatus(json.error || "Couldn't cast those characters.");
       }
@@ -406,7 +531,7 @@ export function StudioApp() {
   async function reviseCastLook(characterId: string, notes: string) {
     if (!project || busy) return;
     setBusy(true);
-    setStatus("Updating look…");
+    abortRef.current?.abort();
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -436,7 +561,6 @@ export function StudioApp() {
   async function continueFromCast() {
     if (!project || busy) return;
     setBusy(true);
-    setStatus("Saving looks…");
     try {
       const res = await fetch("/api/cast", {
         method: "POST",
@@ -459,27 +583,56 @@ export function StudioApp() {
     await run("produce");
   }
 
-  async function changeStyle(style: VisualStyle) {
-    if (!project || project.style === style) return;
-    await patchProject({ style });
+  function applySettings(patch: { style?: VisualStyle; aspectRatio?: AspectRatio; targetDurationSeconds?: number }) {
+    const current = projectRef.current;
+    if (!current) return;
+    const next = { ...current, ...patch };
+    remember(next);
+    if (settingsTimer.current) clearTimeout(settingsTimer.current);
+    settingsTimer.current = setTimeout(() => {
+      settingsTimer.current = null;
+      void persistLatestSettings();
+    }, 160);
   }
 
-  async function changeAspect(aspectRatio: AspectRatio) {
-    if (!project || project.aspectRatio === aspectRatio) return;
-    await patchProject({ aspectRatio });
+  function changeStyle(style: VisualStyle) {
+    if (projectRef.current?.style === style) return;
+    applySettings({ style });
   }
 
-  async function changeDuration(seconds: number) {
-    if (!project) return;
+  function changeAspect(aspectRatio: AspectRatio) {
+    if (projectRef.current?.aspectRatio === aspectRatio) return;
+    applySettings({ aspectRatio });
+  }
+
+  function changeDuration(seconds: number) {
     const next = Math.min(300, Math.max(5, Math.round(seconds)));
-    if (project.targetDurationSeconds === next) return;
-    await patchProject({ targetDurationSeconds: next });
+    if (projectRef.current?.targetDurationSeconds === next) return;
+    applySettings({ targetDurationSeconds: next });
   }
 
   async function logout() {
     await createClient().auth.signOut();
     router.replace("/login");
     router.refresh();
+  }
+
+  async function enableReadyNotify() {
+    if (typeof Notification === "undefined") {
+      setNotifyHint("Notifications are not supported in this browser.");
+      return;
+    }
+    await registerNotifyWorker();
+    const permission = await Notification.requestPermission();
+    if (permission !== "granted") {
+      notifyReadyRef.current = false;
+      setNotifyReady(false);
+      setNotifyHint("Allow notifications in your browser to get pinged when the video is ready.");
+      return;
+    }
+    notifyReadyRef.current = true;
+    setNotifyReady(true);
+    setNotifyHint("We'll notify you when the video is ready.");
   }
 
   const history = useMemo(() => historyFromProjects(projects), [projects]);
@@ -514,10 +667,7 @@ export function StudioApp() {
         }`}
       >
         <div className="flex items-center justify-between px-5 pb-3 pt-5">
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-[var(--accent)]">studio</p>
-            <h1 className="display text-2xl">distribute.to</h1>
-          </div>
+          <h1 className="display text-2xl">distribute.to</h1>
           <button type="button" className="rounded-xl px-2 py-1 text-sm md:hidden" onClick={() => setSidebarOpen(false)}>
             Close
           </button>
@@ -527,7 +677,7 @@ export function StudioApp() {
           onClick={() => void createNew()}
           className="btn-primary mx-4 mb-4 rounded-2xl bg-[var(--ink)] px-4 py-2.5 text-sm font-medium text-white"
         >
-          New short
+          New video
         </button>
 
         <div className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
@@ -539,6 +689,7 @@ export function StudioApp() {
                   key={item.id}
                   type="button"
                   onClick={() => {
+                    projectRef.current = item;
                     setProject(item);
                     setStatus("");
                     setSidebarOpen(false);
@@ -643,9 +794,6 @@ export function StudioApp() {
           </button>
           <div className="min-w-0 flex-1">
             <h2 className="display truncate text-xl md:text-2xl">{project.title}</h2>
-            <p className="text-xs capitalize text-[var(--muted)]">
-              {project.style} · {project.aspectRatio} · {project.targetDurationSeconds || 15}s
-            </p>
           </div>
         </header>
 
@@ -715,21 +863,15 @@ export function StudioApp() {
               project={project}
               busy={busy}
               status={status}
+              notifyReady={notifyReady}
+              notifyHint={notifyHint}
+              onNotifyMe={() => void enableReadyNotify()}
               onStop={() => void stopProcessing()}
               onEditScenes={() => void patchProject({ workflowStep: "review" })}
               onExpand={(item) => setExpanded(item)}
             />
           ) : null}
 
-          {busy && step !== "produce" ? (
-            <p className="mt-4 flex items-center gap-2 text-sm text-[var(--muted)]">
-              <span className="h-2 w-2 rounded-full bg-[var(--accent)]" style={{ animation: "pulse-dot 1s infinite" }} />
-              {status || "Working…"}
-            <button type="button" onClick={() => void stopProcessing()} className="text-[var(--danger)]">
-                Stop
-              </button>
-            </p>
-          ) : null}
           {!busy && status && step !== "produce" ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
         </div>
       </section>
@@ -885,46 +1027,66 @@ function ScriptStep({
   onContinue: () => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
+  const infoRef = useRef<HTMLDivElement>(null);
   const typing = Boolean(value.trim());
   const uploadLocked = busy || typing;
   const pasteLocked = busy || fileAttached;
   const canContinue = fileAttached || typing;
 
+  useEffect(() => {
+    if (!infoOpen) return;
+    function close(event: MouseEvent) {
+      if (infoRef.current && !infoRef.current.contains(event.target as Node)) setInfoOpen(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [infoOpen]);
+
   return (
     <div className="flex flex-1 flex-col">
-      <div className="flex items-start gap-2">
-        <h3 className="display text-3xl">Add the script</h3>
-        <div className="relative mt-1.5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h3 className="display text-3xl md:text-4xl">Add the script</h3>
+        <div className="relative" ref={infoRef}>
           <button
             type="button"
             aria-label="Script input info"
             aria-expanded={infoOpen}
             onClick={() => setInfoOpen((open) => !open)}
-            className="grid size-5 place-items-center rounded-full border border-stone-300 text-[11px] font-semibold text-stone-500 transition hover:border-stone-400 hover:text-[var(--ink)]"
+            className={`grid size-7 place-items-center rounded-full text-[13px] font-semibold shadow-sm ${
+              infoOpen
+                ? "bg-[var(--ink)] text-white"
+                : "border border-stone-300 bg-white text-stone-500 hover:border-stone-400 hover:bg-stone-50 hover:text-[var(--ink)]"
+            }`}
           >
-            i
+            <InfoIcon />
           </button>
           {infoOpen ? (
-            <div className="absolute left-7 top-0 z-10 w-64 rounded-2xl border border-[var(--line)] bg-white p-3 text-xs leading-5 text-[var(--muted)] shadow-lg">
-              You can add the script in only one way: upload a PDF or Word file, or paste the text. Not both.
-              <button type="button" className="mt-2 block text-[11px] font-medium text-[var(--ink)]" onClick={() => setInfoOpen(false)}>
+            <div className="absolute left-0 top-[calc(100%+12px)] z-20 w-[min(18.5rem,calc(100vw-3rem))] rounded-2xl border border-[var(--line)] bg-white p-4 text-sm leading-6 text-[var(--ink)] shadow-[0_18px_50px_rgba(28,25,23,0.12)] sm:left-[calc(100%+12px)] sm:top-1/2 sm:-translate-y-1/2">
+              <p>
+                You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.
+              </p>
+              <button
+                type="button"
+                onClick={() => setInfoOpen(false)}
+                className="btn-secondary mt-3 rounded-full px-3 py-1.5 text-xs font-medium"
+              >
                 Got it
               </button>
             </div>
           ) : null}
         </div>
       </div>
-      <p className="mt-1 text-sm text-[var(--muted)]">Upload a PDF or Word file, or paste the script or storyboard.</p>
+      <p className="mt-2 text-sm text-[var(--muted)]">Upload a PDF or Word file, or type the script or storyboard.</p>
 
       <button
         type="button"
         onClick={onPickFile}
         disabled={uploadLocked}
-        title={typing ? "Clear the pasted text to upload a file." : undefined}
-        className={`mt-6 flex min-h-[140px] flex-col items-center justify-center gap-2 rounded-[28px] border border-dashed px-6 text-center transition ${
+        title={typing ? "Clear the typed text to upload a file." : undefined}
+        className={`mt-6 flex min-h-[168px] flex-col items-center justify-center gap-2 rounded-[28px] border border-dashed px-6 text-center ${
           uploadLocked
             ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400 opacity-60"
-            : "border-stone-300 bg-white hover:border-stone-400 hover:bg-stone-50"
+            : "border-stone-300 bg-white hover:border-stone-400 hover:bg-stone-50 hover:shadow-[0_12px_32px_rgba(28,25,23,0.06)]"
         }`}
       >
         <span className="grid size-12 place-items-center rounded-2xl bg-stone-100 text-stone-500">
@@ -934,18 +1096,18 @@ function ScriptStep({
         <span className="text-xs text-[var(--muted)]">{fileAttached ? "File attached" : ".pdf, .doc, .docx"}</span>
       </button>
       {fileAttached ? (
-        <button type="button" disabled={busy} onClick={onClearFile} className="mt-2 self-start text-xs text-[var(--muted)] hover:text-[var(--ink)]">
+        <button type="button" disabled={busy} onClick={onClearFile} className="btn-secondary mt-2 self-start rounded-full px-3 py-1.5 text-xs">
           Remove file
         </button>
       ) : null}
 
-      <label className="mt-5 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Or paste it here</label>
+      <label className="mt-6 text-sm font-medium text-[var(--muted)]">or type it here</label>
       <textarea
         ref={textareaRef}
         value={value}
         disabled={pasteLocked}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={fileAttached ? "Remove the file to paste the script instead." : "Paste the full script or storyboard…"}
+        placeholder={fileAttached ? "Remove the file to type the script instead." : "Type or paste the full script or storyboard…"}
         className="mt-2 min-h-[160px] max-h-[280px] w-full resize-none overflow-y-auto rounded-[24px] border border-[var(--line)] bg-white px-4 py-3 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
       />
 
@@ -993,19 +1155,22 @@ function SetupStep({
   onContinue: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-6">
+    <div className="flex flex-1 flex-col gap-5">
       <div>
-        <h3 className="display text-3xl">Look and length</h3>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Photos are optional. Character photos become the cast looks. Products, locations, and logos are only used if the
-          script mentions them.
+        <h3 className="display text-3xl md:text-4xl">Look and length</h3>
+        <p className="mt-2 text-sm text-[var(--muted)]">
+          Photos are optional. For a real person or animal, type the role from the script so we restyle that photo as
+          that character. Products, locations, and logos are only used if the script mentions them.
         </p>
       </div>
 
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Characters · up to 4</p>
-        <p className="mb-2 text-xs text-[var(--muted)]">
-          Real photos of people or animals. We adapt them to Pixar or claymation at casting.
+      <section className="setup-card">
+        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
+          Real-life characters to adapt · up to 4
+        </p>
+        <p className="mt-1 mb-4 text-sm text-[var(--muted)]">
+          One real photo per character. Type the role from the script (Cat, Dog, Maya). We restyle that photo as that
+          character at casting. Leave empty if you do not have a photo.
         </p>
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {characters.map((slot, index) => (
@@ -1022,9 +1187,9 @@ function SetupStep({
         </div>
       </section>
 
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <section className="setup-card">
+        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
           {products.map((slot) => (
             <UploadTile
               key={slot.id}
@@ -1037,9 +1202,9 @@ function SetupStep({
         </div>
       </section>
 
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Location · up to 2</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <section className="setup-card">
+        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Location · up to 2</p>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {locations.map((slot) => (
             <UploadTile
               key={slot.id}
@@ -1052,9 +1217,9 @@ function SetupStep({
         </div>
       </section>
 
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Logo · 1</p>
-        <div className="grid grid-cols-1 gap-2 sm:max-w-[240px]">
+      <section className="setup-card">
+        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Logo · 1</p>
+        <div className="grid grid-cols-1 gap-3 sm:max-w-[260px]">
           {logos.map((slot) => (
             <UploadTile
               key={slot.id}
@@ -1067,36 +1232,41 @@ function SetupStep({
         </div>
       </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Style</p>
-          <Segmented
-            value={project.style}
-            options={[
-              { id: "pixar", label: "Pixar" },
-              { id: "claymation", label: "Claymation" },
-            ]}
-            onChange={(value) => onStyle(value as VisualStyle)}
-          />
-        </div>
-        <div>
-          <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Resolution</p>
-          <AspectPicker value={project.aspectRatio || "16:9"} onChange={onAspect} />
+      <section className="setup-card">
+        <div className="grid gap-6 sm:grid-cols-2">
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Style</p>
+            <Segmented
+              value={project.style}
+              options={[
+                { id: "pixar", label: "Pixar" },
+                { id: "claymation", label: "Claymation" },
+              ]}
+              onChange={(value) => onStyle(value as VisualStyle)}
+            />
+          </div>
+          <div>
+            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Resolution</p>
+            <AspectPicker value={project.aspectRatio || "16:9"} onChange={onAspect} />
+          </div>
         </div>
       </section>
 
-      <section>
-        <p className="mb-2 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Video length</p>
-        <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
-        <p className="mt-2 text-xs text-[var(--muted)]">
-          Whole short, 5 to 300 seconds. Up to 30s generates in one take; longer shorts continue in sequence.
+      <section className="setup-card">
+        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Video length</p>
+        <DurationControl
+          value={project.targetDurationSeconds || 15}
+          resetKey={project.id}
+          disabled={busy}
+          onChange={onDuration}
+        />
+        <p className="mt-4 text-sm text-[var(--muted)]">
+          Whole video, 5 to 300 seconds. Up to 30s generates in one take; longer videos continue in sequence.
         </p>
       </section>
 
       <div className="mt-auto flex items-center justify-between pt-2">
-        <button type="button" disabled={busy} onClick={onBack} className="text-sm text-[var(--muted)]">
-          Back
-        </button>
+        <BackButton disabled={busy} onClick={onBack} />
         <button
           type="button"
           disabled={busy}
@@ -1246,9 +1416,9 @@ function ReviewStep({
       </p>
 
       <div className="mt-auto flex items-center justify-between pt-2">
-        <button type="button" disabled={busy} onClick={onBack} className="text-sm text-[var(--muted)]">
+        <BackButton disabled={busy} onClick={onBack}>
           {hasVideo ? "Back to video" : "Back"}
-        </button>
+        </BackButton>
         <button
           type="button"
           disabled={busy || scenes.length === 0}
@@ -1283,8 +1453,8 @@ function CastStep({
       <div>
         <h3 className="display text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Each look is one pose on a plain background. If you uploaded a real photo, we adapted it to this style. Approve
-          them, or change each character once.
+          Each look is that character alone: one pose, plain background. Never a scene with someone else. If you uploaded
+          a real photo for that role, we adapted it to this style. Approve them, or change each character once.
         </p>
       </div>
 
@@ -1337,9 +1507,7 @@ function CastStep({
       </div>
 
       <div className="mt-auto flex items-center justify-between pt-2">
-        <button type="button" disabled={busy} onClick={onBack} className="text-sm text-[var(--muted)]">
-          Back
-        </button>
+        <BackButton disabled={busy} onClick={onBack} />
         <button
           type="button"
           disabled={busy || !ready}
@@ -1357,6 +1525,9 @@ function ProduceStep({
   project,
   busy,
   status,
+  notifyReady,
+  notifyHint,
+  onNotifyMe,
   onStop,
   onEditScenes,
   onExpand,
@@ -1364,6 +1535,9 @@ function ProduceStep({
   project: Project;
   busy: boolean;
   status: string;
+  notifyReady: boolean;
+  notifyHint: string;
+  onNotifyMe: () => void;
   onStop: () => void;
   onEditScenes: () => void;
   onExpand: (item: { src: string; poster?: string; label?: string; downloadName?: string }) => void;
@@ -1385,18 +1559,22 @@ function ProduceStep({
           ) : null}
         </div>
         {busy ? (
-          <button type="button" onClick={onStop} className="rounded-full border border-[var(--danger)]/20 bg-white px-3 py-1.5 text-sm text-[var(--danger)]">
-            Stop
-          </button>
+          <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row">
+            <button
+              type="button"
+              onClick={onNotifyMe}
+              disabled={notifyReady}
+              className="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-70"
+            >
+              {notifyReady ? "Notifications on" : "Notify me when ready"}
+            </button>
+            <button type="button" onClick={onStop} className="rounded-full border border-[var(--danger)]/20 bg-white px-3 py-1.5 text-sm text-[var(--danger)]">
+              Stop
+            </button>
+          </div>
         ) : null}
       </div>
-
-      {busy && status ? (
-        <p className="flex items-center gap-2 text-sm text-[var(--muted)]">
-          <span className="h-2 w-2 rounded-full bg-[var(--accent)]" style={{ animation: "pulse-dot 1s infinite" }} />
-          {status}
-        </p>
-      ) : null}
+      {busy && notifyHint ? <p className="text-right text-xs text-[var(--muted)]">{notifyHint}</p> : null}
       {!busy && status ? <p className="text-sm text-[var(--danger)]">{status}</p> : null}
 
       <div className="space-y-6">
@@ -1453,37 +1631,52 @@ function ProduceStep({
 
 function DurationControl({
   value,
+  resetKey,
   disabled,
   onChange,
 }: {
   value: number;
+  resetKey: string;
   disabled?: boolean;
   onChange: (seconds: number) => void;
 }) {
+  const [seconds, setSeconds] = useState(value);
   const [text, setText] = useState(String(value));
+  const secondsRef = useRef(value);
+
   useEffect(() => {
+    secondsRef.current = value;
+    setSeconds(value);
     setText(String(value));
-  }, [value]);
+    // Keep local +/- as the source of truth while this project is open.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resetKey]);
 
   function commitNumber(raw: string | number) {
     const parsed = Math.round(Number(raw));
     if (!Number.isFinite(parsed)) {
-      setText(String(value));
+      setText(String(secondsRef.current));
       return;
     }
     const next = Math.min(300, Math.max(5, parsed));
+    secondsRef.current = next;
+    setSeconds(next);
     setText(String(next));
     onChange(next);
   }
 
+  function bump(delta: number) {
+    commitNumber(secondsRef.current + delta);
+  }
+
   return (
-    <div className="flex h-11 w-fit items-center rounded-full bg-stone-100 p-[3px] text-sm font-medium">
+    <div className="flex h-20 w-fit items-center rounded-[26px] border border-[var(--line)] bg-stone-50 p-1.5">
       <button
         type="button"
-        disabled={disabled}
+        disabled={disabled || seconds <= 5}
         aria-label="Decrease duration"
-        onClick={() => commitNumber(value - 1)}
-        className="grid size-9 place-items-center rounded-full text-stone-500 transition hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
+        onClick={() => bump(-1)}
+        className="grid size-14 place-items-center rounded-[20px] text-2xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
       >
         −
       </button>
@@ -1493,7 +1686,7 @@ function DurationControl({
         disabled={disabled}
         aria-label="Duration in seconds"
         value={text}
-        className="w-12 bg-transparent text-center outline-none"
+        className="w-24 bg-transparent text-center text-3xl font-semibold tabular-nums outline-none"
         onChange={(event) => setText(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
         onBlur={() => commitNumber(text)}
         onKeyDown={(event) => {
@@ -1504,13 +1697,13 @@ function DurationControl({
           }
         }}
       />
-      <span className="pr-1 text-stone-400">s</span>
+      <span className="pr-2 text-sm font-medium text-stone-400">s</span>
       <button
         type="button"
-        disabled={disabled}
+        disabled={disabled || seconds >= 300}
         aria-label="Increase duration"
-        onClick={() => commitNumber(value + 1)}
-        className="grid size-9 place-items-center rounded-full text-stone-500 transition hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
+        onClick={() => bump(1)}
+        className="grid size-14 place-items-center rounded-[20px] text-2xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
       >
         +
       </button>
@@ -1520,11 +1713,11 @@ function DurationControl({
 
 function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (value: AspectRatio) => void }) {
   return (
-    <div className="flex items-center gap-1 rounded-[22px] bg-stone-100 p-[3px]">
+    <div className="flex w-full items-center rounded-[22px] bg-stone-100 p-[3px]">
       <button
         type="button"
         onClick={() => onChange("16:9")}
-        className={`flex h-[52px] items-center gap-2 rounded-[20px] px-3 text-left transition ${
+        className={`flex h-[56px] flex-1 items-center justify-center gap-2 rounded-[20px] px-3 text-left ${
           value === "16:9" ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
         }`}
       >
@@ -1537,7 +1730,7 @@ function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (valu
       <button
         type="button"
         onClick={() => onChange("9:16")}
-        className={`flex h-[52px] items-center gap-2 rounded-[20px] px-3 text-left transition ${
+        className={`flex h-[56px] flex-1 items-center justify-center gap-2 rounded-[20px] px-3 text-left ${
           value === "9:16" ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
         }`}
       >
@@ -1561,13 +1754,13 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex h-11 items-center rounded-full bg-stone-100 p-[3px]">
+    <div className="flex h-[56px] w-full items-center rounded-full bg-stone-100 p-[3px]">
       {options.map((option) => (
         <button
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
-          className={`h-full rounded-full px-4 text-[13px] font-medium leading-none transition ${
+          className={`h-full flex-1 rounded-full px-4 text-[13px] font-medium leading-none ${
             value === option.id ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
           }`}
         >
@@ -1608,10 +1801,10 @@ function CharacterSlot({
         type="text"
         value={name}
         disabled={disabled}
-        placeholder="Name in the script"
+        placeholder="Role in the script (e.g. Cat)"
         onChange={(event) => setName(event.target.value)}
         onBlur={() => onLabel(slot, name.trim() || fallback)}
-        className="w-full rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none disabled:opacity-50"
+        className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none disabled:opacity-50"
       />
     </div>
   );
@@ -1633,7 +1826,7 @@ function UploadTile({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-[72px] w-full items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-white px-3 py-2 text-left transition hover:border-stone-400 hover:bg-stone-50 disabled:opacity-50"
+      className="flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-3 py-2 text-left hover:border-stone-400 hover:bg-white hover:shadow-[0_10px_28px_rgba(28,25,23,0.06)] disabled:opacity-50"
     >
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
@@ -1648,6 +1841,36 @@ function UploadTile({
         <span className="block text-[11px] text-[var(--muted)]">{preview ? "Replace" : "Optional"}</span>
       </span>
     </button>
+  );
+}
+
+function BackButton({
+  disabled,
+  onClick,
+  children = "Back",
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+  children?: string;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="btn-secondary rounded-full px-5 py-2.5 text-sm font-medium shadow-sm hover:border-stone-300 hover:bg-stone-50 disabled:opacity-50"
+    >
+      {children}
+    </button>
+  );
+}
+
+function InfoIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+      <circle cx="6" cy="2.35" r="1.05" fill="currentColor" />
+      <path d="M6 5.1v4.55" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -1793,17 +2016,31 @@ function VideoStage({
             ) : poster ? (
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={poster} alt="" className="h-full w-full object-cover opacity-90" />
-                <div className="absolute inset-0 grid place-items-center bg-black/35 px-3">
-                  <div className="rounded-full bg-white/12 px-4 py-2 text-center text-sm text-white backdrop-blur-sm">
-                    {status === "generating_frame" ? "Painting the first frame…" : "Animating the short…"}
+                <img src={poster} alt="" className="h-full w-full object-cover" />
+                <div className="absolute inset-0 overflow-hidden bg-black/45">
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/50 via-black/20 to-black/10" />
+                  <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
+                  <div className="absolute inset-x-4 top-4 space-y-2">
+                    <div className="h-2.5 w-2/5 rounded-full bg-white/20" />
+                    <div className="h-2.5 w-3/5 rounded-full bg-white/12" />
+                    <div className="h-2.5 w-1/3 rounded-full bg-white/10" />
+                  </div>
+                  <div className="absolute inset-0 grid place-items-center px-4">
+                    <p className="status-breathe text-center text-sm font-medium tracking-wide text-white">
+                      <span className="status-dots">
+                        {status === "generating_frame" ? "Painting the first frame" : "Animating this shot"}
+                      </span>
+                    </p>
                   </div>
                 </div>
               </>
             ) : (
-              <div className="relative grid h-full place-items-center">
+              <div className="relative grid h-full place-items-center overflow-hidden">
                 <div className="shimmer absolute inset-0 opacity-40" />
-                <p className="relative px-3 text-center text-sm text-white/70">{waiting ? "Setting the stage…" : "Waiting…"}</p>
+                <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
+                <p className="status-breathe relative px-3 text-center text-sm text-white/80">
+                  <span className="status-dots">{waiting ? "Setting the stage" : "Waiting"}</span>
+                </p>
               </div>
             )}
           </div>

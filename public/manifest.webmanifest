@@ -1,0 +1,9 @@
+{
+  "name": "distribute.to",
+  "short_name": "distribute.to",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f6f4f0",
+  "theme_color": "#1c1917",
+  "lang": "en"
+}

@@ -132,6 +132,36 @@ a.btn-primary {
   animation: shimmer 1.6s linear infinite;
 }
 
+.setup-card {
+  border: 1px solid var(--line);
+  background: #fff;
+  border-radius: 24px;
+  padding: 1.15rem 1.25rem;
+  transition:
+    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 0.2s ease,
+    border-color 0.2s ease;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .setup-card:hover {
+    transform: translateY(-3px);
+    border-color: rgba(28, 25, 23, 0.16);
+    box-shadow: 0 16px 40px rgba(28, 25, 23, 0.08);
+  }
+}
+
+.btn-secondary {
+  border: 1px solid var(--line);
+  background: #fff;
+  color: var(--ink);
+}
+
+.btn-secondary:hover:not(:disabled) {
+  background: #fafaf9;
+  border-color: rgba(28, 25, 23, 0.16);
+}
+
 .display {
   font-family: var(--font-syne), sans-serif;
   letter-spacing: -0.04em;
@@ -150,6 +180,37 @@ a.btn-primary {
 
 @keyframes pulse-dot {
   50% { opacity: 0.35; transform: scale(0.85); }
+}
+
+@keyframes skeleton-scan {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(120%); }
+}
+
+@keyframes status-breathe {
+  0%, 100% { opacity: 0.72; }
+  50% { opacity: 1; }
+}
+
+@keyframes status-dots {
+  0% { content: ""; }
+  25% { content: "."; }
+  50% { content: ".."; }
+  75% { content: "..."; }
+}
+
+.skeleton-scan {
+  background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, 0.22) 50%, transparent 65%);
+  animation: skeleton-scan 1.6s ease-in-out infinite;
+}
+
+.status-breathe {
+  animation: status-breathe 1.8s ease-in-out infinite;
+}
+
+.status-dots::after {
+  content: "";
+  animation: status-dots 1.4s steps(1, end) infinite;
 }
 
 .msg-in { animation: fade-up 0.28s ease both; }

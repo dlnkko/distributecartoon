@@ -1,5 +1,5 @@
 import { createId } from "./ids";
-import type { Project, ReferenceAsset, ReferenceKind } from "./types";
+import type { Character, Project, ReferenceAsset, ReferenceKind } from "./types";
 
 export const SLOT_QUOTA: Record<Exclude<ReferenceKind, "other">, number> = {
   character: 4,
@@ -9,10 +9,10 @@ export const SLOT_QUOTA: Record<Exclude<ReferenceKind, "other">, number> = {
 };
 
 const DEFAULT_SLOTS: Array<{ kind: Exclude<ReferenceKind, "other">; label: string; notes: string }> = [
-  { kind: "character", label: "Character 1", notes: "Real photo of a person or animal. Adapted to the chosen style at casting." },
-  { kind: "character", label: "Character 2", notes: "Real photo of a person or animal. Adapted to the chosen style at casting." },
-  { kind: "character", label: "Character 3", notes: "Real photo of a person or animal. Adapted to the chosen style at casting." },
-  { kind: "character", label: "Character 4", notes: "Real photo of a person or animal. Adapted to the chosen style at casting." },
+  { kind: "character", label: "Character 1", notes: "Real-life photo of one person or animal. Type the script role (Cat, Dog). Adapted to the chosen style at casting." },
+  { kind: "character", label: "Character 2", notes: "Real-life photo of one person or animal. Type the script role (Cat, Dog). Adapted to the chosen style at casting." },
+  { kind: "character", label: "Character 3", notes: "Real-life photo of one person or animal. Type the script role (Cat, Dog). Adapted to the chosen style at casting." },
+  { kind: "character", label: "Character 4", notes: "Real-life photo of one person or animal. Type the script role (Cat, Dog). Adapted to the chosen style at casting." },
   { kind: "product", label: "Product 1", notes: "Optional. Only used if the script involves this product." },
   { kind: "product", label: "Product 2", notes: "Optional. Only used if the script involves this product." },
   { kind: "product", label: "Product 3", notes: "Optional. Only used if the script involves this product." },
@@ -133,14 +133,18 @@ export function filledCharacterPhotos(project: Project) {
   );
 }
 
-function labelsMatch(label: string, name: string) {
-  const a = label.trim().toLowerCase();
-  const b = name.trim().toLowerCase();
-  if (!a || !b || GENERIC_LABELS.has(a)) return false;
-  if (a === b) return true;
-  if (a.length >= 3 && (b.includes(a) || a.includes(b))) return true;
-  const first = b.split(/\s+/).filter(Boolean)[0] || "";
-  return first.length >= 3 && a === first;
+function normalizeRole(value: string) {
+  return value.trim().toLowerCase().replace(/^(the|a|an)\s+/, "");
+}
+
+function roleMatchesCharacter(label: string, character: Character) {
+  const role = normalizeRole(label);
+  if (!role || GENERIC_LABELS.has(label.trim().toLowerCase()) || /^character\s*\d+$/i.test(label.trim())) return false;
+  const name = normalizeRole(character.name);
+  if (role === name) return true;
+  if (role.length >= 3 && (name.includes(role) || role.includes(name))) return true;
+  const blob = `${character.name} ${character.description}`.toLowerCase();
+  return new RegExp(`\\b${role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i").test(blob);
 }
 
 export function assignCharacterSourcePhotos(project: Project) {
@@ -150,18 +154,10 @@ export function assignCharacterSourcePhotos(project: Project) {
   const used = new Set<string>();
 
   for (const character of leads) {
-    const match = photos.find((photo) => !used.has(photo.id) && labelsMatch(photo.label, character.name));
+    const match = photos.find((photo) => !used.has(photo.id) && roleMatchesCharacter(photo.label, character));
     if (!match) continue;
     map.set(character.id, match);
     used.add(match.id);
-  }
-
-  for (const character of leads) {
-    if (map.has(character.id)) continue;
-    const next = photos.find((photo) => !used.has(photo.id));
-    if (!next) break;
-    map.set(character.id, next);
-    used.add(next.id);
   }
 
   return map;

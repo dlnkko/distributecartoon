@@ -2,11 +2,13 @@ import { isAbortError } from "@/lib/abort";
 import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
 import { resetInFlightBatches } from "@/lib/pipeline";
-import { saveProject } from "@/lib/store";
+import { getProject, saveProject } from "@/lib/store";
 import type { AgentMode, StudioEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
+
+const produceLocks = new Map<string, Promise<void>>();
 
 export async function POST(request: Request) {
   const body = (await request.json()) as { projectId?: string; mode?: AgentMode };
@@ -40,7 +42,24 @@ export async function POST(request: Request) {
           // El cliente ya cortó la conexión.
         }
       };
+      let releaseProduce: (() => void) | undefined;
       try {
+        if (body.mode === "produce") {
+          const existing = produceLocks.get(project.id);
+          if (existing) {
+            await existing.catch(() => undefined);
+            const latest = (await getProject(project.id)) || project;
+            send({ type: "project", project: latest });
+            send({ type: "done" });
+            return;
+          }
+          produceLocks.set(
+            project.id,
+            new Promise<void>((resolve) => {
+              releaseProduce = resolve;
+            }),
+          );
+        }
         send({ type: "project", project });
         await runAgent({
           project,
@@ -60,6 +79,8 @@ export async function POST(request: Request) {
         });
         send({ type: "done" });
       } finally {
+        releaseProduce?.();
+        if (releaseProduce && produceLocks.get(project.id)) produceLocks.delete(project.id);
         try {
           controller.close();
         } catch {
