@@ -16,6 +16,10 @@ export function videoAudioLead() {
   return "No background music. Speak from 0s. No repeated lines.";
 }
 
+export function videoCloseLead() {
+  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. No background music. Speak from 0s. No repeated lines.";
+}
+
 export function videoStyleLead(style: VisualStyle) {
   const look = style === "claymation" ? "Claymation" : "Pixar";
   return `${look} style throughout the whole video.`;
@@ -485,14 +489,8 @@ function alreadyHas(text: string, lock: string) {
 function withNoClone(action: string, camera: string, scene?: Scene, project?: Project) {
   let next = action.trim();
   const names = sceneOnScreenNames(scene, project);
-  const oneBody = "Never invent extra copies of anyone. Each character has exactly one body in frame.";
-  if (!alreadyHas(next, oneBody)) next += ` ${oneBody}`;
   if (/over the shoulder/i.test(camera) && names.length >= 2) {
     const lock = `Over-the-shoulder: camera behind ${names[0]}, only ${names[0]}'s shoulder and the back of the head in the foreground, looking at ${names[1]}. ${names[1]} is the only face in frame. Never show ${names[0]}'s face. Never duplicate anyone.`;
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-  if (/\btwo-shot\b/i.test(camera) && names.length >= 2) {
-    const lock = `Two-shot of ${names[0]} and ${names[1]}, two different characters, not twins of the same person.`;
     if (!alreadyHas(next, lock)) next += ` ${lock}`;
   }
   return next;
@@ -518,7 +516,7 @@ function ensurePhysicalLogic(summary: string, context = "") {
   if (/\b(escalator)\b/.test(blob)) {
     locks.push("Stand facing the travel direction. Steps move under the feet the same way a real escalator does.");
   }
-  if (/\b(stairs|staircase|steps)\b/.test(blob) && /\b(walk|run|climb|go up|go down|up|down)\b/.test(blob)) {
+  if (/\b(stairs|staircase)\b/.test(blob) && /\b(walk|walks|running|run|climb|climbs|go up|goes up|go down|goes down)\b/.test(blob)) {
     locks.push("Feet plant on each step in the travel direction. Do not float or walk through the stairs.");
   }
   if (/\b(pour|pours|pouring|spill|spills)\b/.test(blob)) {
@@ -527,14 +525,6 @@ function ensurePhysicalLogic(summary: string, context = "") {
   if (/\b(swim|swimming|pool)\b/.test(blob)) {
     locks.push("The body is in the water. Arms and legs stroke forward in the travel direction.");
   }
-  if (/\b(gate|door|window|drawer|lid|hatch|hinge|cabinet|fridge|fence)\b/.test(blob)) {
-    locks.push(
-      "Hinged or sliding objects move only through empty air. Keep every body outside the moving path. Solids never pass through a body or another solid.",
-    );
-  }
-  locks.push(
-    "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection.",
-  );
 
   for (const lock of locks) {
     if (!alreadyHas(text, lock)) text += ` ${lock}`;
@@ -568,35 +558,18 @@ const YOUNG_MARK = /\b(tiny|baby|kitten|puppy|newborn|young|infant|toddler|chiqu
 const GROWN_MARK =
   /\b(grown|older|adult|full[- ]grown|larger|grew|grows|years later|time has passed|now grown)\b/i;
 
-function sceneAgeBlob(scene?: Scene) {
-  return `${scene?.title || ""} ${scene?.summary || ""}`;
-}
-
-function withAgeContinuity(action: string, project: Project, sceneIndex: number) {
-  const current = sceneByIndex(project, sceneIndex);
-  const currentBlob = `${sceneAgeBlob(current)} ${action}`;
-  const prior = (project.scenes || []).filter((scene) => scene.index < sceneIndex);
-  const wasYoung =
-    prior.some((scene) => YOUNG_MARK.test(sceneAgeBlob(scene))) ||
-    YOUNG_MARK.test(currentBlob) ||
-    (project.characters || []).some((character) => YOUNG_MARK.test(`${character.name} ${character.description}`));
-  const alreadyGrown = prior.some((scene) => GROWN_MARK.test(sceneAgeBlob(scene)));
-  if (GROWN_MARK.test(currentBlob)) return action;
-  if (alreadyGrown) {
-    if (GROWN_MARK.test(action)) return action;
-    return `${action} Keep the same older grown size from after they grew. Do not revert to the baby size.`;
-  }
-  if (!wasYoung || YOUNG_MARK.test(action)) return action;
-  return `${action} Keep the same tiny young size as the earlier scenes. Do not age them up yet.`;
-}
-
 function montageBeats(summary: string) {
   const raw = summary.trim();
   if (!raw) return null;
-  if ((raw.match(/\bCUT\./gi) || []).length >= 2) return null;
+  if (/\bCUT to\b/i.test(raw)) return null;
+  const sentences = raw
+    .split(/(?<=\.)\s+(?=[A-Z@])/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 8);
   const looksLikeMontage =
-    /\b(time[- ]lapse|timelapse|montage)\b/i.test(raw) ||
-    (raw.match(/(?:^|\n)\s*[-•–]\s+/g) || []).length >= 2;
+    /\b(time[- ]lapse|timelapse|montage|growth change|growing up|years (?:ago|later))\b/i.test(raw) ||
+    (raw.match(/(?:^|\n)\s*[-•–]\s+/g) || []).length >= 2 ||
+    (sentences.length >= 3 && YOUNG_MARK.test(raw) && GROWN_MARK.test(raw));
   if (!looksLikeMontage) return null;
   const rest = raw
     .replace(/^[\s\S]*?\b(time[- ]lapse|timelapse|montage)\b[^.]*\.?\s*/i, "")
@@ -619,28 +592,14 @@ function montageBeats(summary: string) {
   return fromSentences.length >= 2 ? fromSentences : null;
 }
 
-function enrichMontageBeat(beat: string) {
-  const core = beat.replace(/\s+/g, " ").replace(/^[-•–]\s*/, "").replace(/[.]+$/, "").trim();
-  if (core.split(/\s+/).length >= 18) return `${core}.`;
-  return `${core}. Show the complete physical action in this cut: body, paws or hands, and set dressing clearly readable, one pose change only.`;
-}
-
-function nextMontageCamera(startCamera: string, used: string[]) {
-  const skip = new Set([startCamera.toLowerCase(), ...used.map((item) => item.toLowerCase())]);
-  return CAMERA_VARIETY.find((item) => !skip.has(item.toLowerCase())) || CAMERA_VARIETY[used.length % CAMERA_VARIETY.length];
-}
-
-function expandMontageAction(summary: string, startCamera: string) {
+function expandMontageAction(summary: string) {
   const beats = montageBeats(summary);
   if (!beats) return null;
-  const used: string[] = [];
   return beats
     .map((beat, index) => {
-      const detail = enrichMontageBeat(beat);
-      if (index === 0) return detail;
-      const camera = nextMontageCamera(startCamera, used);
-      used.push(camera);
-      return `CUT. ${camera}. ${detail}`;
+      const core = beat.replace(/\s+/g, " ").replace(/^[-•–]\s*/, "").replace(/[.]+$/, "").trim();
+      if (index === 0) return `${core}.`;
+      return `CUT to ${core}.`;
     })
     .join(" ");
 }
@@ -815,17 +774,11 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       const camera = safeCinematicCamera(scene, fallback, usedCameras, project);
       usedCameras.push(camera);
       const summary = rewriteProductContainers(scene?.summary || scene?.title || "", project);
-      const montage = expandMontageAction(summary, camera);
+      const montage = expandMontageAction(summary);
       const space = `${scene?.title || ""} ${scene?.location || ""}`;
       const visual = withNoClone(
-        withAgeContinuity(
-          withOnScreenProps(
-            montage
-              ? ensurePhysicalLogic(montage, space)
-              : ensurePhysicalLogic(ensureVisibleAction(summary), space),
-            project,
-            index,
-          ),
+        withOnScreenProps(
+          montage || ensurePhysicalLogic(ensureVisibleAction(summary), space),
           project,
           index,
         ),
@@ -845,7 +798,7 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body}`.replace(/\s+/g, " ").trim();
     })
     .join(" CUT. ");
-  return `${videoStyleLead(project.style)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} Keep each character the same age, size, and proportions until a later scene explicitly shows they grew. Obey real-world physics and blocking in every scene. Never clip solids through bodies. Never clone or duplicate a character. ${videoAudioLead()}`.replace(/\s{2,}/g, " ").trim();
+  return `${videoStyleLead(project.style)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
@@ -888,6 +841,7 @@ export function labeledReferencePrompt(options: {
   if (!/^(?:pixar|claymation) style throughout/i.test(body)) {
     body = `${videoStyleLead(options.style)} ${body}`;
   }
-  if (!/no background music/i.test(body)) body = `${body} ${videoAudioLead()}`;
+  if (!/obey real-world physics/i.test(body)) body = `${body} ${videoCloseLead()}`;
+  else if (!/no background music/i.test(body)) body = `${body} ${videoAudioLead()}`;
   return collapseRepeatedSays(sanitizeReferencePrompt(body.replace(/\s{2,}/g, " ").trim()));
 }

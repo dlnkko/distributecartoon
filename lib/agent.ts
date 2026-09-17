@@ -41,22 +41,22 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - El diálogo o voiceover EMPIEZA en el segundo 0. SCENE 1 abre con la primera línea hablada, sin intro muda.
 - Dentro de cada escena, nombra el producto/logo/locación con @ImageN cuando aparece en ESA escena, igual que los personajes. Nunca lo dejes solo al final del prompt.
 - Cámara: varía el plano y el ángulo en CADA escena. Usa SOLO nombres en inglés: extreme wide shot, wide shot, full shot, medium full shot, medium shot, medium close-up, close-up, extreme close-up, insert, two-shot, over the shoulder, POV, eye level, low angle, high angle, bird's eye, worm's eye, dutch angle, pan, tilt, dolly, tracking shot, steadicam, crane, zoom, handheld, dolly zoom. Nunca nombres en español.
-- Planos: nunca inventes un segundo cuerpo del mismo personaje. Over-the-shoulder = hombro de A, cara de B, A ≠ B. Si solo hay un personaje en cuadro, no uses OTS ni two-shot.
+- Planos: nunca inventes un segundo cuerpo del mismo personaje. Over-the-shoulder = hombro de A, cara de B, A ≠ B. Si solo hay un personaje en cuadro, no uses OTS ni two-shot. Estas reglas van en el cierre del prompt UNA vez, no repetidas en cada escena. OTS sí puede llevar su línea de cámara solo en ESA escena.
 - Acción visible: si alguien come o usa un producto, muestra la acción completa (mano, pack, boca). Nunca cortes al objeto ya dentro de la boca.
-- Física general: gravedad hacia abajo, peso sobre superficies, dos sólidos no ocupan el mismo espacio. Puertas, ventanas, cajones y cualquier objeto con bisagra se mueven solo por aire vacío; nadie dentro del arco. Lo mismo con vehículos, máquinas, líquidos y dirección del movimiento. Nada de clipping, motion espejada ni slop absurdo.
-- Coherencia de edad/tamaño: si un personaje empieza tiny, baby o young, MANTÉN ese tamaño en cada escena siguiente hasta que OTRA escena diga explícitamente que ya creció. No lo agrandes a mitad de un clip sin ese beat de crecimiento.
+- Física y continuidad: escríbelas EN LA ACCIÓN, no como un párrafo de reglas en cada escena. Gravedad, sólidos que no se atraviesan, puertas que se abren por aire vacío. Si alguien está acorralado en un rincón, la siguiente escena sigue en ese rincón, no de pronto en un patio amplio. Edad/tamaño igual: tiny se queda tiny hasta el beat que crece.
+- Actuación: caras, ojos, orejas, colas y cuerpo muestran emoción (miedo, alivio, cariño, alegría). Nada de personajes rígidos.
 - Quién está en cuadro: en character_names solo los principals de ESA escena; en extra_names secundarios visibles. El sistema escribe una frase breve: "Only Luna and Milo participate in this scene." o "Only the dogs, cats and Luna participate in this scene."
-- Time-lapse / montage: permitido, pero NUNCA como lista con bullets. Cada beat es una frase física completa. El sistema inserta CUT y un plano distinto entre beats. Ejemplo malo: "A fast time-lapse:" y cuatro guiones. Ejemplo bueno: "Young Milo falls asleep on a desk, tiny body on the papers. A stop-motion growth change shows him larger on the same desk, same markings, only scale changes. Older Milo bats at a toy across the floor. Older Milo curls up beside Luna on the couch."
+- Time-lapse / varias acciones en una escena: NUNCA bullets. Cada beat es una frase física completa. El sistema inserta "CUT to" entre beats para que se lean como clips separados (día/noche, distinto set), no como una acción seguida de 2s. Ejemplo: "Young Milo falls asleep on a desk, tiny body on the papers. CUT to a stop-motion growth change showing him larger on the same desk. CUT to older Milo batting at a toy across the floor. CUT to movie night, older Milo curling up beside Luna on the couch."
 - El video_prompt va 100% en inglés, salvo las comillas del diálogo si el guion está en otro idioma. Nombres cortos en inglés (Luna, Milo, the man). Nunca "Hombre de 40 años".
 - Cada línea de diálogo una sola vez. No repeated lines. Nunca soundtrack ni background music.
-- Super breve. Nada de "cinematic masterpiece".
+- Super breve. Nada de "cinematic masterpiece". No repitas el párrafo de física/clones en cada SCENE; el sistema lo pone una sola vez al final.
 - Ejemplo Pixar:
   Pixar style throughout the whole video. SCENE 1 (6s). Eye level, medium shot. Luna says: "Si te suelto, ¿vas a volver?" Luna holds a red balloon over the sunset city. CUT. SCENE 2 (4s). Tracking shot, full shot. The balloon rises through clotheslines as she runs to the railing.
 - Ejemplo claymation:
   Claymation style throughout the whole video. SCENE 1 (5s). Wide shot, eye level. A 40-year-old man walks along the beach, then suddenly notices a big dolphin far out in the sea. CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The 40-year-old man says: "Wow, that's amazing!"
 
 Herramientas:
-- Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad. En camera usa solo nombres en inglés y cambia de plano en cada escena. En summaries, the product keeps the attached packaging (pouch vs bottle). Show complete physical actions. Spell out real-world physics (gravity, no clipping, hinged objects swing through empty air, machines move the correct way). Keep age/size locked until a later scene shows growth. List every on-screen principal in character_names and background animals/people in extra_names. Never write a time-lapse as a bullet list; write each beat as a full physical sentence. Never clone a character.
+- Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad. En camera usa solo nombres en inglés y cambia de plano en cada escena. En summaries, write the blocking so space and size stay continuous from the previous scene. Show emotion in faces, eyes, ears, tails, and body. Show complete physical actions. Keep the attached product packaging (pouch vs bottle). Keep age/size locked until a later scene shows growth. List every on-screen principal in character_names and background animals/people in extra_names. Never write a time-lapse as a bullet list; write each beat as a full physical sentence so the system can insert CUT to. Never clone a character. Do not paste physics lectures into every summary.
 - No uses stylize_reference. Nunca generes una imagen solo del producto ni un first frame de la escena.
 - Usa plan_video_batches cuando el usuario ya aprobó las escenas. Si targetDurationSeconds es 30 o menos, exactamente UNA tanda con todas las escenas. Si es más de 30, empaqueta en clips de 4-30s.
 - generate_video_batch anima UNA tanda con Seedance 2.5 reference-to-video. Respeta 4-30s. Cuando termine, el video YA está en el proyecto. No inventes URLs. No llames generate_batch_frame.
@@ -68,7 +68,7 @@ const PLAN_PROMPT = `${SYSTEM_PROMPT}
 Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. Do not invent a separate Narrator if an on-screen character is speaking. At most 4 leads. Put background names in extra_names, not character_names.
-Every scene must list who is on screen. Keep a character the same age and size until a later scene explicitly shows they grew. Never write time-lapse as bullets; write each beat as a full physical sentence. Obey real-world physics. Never clone a character.
+Every scene must list who is on screen. Write emotion and keep spatial continuity from the previous scene. Keep a character the same age and size until a later scene explicitly shows they grew. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
 Make scene times add up to the project's targetDurationSeconds.
 Put the hook spoken line in scene 1 so audio starts at 0s.
 Then STOP. Do not plan batches. Do not generate frames or video. Do not ask questions.`;
@@ -142,7 +142,7 @@ const tools: OpenAI.Responses.Tool[] = [
               summary: {
                 type: "string",
                 description:
-                  "What happens, starting with the opening beat. Show complete physical actions (hands, pack, mouth). Keep real-world physics: gravity, no clipping, hinged objects swing through empty air, machines move the correct way. Keep the attached product packaging: a pouch stays a pouch, never call it a bottle unless the photo is a bottle. If a character starts tiny/baby/young, keep that size here unless THIS scene is the explicit growth. Never write a time-lapse as a bullet list: write each montage beat as a full physical sentence with bodies, hands/paws, and set dressing.",
+                  "What happens, starting with the opening beat. Show complete physical actions and visible emotion (face, eyes, ears, tail, posture). Keep blocking continuous with the previous scene: if someone is trapped in a corner, they are still there until they move. If a character starts tiny/baby/young, keep that size here unless THIS scene is the explicit growth. Keep the attached product packaging: a pouch stays a pouch. Never write a time-lapse as a bullet list: write each montage beat as a full physical sentence. Do not append physics-rule lectures.",
               },
               location: { type: "string" },
               character_names: {
@@ -302,7 +302,7 @@ const tools: OpenAI.Responses.Tool[] = [
               video_prompt: {
                 type: "string",
                 description:
-                  "English only. Starts with Pixar/Claymation style throughout the whole video. Then SCENE 1 (Xs). English camera. Brief Only X participate line. Action with names later injected as @Image. CUT between scenes. Time-lapse beats also get CUT plus a new camera, never a bullet list. Keep age/size locked until an explicit growth beat. Obey real-world physics. Never clone a character. Keep attached product packaging. Show full physical actions. Dialogue once. No first frame. No soundtrack.",
+                  "English only. Starts with Pixar/Claymation style throughout the whole video. Then SCENE 1 (Xs). English camera. Brief Only X participate line. Action with names later injected as @Image. CUT between scenes. Several actions in one scene use CUT to between beats, not a physics lecture after every scene. Physics and no-clone once at the end. Dialogue once. No first frame. No soundtrack.",
               },
               frame_prompt: {
                 type: "string",
