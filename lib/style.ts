@@ -13,11 +13,19 @@ export function imageStyleLead(style: VisualStyle) {
 }
 
 export function videoAudioLead() {
-  return "No background music. Speak from 0s. No repeated lines.";
+  return "Speak from 0s. No repeated lines.";
+}
+
+export function sceneAudioClose() {
+  return "No background music.";
+}
+
+export function videoVoiceLead() {
+  return "On-screen dialogue uses that character's realistic lipsync. Unspecified narrator voiceover uses any fitting off-screen voice, not a visible narrator.";
 }
 
 export function videoCloseLead() {
-  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. No background music. Speak from 0s. No repeated lines.";
+  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. On-screen dialogue uses that character's realistic lipsync. Unspecified narrator voiceover uses any fitting off-screen voice, not a visible narrator. Speak from 0s. No repeated lines.";
 }
 
 export function videoStyleLead(style: VisualStyle) {
@@ -418,21 +426,51 @@ function speakerLabel(project: Project, speaker: string) {
   return toEnglishSpeaker(character?.name || speaker, character?.description || "");
 }
 
-function spokenCue(speaker: string, text: string) {
+function findSpeakerCharacter(project: Project, speaker: string) {
+  const needle = speaker.trim().toLowerCase();
+  if (!needle) return undefined;
+  return (
+    project.characters.find((item) => item.name.toLowerCase() === needle) ||
+    project.characters.find((item) => needle.includes(item.name.toLowerCase()) || item.name.toLowerCase().includes(needle))
+  );
+}
+
+function isVoiceoverSpeaker(project: Project, speaker: string) {
+  const raw = speaker.trim();
+  if (!raw) return false;
+  if (/^(the\s+)?(narrator|narradora|voice[- ]?over|voiceover|vo|off[- ]?screen|voz en off)$/i.test(raw)) return true;
+  const character = findSpeakerCharacter(project, raw);
+  if (character) return isUnseenVoice(character);
+  return isUnseenVoice({ name: raw, description: "", voiceNotes: "" });
+}
+
+function spokenLineCue(project: Project, scene: Scene | undefined, speakerRaw: string, text: string) {
+  const speaker = speakerLabel(project, speakerRaw);
   const line = text.replace(/^["']+|["']+$/g, "").trim();
-  return `${speaker} says: "${line}"`;
+  if (!speaker || !line) return "";
+  if (isVoiceoverSpeaker(project, speakerRaw) || isVoiceoverSpeaker(project, speaker)) {
+    return `Voiceover: "${line}"`;
+  }
+  const onScreen = sceneOnScreenNames(scene, project).some((name) => {
+    const label = speakerLabel(project, name);
+    return name.toLowerCase() === speakerRaw.trim().toLowerCase() || label.toLowerCase() === speaker.toLowerCase();
+  });
+  if (!onScreen) return `${speaker} voiceover: "${line}"`;
+  return `${speaker} lipsyncs: "${line}"`;
 }
 
 function collapseRepeatedSays(text: string) {
   return text
     .replace(
-      /(?:((?:the\s+)?[\p{L}\p{N}][\p{L}\p{N}'-]{0,24}(?:\s+[\p{L}\p{N}'-]{1,16}){0,4})\s+says:\s*){2,}(?=")/giu,
-      "$1 says: ",
+      /(?:((?:the\s+)?[\p{L}\p{N}][\p{L}\p{N}'-]{0,24}(?:\s+[\p{L}\p{N}'-]{1,16}){0,4})\s+(?:says|lipsyncs|voiceover):\s*){2,}(?=")/giu,
+      "$1 lipsyncs: ",
     )
+    .replace(/(?:(?:Off-screen\s+)?Voiceover:\s*){2,}(?=")/gi, "Voiceover: ")
     .replace(
-      /(\b[\p{L}\p{N}' -]{1,48}\s+says:\s*"[^"]+"\.?\s*)\1+/giu,
+      /(\b[\p{L}\p{N}' -]{1,48}\s+(?:says|lipsyncs|voiceover):\s*"[^"]+"\.?\s*)\1+/giu,
       "$1",
     )
+    .replace(/((?:Off-screen\s+)?Voiceover:\s*"[^"]+"\.?\s*)\1+/gi, "$1")
     .replace(/([.!?]\s+)(the\s+)/g, "$1The ");
 }
 
@@ -460,8 +498,8 @@ function attributeDialogueInPrompt(prompt: string, project: Project, sceneIndexe
       const text = (line.line || "").replace(/^["']+|["']+$/g, "").trim();
       if (!speaker || !text) continue;
       const quote = `"${text}"`;
-      if (new RegExp(`says:\\s*${escapeRegExp(quote)}`, "i").test(next)) continue;
-      if (next.includes(quote)) next = next.replace(quote, spokenCue(speaker, text));
+      if (new RegExp(`(?:says|lipsyncs|voiceover):\\s*${escapeRegExp(quote)}`, "i").test(next)) continue;
+      if (next.includes(quote)) next = next.replace(quote, spokenLineCue(project, scene, line.speaker || "", text));
     }
   }
   return collapseRepeatedSays(next).replace(/\s{2,}/g, " ").trim();
@@ -765,6 +803,21 @@ function ensurePropTagsInScenes(
   return prefix ? `${prefix} ${joined}` : joined;
 }
 
+function ensureSceneNoBgm(text: string) {
+  const { prefix, blocks } = splitPackedScenes(text);
+  const next = blocks.map((part) => {
+    const physics = part.match(/\s+(Obey real-world physics:[\s\S]*)$/i);
+    const scene = (physics ? part.slice(0, physics.index) : part).replace(/\s*CUT\.\s*$/i, "").trim();
+    const tail = physics ? physics[1].trim() : "";
+    const withBgm = /no background music\.?\s*$/i.test(scene)
+      ? scene.replace(/no background music\.?$/i, sceneAudioClose())
+      : `${scene.replace(/[. ]+$/, "")}. ${sceneAudioClose()}`;
+    return tail ? `${withBgm} ${tail}` : withBgm;
+  });
+  const joined = next.join(" CUT. ");
+  return prefix ? `${prefix} ${joined}` : joined;
+}
+
 export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "") {
   const usedCameras: string[] = [];
   const timed = sceneIndexes
@@ -788,14 +841,15 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       );
       const lines = (scene?.dialogue || [])
         .filter((line) => line.speaker && line.line)
-        .map((line) => spokenCue(speakerLabel(project, line.speaker), line.line))
+        .map((line) => spokenLineCue(project, scene, line.speaker, line.line))
+        .filter(Boolean)
         .join(" ");
       const seconds = Math.max(2, Math.round(scene?.estimatedSeconds || 4));
       const who = sceneCastLine(scene, project);
       const body = (i === 0 && lines ? [who, lines, visual] : [who, visual, lines])
         .filter(Boolean)
         .join(" ");
-      return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body}`.replace(/\s+/g, " ").trim();
+      return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body} ${sceneAudioClose()}`.replace(/\s+/g, " ").trim();
     })
     .join(" CUT. ");
   return `${videoStyleLead(project.style)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
@@ -827,7 +881,7 @@ export function labeledReferencePrompt(options: {
 }) {
   let body = stripSceneStyleLocks(stripVideoStyleLead(stripIdentityDump(options.videoPrompt.trim())));
   body = body.replace(/^SCENE\s+/i, "SCENE ");
-  if (options.project && options.sceneIndexes?.length && !/\bsays:\s*"/i.test(body)) {
+  if (options.project && options.sceneIndexes?.length && !/\b(?:says|lipsyncs|voiceover):\s*"/i.test(body)) {
     body = attributeDialogueInPrompt(body, options.project, options.sceneIndexes);
   } else if (!options.project || !options.sceneIndexes?.length) {
     body = collapseRepeatedSays(scrubSpanishSpeakerPhrases(body));
@@ -835,6 +889,7 @@ export function labeledReferencePrompt(options: {
   if (options.project) body = rewriteProductContainers(body, options.project);
   body = applyInlineRefTags(body, options.images, options.videos, options.style);
   body = ensurePropTagsInScenes(body, options.images, options.project, options.sceneIndexes);
+  body = ensureSceneNoBgm(body);
   if (options.videos[0] && !/@Video1\b/.test(body)) {
     body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
   }
@@ -842,6 +897,7 @@ export function labeledReferencePrompt(options: {
     body = `${videoStyleLead(options.style)} ${body}`;
   }
   if (!/obey real-world physics/i.test(body)) body = `${body} ${videoCloseLead()}`;
-  else if (!/no background music/i.test(body)) body = `${body} ${videoAudioLead()}`;
+  else if (!/on-screen dialogue uses that character/i.test(body)) body = `${body} ${videoVoiceLead()} ${videoAudioLead()}`;
+  else if (!/speak from 0s/i.test(body)) body = `${body} ${videoAudioLead()}`;
   return collapseRepeatedSays(sanitizeReferencePrompt(body.replace(/\s{2,}/g, " ").trim()));
 }

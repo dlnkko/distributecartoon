@@ -8,7 +8,7 @@ export type FalProgress = (text: string) => void;
 function configureFal() {
   const { falKey } = getSecrets();
   if (!falKey) {
-    throw new Error("FAL_KEY is missing for MiniMax H3 Max.");
+    throw new Error("FAL_KEY is missing.");
   }
   fal.config({ credentials: falKey });
 }
@@ -17,18 +17,77 @@ function mimeFromName(name: string) {
   if (name.endsWith(".png")) return "image/png";
   if (name.endsWith(".webp")) return "image/webp";
   if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
+  if (name.endsWith(".gif")) return "image/gif";
   if (name.endsWith(".mp4")) return "video/mp4";
   if (name.endsWith(".webm")) return "video/webm";
   if (name.endsWith(".wav")) return "audio/wav";
   return "application/octet-stream";
 }
 
+function flareImageSize(aspectRatio?: string) {
+  if (aspectRatio === "9:16") return "portrait_16_9";
+  if (aspectRatio === "1:1") return "square_hd";
+  return "landscape_16_9";
+}
+
 export async function uploadLocalPublicPath(publicPath: string) {
   configureFal();
   const data = await readPublicFile(publicPath);
   const fileName = publicPath.split("/").pop() || "asset.bin";
-  const file = new File([data], fileName, { type: mimeFromName(fileName) });
+  const file = new File([new Uint8Array(data)], fileName, { type: mimeFromName(fileName) });
   return fal.storage.upload(file);
+}
+
+export async function uploadFalBuffer(buffer: Buffer, fileName: string, contentType: string) {
+  configureFal();
+  const file = new File([new Uint8Array(buffer)], fileName, { type: contentType });
+  return fal.storage.upload(file);
+}
+
+export async function generateGptImage25Flare(options: {
+  prompt: string;
+  aspectRatio?: string;
+  resolution?: "1K" | "2K" | "4K";
+  inputUrls?: string[];
+  abortSignal?: AbortSignal;
+}) {
+  configureFal();
+  throwIfAborted(options.abortSignal);
+  const imageSize = flareImageSize(options.aspectRatio);
+  if (options.inputUrls?.length) {
+    const result = await fal.subscribe("openai/gpt-image-2.5/flare/edit", {
+      input: {
+        prompt: options.prompt,
+        image_urls: options.inputUrls.slice(0, 16),
+        image_size: imageSize,
+        background: "opaque",
+        quality: "high",
+        num_images: 1,
+        output_format: "png",
+      },
+      logs: false,
+      abortSignal: options.abortSignal,
+    });
+    const url = result.data?.images?.[0]?.url as string | undefined;
+    if (!url) throw new Error("GPT Image 2.5 Flare did not return an image.");
+    return url;
+  }
+
+  const result = await fal.subscribe("openai/gpt-image-2.5/flare/text-to-image", {
+    input: {
+      prompt: options.prompt,
+      image_size: imageSize,
+      background: "opaque",
+      quality: "high",
+      num_images: 1,
+      output_format: "png",
+    },
+    logs: false,
+    abortSignal: options.abortSignal,
+  });
+  const url = result.data?.images?.[0]?.url as string | undefined;
+  if (!url) throw new Error("GPT Image 2.5 Flare did not return an image.");
+  return url;
 }
 
 export async function generateH3MaxReferenceVideo(options: {

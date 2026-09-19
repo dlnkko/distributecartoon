@@ -44,7 +44,7 @@ async function resolveUploadUrl(remoteUrl?: string, publicPath?: string, abortSi
       return await uploadKieFile(publicPath, abortSignal);
     } catch {
       if (isHttpUrl(remoteUrl)) return remoteUrl;
-      throw new Error(`Couldn't upload ${publicPath} to Kie.`);
+      throw new Error(`Couldn't upload ${publicPath} for generation.`);
     }
   }
   return undefined;

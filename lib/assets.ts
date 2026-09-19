@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
+import { getSecrets } from "./config";
 import { slugify } from "./ids";
 import type { Project } from "./types";
 
@@ -114,8 +115,15 @@ export async function storeGeneratedFile(options: {
   return saved;
 }
 
+function downloadHeaders(remoteUrl: string) {
+  if (!/openrouter\.ai\/api\/v1\/videos\//i.test(remoteUrl)) return undefined;
+  const { openrouterApiKey } = getSecrets();
+  if (!openrouterApiKey) return undefined;
+  return { Authorization: `Bearer ${openrouterApiKey}` };
+}
+
 export async function downloadToPublic(remoteUrl: string, relativeParts: string[], project?: Project) {
-  const response = await fetch(remoteUrl);
+  const response = await fetch(remoteUrl, { headers: downloadHeaders(remoteUrl) });
   if (!response.ok) {
     throw new Error(`Couldn't download ${remoteUrl} (${response.status})`);
   }

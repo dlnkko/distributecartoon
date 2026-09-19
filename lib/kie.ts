@@ -1,168 +1,121 @@
 import { getSecrets } from "./config";
-import { readPublicFile } from "./assets";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
+import { generateGptImage25Flare as generateFalGptImage25Flare, uploadFalBuffer, uploadLocalPublicPath } from "./fal";
 
-const KIE_BASE = "https://api.kie.ai";
-const KIE_UPLOAD = "https://kieai.redpandaai.co";
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const SEEDANCE_MODEL = "bytedance/seedance-2.5";
 
-type KieCreateResponse = {
-  code: number;
-  msg: string;
-  data?: { taskId?: string };
+type OpenRouterJob = {
+  id?: string;
+  polling_url?: string;
+  status?: string;
+  unsigned_urls?: string[];
+  error?: string | { message?: string };
 };
 
-type KieTaskResponse = {
-  code: number;
-  msg: string;
-  data?: {
-    taskId: string;
-    state: "waiting" | "queuing" | "generating" | "success" | "fail";
-    resultJson?: string;
-    failMsg?: string;
-  };
-};
-
-type KieUploadResponse = {
-  success?: boolean;
-  code?: number;
-  msg?: string;
-  data?: { downloadUrl?: string; fileName?: string };
-};
-
-function authHeaders(json = true) {
-  const { kieApiKey } = getSecrets();
-  if (!kieApiKey) {
-    throw new Error("KIE_API_KEY is missing.");
+function openrouterHeaders(json = true) {
+  const { openrouterApiKey } = getSecrets();
+  if (!openrouterApiKey) {
+    throw new Error("OPENROUTER_API_KEY is missing.");
   }
   return {
-    Authorization: `Bearer ${kieApiKey}`,
+    Authorization: `Bearer ${openrouterApiKey}`,
+    "HTTP-Referer": "https://distribute.to",
+    "X-Title": "distribute.to",
     ...(json ? { "Content-Type": "application/json" } : {}),
   };
 }
 
-function mimeFromName(name: string) {
-  if (name.endsWith(".png")) return "image/png";
-  if (name.endsWith(".webp")) return "image/webp";
-  if (name.endsWith(".jpg") || name.endsWith(".jpeg")) return "image/jpeg";
-  if (name.endsWith(".gif")) return "image/gif";
-  if (name.endsWith(".mp4")) return "video/mp4";
-  if (name.endsWith(".mov")) return "video/quicktime";
-  if (name.endsWith(".webm")) return "video/webm";
-  if (name.endsWith(".wav")) return "audio/wav";
-  if (name.endsWith(".mp3")) return "audio/mpeg";
-  return "application/octet-stream";
+function jobError(job: OpenRouterJob, fallback: string) {
+  if (!job.error) return fallback;
+  if (typeof job.error === "string") return job.error;
+  return job.error.message || fallback;
 }
 
-async function createTask(model: string, input: Record<string, unknown>, signal?: AbortSignal) {
-  throwIfAborted(signal);
-  const response = await fetch(`${KIE_BASE}/api/v1/jobs/createTask`, {
-    method: "POST",
-    headers: authHeaders(),
-    body: JSON.stringify({ model, input }),
+function contentUrl(job: OpenRouterJob) {
+  if (job.unsigned_urls?.[0]) return job.unsigned_urls[0];
+  if (job.id) return `${OPENROUTER_BASE}/videos/${job.id}/content?index=0`;
+  return "";
+}
+
+async function publishVideoContent(url: string) {
+  const response = await fetch(url, { headers: openrouterHeaders(false) });
+  if (!response.ok) {
+    throw new Error(`Couldn't download the Seedance video (${response.status}).`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  if (!buffer.length) throw new Error("Seedance 2.5 returned an empty video.");
+  return uploadFalBuffer(buffer, `seedance-${Date.now()}.mp4`, response.headers.get("content-type") || "video/mp4");
+}
+
+async function readVideoJob(taskId: string, signal?: AbortSignal) {
+  const response = await fetch(`${OPENROUTER_BASE}/videos/${encodeURIComponent(taskId)}`, {
+    headers: openrouterHeaders(),
     signal,
   });
-  const json = (await response.json()) as KieCreateResponse;
-  if (!response.ok || json.code !== 200 || !json.data?.taskId) {
-    throw new Error(json.msg || `Kie createTask failed (${response.status})`);
+  const json = (await response.json().catch(() => ({}))) as OpenRouterJob & { error?: { message?: string } | string };
+  if (!response.ok) {
+    const message = jobError(json, `OpenRouter video status failed (${response.status})`);
+    if (response.status === 404) return { status: "pending" as const };
+    throw new Error(message);
   }
-  return json.data.taskId;
-}
-
-function extractResultUrl(data: KieTaskResponse["data"]) {
-  if (!data) return "";
-  let parsed: { resultUrls?: string[]; resultUrl?: string; url?: string } = {};
-  if (data.resultJson) {
-    try {
-      parsed = JSON.parse(data.resultJson) as typeof parsed;
-    } catch {
-      parsed = {};
-    }
-  }
-  const extra = data as KieTaskResponse["data"] & { resultUrls?: string[]; resultUrl?: string; url?: string };
-  return parsed.resultUrls?.[0] || parsed.resultUrl || parsed.url || extra.resultUrls?.[0] || extra.resultUrl || extra.url || "";
+  return json;
 }
 
 export async function peekKieTask(taskId: string): Promise<{ status: "success"; url: string } | { status: "fail"; error: string } | { status: "pending" }> {
-  const response = await fetch(`${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
-    headers: authHeaders(),
-  });
-  if (!response.ok) return { status: "pending" };
-  const json = (await response.json()) as KieTaskResponse;
-  const state = json.data?.state;
-  if (state === "success") {
-    const url = extractResultUrl(json.data);
-    if (url) return { status: "success", url };
+  try {
+    const job = await readVideoJob(taskId);
+    if (job.status === "completed") {
+      const raw = contentUrl(job);
+      if (!raw) return { status: "pending" };
+      try {
+        return { status: "success", url: await publishVideoContent(raw) };
+      } catch {
+        return { status: "success", url: raw };
+      }
+    }
+    if (job.status === "failed" || job.status === "cancelled" || job.status === "expired") {
+      return { status: "fail", error: jobError(job, "Video generation failed.") };
+    }
+    return { status: "pending" };
+  } catch {
     return { status: "pending" };
   }
-  if (state === "fail") {
-    return { status: "fail", error: json.data?.failMsg || json.msg || "Video generation failed." };
-  }
-  return { status: "pending" };
 }
 
 export async function waitForTask(taskId: string, signal?: AbortSignal, kind: "image" | "video" = "image") {
   const started = Date.now();
-  let delay = 2500;
+  let delay = 4000;
   const limit = kind === "video" ? 15 * 60 * 1000 : 8 * 60 * 1000;
   let emptySuccess = 0;
   while (Date.now() - started < limit) {
     throwIfAborted(signal);
     try {
-      const response = await fetch(`${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(taskId)}`, {
-        headers: authHeaders(),
-        signal,
-      });
-      if (!response.ok) {
-        await abortableDelay(delay, signal);
-        delay = Math.min(delay + 1000, kind === "video" ? 12000 : 8000);
-        continue;
-      }
-      const json = (await response.json()) as KieTaskResponse;
-      const state = json.data?.state;
-      if (state === "success") {
-        const url = extractResultUrl(json.data);
-        if (url) return url;
+      const job = await readVideoJob(taskId, signal);
+      if (job.status === "completed") {
+        const raw = contentUrl(job);
+        if (raw) return publishVideoContent(raw);
         emptySuccess += 1;
-        if (emptySuccess > 8) throw new Error(`Kie finished without a ${kind} URL.`);
-      } else if (state === "fail") {
-        throw new Error(json.data?.failMsg || json.msg || `${kind} generation failed.`);
+        if (emptySuccess > 8) throw new Error(`OpenRouter finished without a ${kind} URL.`);
+      } else if (job.status === "failed" || job.status === "cancelled" || job.status === "expired") {
+        throw new Error(jobError(job, `${kind} generation failed.`));
       }
     } catch (error) {
       if (isAbortError(error)) throw error;
-      if (error instanceof Error && /generation failed|without a /i.test(error.message)) throw error;
+      if (error instanceof Error && /generation failed|without a |empty video|Couldn't download/i.test(error.message)) {
+        throw error;
+      }
     }
     await abortableDelay(delay, signal);
-    delay = Math.min(delay + 1000, kind === "video" ? 12000 : 8000);
+    delay = Math.min(delay + 2000, kind === "video" ? 15000 : 8000);
   }
   throw new Error(kind === "video" ? "Timed out waiting for Seedance 2.5." : "Timed out waiting for GPT Image 2.5 Flare.");
 }
 
 export async function uploadKieFile(publicPath: string, signal?: AbortSignal) {
   throwIfAborted(signal);
-  const data = await readPublicFile(publicPath);
-  const fileName = publicPath.split("/").pop() || "asset.bin";
-  const stamped = `${Date.now()}-${fileName}`;
-  const endpoints = [`${KIE_UPLOAD}/api/file-stream-upload`, `${KIE_BASE}/api/file-stream-upload`];
-  let lastError = "Kie file upload failed.";
-  for (const url of endpoints) {
-    throwIfAborted(signal);
-    const form = new FormData();
-    form.set("file", new Blob([new Uint8Array(data)], { type: mimeFromName(fileName) }), fileName);
-    form.set("uploadPath", "distribute-to");
-    form.set("fileName", stamped);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: authHeaders(false),
-      body: form,
-      signal,
-    });
-    const json = (await response.json().catch(() => ({}))) as KieUploadResponse;
-    if ((json.success || json.code === 200) && json.data?.downloadUrl) {
-      return json.data.downloadUrl;
-    }
-    lastError = json.msg || `Kie file upload failed (${response.status})`;
-  }
-  throw new Error(lastError);
+  if (/^https?:\/\//i.test(publicPath)) return publicPath;
+  return uploadLocalPublicPath(publicPath);
 }
 
 export async function generateGptImage25Flare(options: {
@@ -172,21 +125,7 @@ export async function generateGptImage25Flare(options: {
   inputUrls?: string[];
   abortSignal?: AbortSignal;
 }) {
-  const input: Record<string, unknown> = {
-    prompt: options.prompt,
-    aspect_ratio: options.aspectRatio || "16:9",
-    resolution: options.resolution || "2K",
-    background: "opaque",
-  };
-
-  if (options.inputUrls?.length) {
-    input.input_urls = options.inputUrls;
-    const taskId = await createTask("gpt-image-2-5-flare-image-to-image", input, options.abortSignal);
-    return waitForTask(taskId, options.abortSignal, "image");
-  }
-
-  const taskId = await createTask("gpt-image-2-5-flare-text-to-image", input, options.abortSignal);
-  return waitForTask(taskId, options.abortSignal, "image");
+  return generateFalGptImage25Flare(options);
 }
 
 export async function generateSeedance25ReferenceVideo(options: {
@@ -204,18 +143,42 @@ export async function generateSeedance25ReferenceVideo(options: {
   let taskId = options.existingTaskId?.trim() || "";
   if (!taskId || taskId === "pending") {
     const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
-    const input: Record<string, unknown> = {
-      prompt: options.prompt,
-      duration,
-      aspect_ratio: options.aspectRatio || "16:9",
-      resolution: "480p",
-      generate_audio: options.generateAudio !== false,
-      output_format: "mp4",
-      nsfw_checker: false,
-    };
-    if (options.referenceImageUrls?.length) input.reference_image_urls = options.referenceImageUrls.slice(0, 30);
-    if (options.referenceVideoUrls?.length) input.reference_video_urls = options.referenceVideoUrls.slice(0, 1);
-    taskId = await createTask("bytedance/seedance-2-5", input);
+    const aspectRatio = options.aspectRatio === "9:16" ? "9:16" : options.aspectRatio === "1:1" ? "1:1" : "16:9";
+    const input_references: Array<Record<string, unknown>> = [];
+    for (const url of (options.referenceImageUrls || []).slice(0, 30)) {
+      input_references.push({ type: "image_url", image_url: { url } });
+    }
+    for (const url of (options.referenceVideoUrls || []).slice(0, 1)) {
+      input_references.push({ type: "video_url", video_url: { url } });
+    }
+    const response = await fetch(`${OPENROUTER_BASE}/videos`, {
+      method: "POST",
+      headers: openrouterHeaders(),
+      body: JSON.stringify({
+        model: SEEDANCE_MODEL,
+        prompt: options.prompt,
+        duration,
+        aspect_ratio: aspectRatio,
+        resolution: "480p",
+        generate_audio: options.generateAudio !== false,
+        ...(input_references.length ? { input_references } : {}),
+        provider: {
+          options: {
+            seed: {
+              parameters: {
+                watermark: false,
+                output_format: "mp4",
+              },
+            },
+          },
+        },
+      }),
+    });
+    const json = (await response.json().catch(() => ({}))) as OpenRouterJob & { error?: { message?: string } | string };
+    if (!response.ok || !json.id) {
+      throw new Error(jobError(json, `OpenRouter Seedance create failed (${response.status})`));
+    }
+    taskId = json.id;
     await options.onTaskCreated?.(taskId);
   }
   return waitForTask(taskId, undefined, "video");

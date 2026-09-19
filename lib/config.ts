@@ -6,6 +6,7 @@ export type Secrets = {
   openaiModel: string;
   kieApiKey: string;
   falKey: string;
+  openrouterApiKey: string;
 };
 
 const secretsPath = () => path.join(process.cwd(), "data", "secrets.json");
@@ -26,6 +27,7 @@ export function getSecrets(): Secrets {
     openaiModel: process.env.OPENAI_MODEL || file.openaiModel || "gpt-5.6-luna",
     kieApiKey: process.env.KIE_API_KEY || file.kieApiKey || "",
     falKey: process.env.FAL_KEY || file.falKey || "",
+    openrouterApiKey: process.env.OPENROUTER_API_KEY || file.openrouterApiKey || "",
   };
 }
 
@@ -49,9 +51,11 @@ export function providerStatus() {
     openai: Boolean(secrets.openaiApiKey),
     kie: Boolean(secrets.kieApiKey),
     fal: Boolean(secrets.falKey),
+    openrouter: Boolean(secrets.openrouterApiKey),
     model: secrets.openaiModel,
     openaiMasked: maskSecret(secrets.openaiApiKey),
     kieMasked: maskSecret(secrets.kieApiKey),
     falMasked: maskSecret(secrets.falKey),
+    openrouterMasked: maskSecret(secrets.openrouterApiKey),
   };
 }
