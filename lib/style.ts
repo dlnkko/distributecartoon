@@ -123,6 +123,21 @@ export function characterLookFromPhotoPrompt(_character: Character, style: Visua
   return `Convert the attached photo to ${look}. Same subject. Solo portrait pose on a plain grey background.`;
 }
 
+export function characterAnchorPrompt(name: string, style: VisualStyle) {
+  const line = `Hi, my name is ${name}, nice to meet you!`;
+  return `${videoStyleLead(style)} @Image1 looks into the camera and says, "${line}" Realistic lipsync. Plain background. ${sceneAudioClose()}`;
+}
+
+export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto: boolean) {
+  const angle =
+    "Three-quarter angle, never head-on. The angle bakes depth and distance into the image so a moving camera can hold the geometry. No flat frontal view.";
+  const look = imageStyleLead(style);
+  if (fromPhoto) {
+    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} No people, no characters, no text.`;
+  }
+  return `${look}. Empty view of ${name}. ${angle} No people, no characters, no text.`;
+}
+
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
   return joinPromptParts([
     imageStyleLead(style),
@@ -746,7 +761,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
   const look = imageStyleLead(style);
   const used = new Set<string>();
 
-  const replacements: Array<{ pattern: RegExp; tag: string; first?: string }> = [];
+  const replacements: Array<{ pattern: RegExp; tag: string; first?: string; always?: string }> = [];
   images.forEach((item, index) => {
     const tag = `@Image${index + 1}`;
     const name = item.name.trim();
@@ -789,16 +804,28 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
     }
   });
   videos.forEach((item, index) => {
-    if (!item.name.trim()) return;
+    const name = item.name.trim();
+    if (!name) return;
+    const tag = `@Video${index + 1}`;
     replacements.push({
-      pattern: new RegExp(`\\b${escapeRegExp(item.name)}\\b`, "gi"),
-      tag: `@Video${index + 1}`,
+      pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
+      tag,
+      always:
+        item.kind === "character"
+          ? `${tag}, keep the same exact character, voice, gestures as the reference`
+          : undefined,
     });
   });
 
-  replacements.sort((a, b) => b.pattern.source.length - a.pattern.source.length);
+  replacements.sort(
+    (a, b) => b.pattern.source.length - a.pattern.source.length || Number(Boolean(b.always)) - Number(Boolean(a.always)),
+  );
   for (const item of replacements) {
     next = replaceOutsideQuotes(next, item.pattern, () => {
+      if (item.always) {
+        used.add(item.tag);
+        return item.always;
+      }
       if (item.first && !used.has(item.tag)) {
         used.add(item.tag);
         return item.first;
@@ -931,6 +958,30 @@ export function restyleReferencePrompt(kind: string, style: VisualStyle) {
   ].join(" ");
 }
 
+function ensureNamedLocations(
+  text: string,
+  images: PromptRef[],
+  project?: Project,
+  sceneIndexes?: number[],
+) {
+  if (!project || !sceneIndexes?.length) return text;
+  const locations = images
+    .map((item, index) => ({ item, tag: `@Image${index + 1}` }))
+    .filter(({ item }) => item.kind === "location" && item.name.trim());
+  if (!locations.length) return text;
+  const { prefix, blocks } = splitPackedScenes(text);
+  const next = blocks.map((part, index) => {
+    const scene = project.scenes.find((item) => item.index === sceneIndexes[index]);
+    const place = scene?.location?.trim().toLowerCase();
+    if (!place) return part;
+    const hit = locations.find((item) => item.item.name.trim().toLowerCase() === place);
+    if (!hit || new RegExp(`${escapeRegExp(hit.tag)}\\b`, "i").test(part)) return part;
+    return `${part.replace(/[. ]+$/, "")}. ${hit.tag}.`;
+  });
+  const joined = next.join(" CUT. ");
+  return prefix ? `${prefix} ${joined}` : joined;
+}
+
 export function labeledReferencePrompt(options: {
   images: PromptRef[];
   videos: PromptRef[];
@@ -949,8 +1000,10 @@ export function labeledReferencePrompt(options: {
   if (options.project) body = rewriteProductContainers(body, options.project);
   body = applyInlineRefTags(body, options.images, options.videos, options.style);
   body = ensurePropTagsInScenes(body, options.images, options.project, options.sceneIndexes);
+  body = ensureNamedLocations(body, options.images, options.project, options.sceneIndexes);
   body = ensureSceneNoBgm(body);
-  if (options.videos[0] && !/@Video1\b/.test(body)) {
+  const priorClip = options.videos.length === 1 && options.videos[0]?.kind !== "character";
+  if (priorClip && !/@Video1\b/.test(body)) {
     body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
   }
   if (!/^(?:pixar|claymation) style throughout/i.test(body)) {

@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
-import { generateBatchVideo, summarizeLibrary } from "./pipeline";
+import { ensureLongformAnchors, generateBatchVideo, summarizeLibrary } from "./pipeline";
 import { englishExtraName, englishSpeakerName, packedScenePrompt } from "./style";
 import { clipDurationForScenes, estimateSceneSeconds, parseDurationFromText, shouldGenerateOneShot } from "./timing";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
@@ -804,6 +804,12 @@ export async function runAgent(options: {
   const { openaiApiKey, openaiModel } = getSecrets();
   if (!openaiApiKey) {
     throw new Error("OPENAI_API_KEY is missing for the GPT-5.6 Luna agent.");
+  }
+
+  if (mode === "produce" && !shouldGenerateOneShot(options.project.targetDurationSeconds, options.project.scenes)) {
+    const onStatus = (text: string) => options.onEvent({ type: "status", text });
+    await ensureLongformAnchors(options.project, onStatus, options.abortSignal);
+    options.onEvent({ type: "project", project: options.project });
   }
 
   const client = new OpenAI({ apiKey: openaiApiKey });

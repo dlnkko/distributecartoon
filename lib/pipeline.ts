@@ -3,7 +3,7 @@ import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask,
 import { clampClipDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, realKieVideoTaskId } from "./video-jobs";
-import { characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
+import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { shouldGenerateOneShot } from "./timing";
@@ -188,6 +188,7 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
       }
     }
   }
+  if (await resumeLongformAnchors(project)) changed = true;
   if (changed) await saveProject(project);
   return project;
 }
@@ -217,6 +218,174 @@ function previousBatch(project: Project, batch: Batch) {
 
 export function leadCharacters(project: Project) {
   return project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character));
+}
+
+const ANCHOR_SECONDS = 4;
+const MAX_ANCHOR_VIDEOS = 7;
+const projectSaves = new Map<string, Promise<unknown>>();
+
+function saveSoon(project: Project) {
+  const previous = projectSaves.get(project.id) || Promise.resolve();
+  const next = previous.then(
+    () => saveProject(project),
+    () => saveProject(project),
+  );
+  projectSaves.set(project.id, next);
+  return next;
+}
+
+function anchorSourceUrl(character: Character) {
+  return character.portraitRemoteUrl || character.portraitPublicPath || "";
+}
+
+function hasFreshAnchor(character: Character) {
+  const source = anchorSourceUrl(character);
+  return Boolean(source && character.anchorVideoRemoteUrl && character.anchorSourceUrl === source);
+}
+
+function storyPlaces(project: Project) {
+  const photos = project.references.filter(
+    (asset) => asset.kind === "location" && (asset.originalRemoteUrl || asset.originalPublicPath),
+  );
+  const places: Array<{ name: string; photo?: ReferenceAsset }> = [];
+  const seen = new Set<string>();
+  function add(name: string, photo?: ReferenceAsset) {
+    const clean = name.trim();
+    const key = clean.toLowerCase();
+    if (!clean || seen.has(key) || /^(unknown|none|n\/a|tbd)$/i.test(clean)) return;
+    if (photo && places.some((place) => place.photo?.id === photo.id)) return;
+    seen.add(key);
+    places.push({ name: clean, photo });
+  }
+  for (const scene of project.scenes) add(scene.location);
+  for (const photo of photos) {
+    const label = photo.label.trim();
+    if (!label || /^location\s*\d+$/i.test(label)) continue;
+    const hit = places.find((place) => {
+      const name = place.name.toLowerCase();
+      const needle = label.toLowerCase();
+      return name === needle || name.includes(needle) || needle.includes(name);
+    });
+    if (hit) {
+      if (!hit.photo) hit.photo = photo;
+      continue;
+    }
+    if (promptReadyReferences(project, undefined, true).some((asset) => asset.id === photo.id)) add(label, photo);
+  }
+  return places;
+}
+
+async function rememberAnchor(project: Project, character: Character, remoteUrl: string) {
+  let saved: { fileName?: string; publicPath?: string };
+  try {
+    saved = await persistVideo(project, remoteUrl, [project.id, "anchors", `${character.slug}-intro`]);
+  } catch {
+    saved = { fileName: `${character.slug}-intro.mp4`, publicPath: remoteUrl };
+  }
+  character.anchorVideoPublicPath = saved.publicPath || remoteUrl;
+  character.anchorVideoRemoteUrl = remoteUrl;
+  character.anchorSourceUrl = anchorSourceUrl(character);
+  delete character.anchorVideoTaskId;
+  await saveSoon(project);
+}
+
+async function ensureCharacterAnchors(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
+  const pending = leadCharacters(project).filter((character) => hasUsableLook(character) && !hasFreshAnchor(character));
+  await Promise.all(
+    pending.map(async (character) => {
+      const source = anchorSourceUrl(character);
+      if (character.anchorSourceUrl && character.anchorSourceUrl !== source) delete character.anchorVideoTaskId;
+      const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
+      if (!portrait) return;
+      onStatus(`Recording ${character.name}…`);
+      try {
+        const remoteUrl = await generateSeedance25ReferenceVideo({
+          prompt: characterAnchorPrompt(character.name, project.style),
+          duration: ANCHOR_SECONDS,
+          aspectRatio: normalizeAspectRatio(project.aspectRatio),
+          referenceImageUrls: [portrait],
+          generateAudio: true,
+          resolution: "480p",
+          existingTaskId: realKieVideoTaskId(character.anchorVideoTaskId) || undefined,
+          onTaskCreated: async (taskId) => {
+            character.anchorVideoTaskId = taskId;
+            character.anchorSourceUrl = source;
+            await saveSoon(project);
+          },
+        });
+        await rememberAnchor(project, character, remoteUrl);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        onStatus(`Couldn't record ${character.name}. The story will still generate.`);
+      }
+    }),
+  );
+}
+
+async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
+  project.locationPlates = Array.isArray(project.locationPlates) ? project.locationPlates : [];
+  const missing = storyPlaces(project).filter(
+    (place) => !project.locationPlates!.some((plate) => plate.name.toLowerCase() === place.name.toLowerCase() && isHttpUrl(plate.remoteUrl)),
+  );
+  await Promise.all(
+    missing.map(async (place) => {
+      onStatus(`Building ${place.name}…`);
+      try {
+        const photo = place.photo
+          ? await resolveUploadUrl(place.photo.originalRemoteUrl, place.photo.originalPublicPath, abortSignal)
+          : "";
+        const remoteUrl = await generateGptImage25Flare({
+          prompt: locationPlatePrompt(place.name, project.style, Boolean(photo)),
+          aspectRatio: project.aspectRatio,
+          resolution: "2K",
+          inputUrls: photo ? [photo] : [],
+          abortSignal,
+        });
+        let saved;
+        try {
+          saved = await persistImage(project, remoteUrl, [project.id, "locations", slugify(place.name) || "place"]);
+        } catch {
+          saved = { fileName: "place.png", publicPath: remoteUrl, absolute: remoteUrl };
+        }
+        project.locationPlates = (project.locationPlates || []).filter((plate) => plate.name.toLowerCase() !== place.name.toLowerCase());
+        project.locationPlates.push({
+          name: place.name,
+          publicPath: saved.publicPath || remoteUrl,
+          remoteUrl,
+        });
+        await saveSoon(project);
+      } catch (error) {
+        if (isAbortError(error)) throw error;
+        onStatus(`Couldn't build ${place.name}. The story will still generate.`);
+      }
+    }),
+  );
+}
+
+export async function ensureLongformAnchors(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
+  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return project;
+  throwIfAborted(abortSignal);
+  await ensureCharacterAnchors(project, onStatus, abortSignal);
+  await ensureLocationPlates(project, onStatus, abortSignal);
+  return project;
+}
+
+async function resumeLongformAnchors(project: Project) {
+  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return false;
+  let changed = false;
+  for (const character of leadCharacters(project)) {
+    const taskId = realKieVideoTaskId(character.anchorVideoTaskId);
+    if (!taskId || hasFreshAnchor(character)) continue;
+    const peek = await peekKieTask(taskId);
+    if (peek.status === "success") {
+      await rememberAnchor(project, character, peek.url);
+      changed = true;
+    } else if (peek.status === "fail") {
+      delete character.anchorVideoTaskId;
+      changed = true;
+    }
+  }
+  return changed;
 }
 
 type LookResult = {
@@ -531,7 +700,43 @@ function batchCastNames(project: Project, batch: Batch) {
   return leadNames(project, [...fromScenes, ...batch.characterNames]);
 }
 
+async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  const imageEntries: PromptRef[] = [];
+  const videoEntries: PromptRef[] = [];
+  const cast = new Set(batchCastNames(project, batch).map((name) => name.toLowerCase()));
+
+  for (const character of leadCharacters(project)) {
+    if (!cast.has(character.name.toLowerCase())) continue;
+    const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
+    if (video) {
+      videoEntries.push({ url: video, kind: "character", name: character.name });
+      continue;
+    }
+    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
+    if (portrait) imageEntries.push({ url: portrait, kind: "character", name: character.name });
+  }
+
+  for (const plate of project.locationPlates || []) {
+    const url = await resolveUploadUrl(plate.remoteUrl, plate.publicPath, abortSignal);
+    if (!url) continue;
+    imageEntries.push({ url, kind: "location", name: plate.name });
+  }
+
+  for (const asset of promptReadyReferences(project, batch.sceneIndexes, true)) {
+    if (asset.kind === "location") continue;
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (!url) continue;
+    const kind = asset.kind === "logo" || asset.kind === "product" ? asset.kind : "other";
+    imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
+  }
+
+  return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
+}
+
 async function collectReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+    return collectLongformReferences(project, batch, abortSignal);
+  }
   const imageEntries: PromptRef[] = [];
   const videoEntries: PromptRef[] = [];
 
@@ -655,6 +860,10 @@ async function runGenerateBatchVideo(
     batch.duration = clampClipDuration(durationOverride, batch.duration || 8);
   } else {
     batch.duration = clampClipDuration(batch.duration, 8);
+  }
+
+  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+    await ensureLongformAnchors(project, onStatus, abortSignal);
   }
 
   const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt);

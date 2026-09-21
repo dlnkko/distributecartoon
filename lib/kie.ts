@@ -148,7 +148,7 @@ export async function generateSeedance25ReferenceVideo(options: {
     for (const url of (options.referenceImageUrls || []).slice(0, 30)) {
       input_references.push({ type: "image_url", image_url: { url } });
     }
-    for (const url of (options.referenceVideoUrls || []).slice(0, 1)) {
+    for (const url of (options.referenceVideoUrls || []).slice(0, 7)) {
       input_references.push({ type: "video_url", video_url: { url } });
     }
     const response = await fetch(`${OPENROUTER_BASE}/videos`, {

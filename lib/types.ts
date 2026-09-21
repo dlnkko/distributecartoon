@@ -58,6 +58,10 @@ export type Character = {
   portraitFileName?: string;
   portraitPublicPath?: string;
   portraitRemoteUrl?: string;
+  anchorVideoPublicPath?: string;
+  anchorVideoRemoteUrl?: string;
+  anchorVideoTaskId?: string;
+  anchorSourceUrl?: string;
   latestVideoFileName?: string;
   latestVideoPublicPath?: string;
   latestVideoRemoteUrl?: string;
@@ -130,6 +134,12 @@ export type ArchivedVideo = {
   createdAt: string;
 };
 
+export type LocationPlate = {
+  name: string;
+  publicPath: string;
+  remoteUrl: string;
+};
+
 export type Project = {
   id: string;
   title: string;
@@ -142,6 +152,7 @@ export type Project = {
   batches: Batch[];
   archivedVideos?: ArchivedVideo[];
   references: ReferenceAsset[];
+  locationPlates?: LocationPlate[];
   scriptRefCues: ScriptRefCue[];
   skippedRefs: boolean;
   ownerId?: string;

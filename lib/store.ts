@@ -42,6 +42,7 @@ export function normalizeProject(project: Project): Project {
   project.scenes = project.scenes || [];
   project.batches = project.batches || [];
   project.archivedVideos = Array.isArray(project.archivedVideos) ? project.archivedVideos : [];
+  project.locationPlates = Array.isArray(project.locationPlates) ? project.locationPlates : [];
   for (const batch of project.batches) {
     if (!batch.duration) batch.duration = 15;
   }
@@ -117,6 +118,7 @@ export function resetStoryboard(project: Project) {
   project.scenes = [];
   project.batches = [];
   project.archivedVideos = [];
+  project.locationPlates = [];
   project.characters = [];
   project.scriptRefCues = [];
   project.skippedRefs = false;
