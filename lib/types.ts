@@ -163,6 +163,10 @@ export type Project = {
   lastVideoFileName?: string;
   lastVideoRemoteUrl?: string;
   lastVideoPublicPath?: string;
+  joinedVideoPublicPath?: string;
+  joinedVideoRemoteUrl?: string;
+  joinedVideoFileName?: string;
+  joinedSource?: string;
   pendingQuestions: string[];
   messages: ChatMessage[];
   createdAt: string;

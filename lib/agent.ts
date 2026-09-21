@@ -711,22 +711,30 @@ export async function runAgent(options: {
     const onStatus = (text: string) => options.onEvent({ type: "status", text });
     await generatePlannedVideos(options.project, onStatus, options.abortSignal);
     options.onEvent({ type: "project", project: options.project });
-    const ready = options.project.batches.filter((batch) => {
-      const src = batch.videoPublicPath || batch.videoRemoteUrl;
-      if (!src) return false;
-      return !options.project.messages.some((message) => message.attachments?.some((item) => item.src === src));
-    });
-    if (ready.length) {
+    const joined = options.project.joinedVideoPublicPath || options.project.joinedVideoRemoteUrl;
+    const ready = joined
+      ? [{ src: joined, poster: options.project.batches[0]?.framePublicPath, label: "Video ready" }]
+      : options.project.batches
+          .filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl)
+          .map((batch) => ({
+            src: batch.videoPublicPath || batch.videoRemoteUrl || "",
+            poster: batch.framePublicPath,
+            label: "Video ready",
+          }));
+    const unseen = ready.filter(
+      (item) => item.src && !options.project.messages.some((message) => message.attachments?.some((attachment) => attachment.src === item.src)),
+    );
+    if (unseen.length) {
       options.project.messages.push({
         id: createId("msg"),
         role: "assistant",
-        content: ready.length === 1 ? "Video ready." : `${ready.length} parts are ready.`,
+        content: "Video ready.",
         createdAt: new Date().toISOString(),
-        attachments: ready.map((batch) => ({
+        attachments: unseen.map((item) => ({
           kind: "video" as const,
-          src: batch.videoPublicPath || batch.videoRemoteUrl || "",
-          poster: batch.framePublicPath,
-          label: ready.length === 1 ? "Video ready" : `Part ${batch.index}`,
+          src: item.src,
+          poster: item.poster,
+          label: item.label,
         })),
       });
       await saveProject(options.project);

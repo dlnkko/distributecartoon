@@ -126,6 +126,10 @@ export function resetStoryboard(project: Project) {
   delete project.lastVideoFileName;
   delete project.lastVideoPublicPath;
   delete project.lastVideoRemoteUrl;
+  delete project.joinedVideoFileName;
+  delete project.joinedVideoPublicPath;
+  delete project.joinedVideoRemoteUrl;
+  delete project.joinedSource;
 }
 
 async function persistRemote(project: Project) {

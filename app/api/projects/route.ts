@@ -104,6 +104,10 @@ export async function PATCH(request: Request) {
       delete project.lastVideoFileName;
       delete project.lastVideoPublicPath;
       delete project.lastVideoRemoteUrl;
+      delete project.joinedVideoFileName;
+      delete project.joinedVideoPublicPath;
+      delete project.joinedVideoRemoteUrl;
+      delete project.joinedSource;
     }
   }
   if (!project.ownerId) project.ownerId = user.id;

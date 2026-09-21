@@ -1,6 +1,7 @@
-import { downloadToPublic, extensionFromUrl } from "./assets";
+import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
+import { concatVideoBuffers } from "./concat";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
-import { clampClipDuration, clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
+import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, realKieVideoTaskId } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
@@ -189,6 +190,15 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
     }
   }
   if (await resumeLongformAnchors(project)) changed = true;
+  const parts = project.batches.filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl);
+  if (parts.length > 1 && parts.length === project.batches.length) {
+    try {
+      await joinReadyParts(project, () => undefined);
+      changed = true;
+    } catch {
+      // The parts stay available until the next join attempt.
+    }
+  }
   if (changed) await saveProject(project);
   return project;
 }
@@ -944,7 +954,56 @@ export async function generatePlannedVideos(project: Project, onStatus: StatusFn
   );
   await saveSoon(project);
   const failed = settled.find((result) => result.status === "rejected");
+  if (!failed) await joinReadyParts(project, onStatus);
   if (failed && failed.status === "rejected") throw failed.reason;
+}
+
+function readyParts(project: Project) {
+  return [...project.batches]
+    .filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl)
+    .sort((a, b) => a.index - b.index);
+}
+
+async function joinReadyParts(project: Project, onStatus: StatusFn) {
+  const parts = readyParts(project);
+  if (parts.length < 2 || parts.length !== project.batches.length) return;
+  const key = parts.map((batch) => `${batch.index}:${batch.videoRemoteUrl || batch.videoPublicPath}`).join("|");
+  const existing = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
+  if (project.joinedSource === key && existing) return;
+  onStatus("Joining the parts…");
+  const buffers = [];
+  for (const batch of parts) {
+    buffers.push(await readPublicFile(batch.videoRemoteUrl || batch.videoPublicPath || ""));
+  }
+  const joined = await concatVideoBuffers(buffers);
+  const saved = await storeGeneratedFile({
+    project,
+    buffer: joined,
+    relativeParts: [project.id, "final", `full-${Date.now()}.mp4`],
+    contentType: "video/mp4",
+  });
+  project.joinedVideoFileName = saved.fileName;
+  project.joinedVideoPublicPath = saved.publicPath;
+  project.joinedVideoRemoteUrl = saved.publicPath;
+  project.joinedSource = key;
+  project.lastVideoFileName = saved.fileName;
+  project.lastVideoPublicPath = saved.publicPath;
+  project.lastVideoRemoteUrl = saved.publicPath;
+  const partIds = new Set(parts.map((batch) => batch.id));
+  const partSrcs = new Set(parts.flatMap((batch) => [batch.videoPublicPath, batch.videoRemoteUrl].filter(Boolean)));
+  project.archivedVideos = (project.archivedVideos || []).filter(
+    (item) => !partIds.has(item.id) && !partSrcs.has(item.publicPath),
+  );
+  project.archivedVideos.push({
+    id: `full_${project.id}_${Date.now()}`,
+    title: project.title,
+    publicPath: saved.publicPath,
+    posterPath: parts[0]?.framePublicPath,
+    duration: parts.reduce((sum, batch) => sum + (batch.duration || 0), 0),
+    index: 1,
+    createdAt: nowIso(),
+  });
+  await saveSoon(project);
 }
 
 export async function generateBatchVideo(

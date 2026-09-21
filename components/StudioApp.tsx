@@ -99,9 +99,30 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
   const videos: HistoryVideo[] = [];
   const seen = new Set<string>();
   for (const project of projects) {
+    const joined = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
     const ready = project.batches.filter((batch) => batchVideoSrc(batch));
+    const partSrcs = new Set(joined ? ready.map((batch) => batchVideoSrc(batch)) : []);
+    if (joined) {
+      const dedupe = `${project.id}:${joined}`;
+      if (!seen.has(dedupe)) {
+        seen.add(dedupe);
+        videos.push({
+          key: `${project.id}-full`,
+          projectId: project.id,
+          title: project.title,
+          src: joined,
+          poster: ready[0]?.framePublicPath,
+          duration: ready.reduce((sum, batch) => sum + (batch.duration || 0), 0) || project.targetDurationSeconds || 0,
+          index: 1,
+          parts: 1,
+          aspectRatio: project.aspectRatio,
+          createdAt: project.updatedAt,
+        });
+      }
+    }
     for (const batch of ready) {
       const src = batchVideoSrc(batch);
+      if (partSrcs.has(src)) continue;
       const dedupe = `${project.id}:${src}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
@@ -120,7 +141,7 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
     }
     for (const item of project.archivedVideos || []) {
       const src = item.publicPath;
-      if (!src) continue;
+      if (!src || partSrcs.has(src)) continue;
       const dedupe = `${project.id}:${src}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
@@ -1780,6 +1801,7 @@ function ProduceStep({
   onEditScenes: () => void;
   onExpand: (item: { src: string; poster?: string; label?: string; downloadName?: string }) => void;
 }) {
+  const joined = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
   const ready = project.batches.filter((batch) => batchVideoSrc(batch));
   const awaiting = projectAwaitingVideo(project);
   const totalParts = Math.max(ready.length, project.batches.length);
@@ -1827,7 +1849,27 @@ function ProduceStep({
             waiting
           />
         ) : null}
-        {project.batches.map((batch) => (
+        {joined ? (
+          <VideoStage
+            title={project.title}
+            aspect={project.aspectRatio}
+            styleName={project.style}
+            duration={ready.reduce((sum, batch) => sum + (batch.duration || 0), 0) || project.targetDurationSeconds || 0}
+            src={assetSrc(joined)}
+            poster={ready[0]?.framePublicPath ? assetSrc(ready[0].framePublicPath) : undefined}
+            downloadName={videoDownloadName(project.title)}
+            onExpand={() =>
+              onExpand({
+                src: assetSrc(joined),
+                poster: ready[0]?.framePublicPath ? assetSrc(ready[0].framePublicPath) : undefined,
+                label: project.title,
+                downloadName: videoDownloadName(project.title),
+              })
+            }
+          />
+        ) : null}
+        {!joined
+          ? project.batches.map((batch) => (
           <VideoStage
             key={batch.id}
             title={project.title}
@@ -1853,7 +1895,8 @@ function ProduceStep({
                 : undefined
             }
           />
-        ))}
+        ))
+          : null}
       </div>
 
       {done ? (
