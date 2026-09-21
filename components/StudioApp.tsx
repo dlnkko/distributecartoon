@@ -186,12 +186,31 @@ async function showReadyNotification(title: string) {
   new Notification("Your video is ready", options);
 }
 
+function lookSrc(character: Pick<Character, "portraitPublicPath" | "portraitRemoteUrl" | "portraitFileName" | "id">) {
+  const chosen =
+    [character.portraitPublicPath, character.portraitRemoteUrl].find((item) => item && /^https?:\/\//i.test(item)) ||
+    character.portraitPublicPath ||
+    character.portraitRemoteUrl ||
+    "";
+  if (!chosen) return "";
+  return `${assetSrc(chosen)}?v=${encodeURIComponent(character.portraitFileName || character.id)}`;
+}
+
+function lookFallbackSrc(character: Pick<Character, "portraitPublicPath" | "portraitRemoteUrl">) {
+  const primary =
+    [character.portraitPublicPath, character.portraitRemoteUrl].find((item) => item && /^https?:\/\//i.test(item)) ||
+    character.portraitPublicPath ||
+    "";
+  const fallback = character.portraitRemoteUrl || "";
+  return fallback && fallback !== primary ? fallback : "";
+}
+
 function missingCastLooks(project: Project) {
   return project.characters.filter(
     (character) =>
       !character.isExtra &&
       !isUnseenVoice(character) &&
-      !(character.portraitPublicPath || character.portraitRemoteUrl),
+      !lookSrc(character),
   );
 }
 
@@ -653,12 +672,7 @@ export function StudioApp() {
       const json = await requestCastLooks(saved.id, controller.signal);
       if (json.project) {
         remember(json.project);
-        const missing = json.project.characters.filter(
-          (character) =>
-            !character.isExtra &&
-            !isUnseenVoice(character) &&
-            !(character.portraitPublicPath || character.portraitRemoteUrl),
-        );
+        const missing = missingCastLooks(json.project);
         setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
       } else {
         setStatus(json.error || "Couldn't cast those characters.");
@@ -1584,7 +1598,7 @@ function CastStep({
   onContinue: () => void;
 }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const ready = characters.length === 0 || characters.every((character) => character.portraitPublicPath || character.portraitRemoteUrl);
+  const ready = characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
 
   return (
     <div className="flex flex-1 flex-col gap-4">
@@ -1599,16 +1613,22 @@ function CastStep({
 
       <div className="grid gap-4 sm:grid-cols-2">
         {characters.map((character) => {
-          const src = character.portraitPublicPath
-            ? `${assetSrc(character.portraitPublicPath)}?v=${encodeURIComponent(character.portraitFileName || character.id)}`
-            : "";
+          const src = lookSrc(character);
+          const fallback = lookFallbackSrc(character);
           const draft = notes[character.id] || "";
           return (
             <article key={character.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4 shadow-sm">
               <div className="aspect-square overflow-hidden rounded-2xl bg-stone-100">
                 {src ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={src} alt={character.name} className="h-full w-full object-contain" />
+                  <img
+                    src={src}
+                    alt={character.name}
+                    className="h-full w-full object-contain"
+                    onError={(event) => {
+                      if (fallback && event.currentTarget.src !== fallback) event.currentTarget.src = fallback;
+                    }}
+                  />
                 ) : (
                   <div className="grid h-full place-items-center px-4 text-center text-sm text-[var(--muted)]">
                     {busy ? "Casting…" : "No look yet"}

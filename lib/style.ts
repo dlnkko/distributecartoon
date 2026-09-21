@@ -25,7 +25,7 @@ export function videoVoiceLead() {
 }
 
 export function videoCloseLead() {
-  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. On-screen dialogue uses that character's realistic lipsync. Unspecified narrator voiceover uses any fitting off-screen voice, not a visible narrator. Speak from 0s. No repeated lines.";
+  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Unspecified narrator voiceover uses any fitting off-screen voice, not a visible narrator. Speak from 0s. No repeated lines.";
 }
 
 export function videoStyleLead(style: VisualStyle) {
@@ -534,6 +534,62 @@ function withNoClone(action: string, camera: string, scene?: Scene, project?: Pr
   return next;
 }
 
+function withCraftLocks(action: string, scene?: Scene, project?: Project) {
+  let next = action.trim();
+  const names = sceneOnScreenNames(scene, project);
+  const blob = `${next} ${scene?.title || ""} ${scene?.location || ""} ${(scene?.dialogue || []).map((line) => `${line.speaker} ${line.line}`).join(" ")}`;
+
+  if (
+    names.length &&
+    /\b(glow|glowing|neon|headlight|lantern|backlit|backlight|lens flare|emissive|halo|shining eyes|glowing eyes|light source)\b/i.test(
+      blob,
+    )
+  ) {
+    const lock = `${names[0]} in the foreground occludes any glow or lights behind. No shine through body or hair.`;
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+
+  const spoken = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
+  if (names.length >= 2 && spoken.length && !/\b(fourth wall|to camera|into the (?:camera|lens)|looks? (?:at|into) (?:the )?(?:camera|lens))\b/i.test(blob)) {
+    const speakerRaw = spoken.find((line) => names.some((name) => name.toLowerCase() === line.speaker.trim().toLowerCase()))?.speaker || names[0];
+    const speaker = names.find((name) => name.toLowerCase() === speakerRaw.trim().toLowerCase()) || names[0];
+    const other = names.find((name) => name.toLowerCase() !== speaker.toLowerCase());
+    if (other) {
+      const lock = `${speaker} looks at ${other}, not the camera.`;
+      if (!alreadyHas(next, lock)) next += ` ${lock}`;
+    }
+  }
+
+  if (/\b(chas(?:e|es|ing)|pursu(?:e|es|ing)|hunts?|lunges? at|runs? after|goes? after|stalk(?:s|ing)?)\b/i.test(blob) && names.length) {
+    const lock =
+      names.length >= 2
+        ? `The pursuer moves toward ${names[names.length - 1]}'s position in the scene.`
+        : `The pursuer moves toward the character's position in the scene.`;
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+
+  if (
+    names.length &&
+    /\b(chair|table|desk|sofa|couch|doorway|jumps? (?:down|off)|hops? (?:down|off)|gets? (?:down|off)|climbs? (?:down|off)|sits?|stands? up)\b/i.test(
+      blob,
+    )
+  ) {
+    const lock = `${names[0]} stays the same size versus the nearby chair, table, and door.`;
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+
+  if (
+    /\b(door handle|doorknob|handle|fork|knife|spoon|utensil|chopsticks|cup|glass|mug|grabs?|grips?|holds? the|opens? the door|closes? the door)\b/i.test(
+      blob,
+    )
+  ) {
+    const lock = "Hands keep real contact on the object they hold; it does not float, slide, or clip.";
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+
+  return next;
+}
+
 function ensurePhysicalLogic(summary: string, context = "") {
   let text = summary.trim();
   if (!text) return text;
@@ -829,13 +885,17 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       const summary = rewriteProductContainers(scene?.summary || scene?.title || "", project);
       const montage = expandMontageAction(summary);
       const space = `${scene?.title || ""} ${scene?.location || ""}`;
-      const visual = withNoClone(
-        withOnScreenProps(
-          montage || ensurePhysicalLogic(ensureVisibleAction(summary), space),
+      const visual = withCraftLocks(
+        withNoClone(
+          withOnScreenProps(
+            montage || ensurePhysicalLogic(ensureVisibleAction(summary), space),
+            project,
+            index,
+          ),
+          camera,
+          scene,
           project,
-          index,
         ),
-        camera,
         scene,
         project,
       );

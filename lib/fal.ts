@@ -30,6 +30,19 @@ function flareImageSize(aspectRatio?: string) {
   return "landscape_16_9";
 }
 
+function firstFalImageUrl(data: unknown): string {
+  if (!data || typeof data !== "object") return "";
+  const payload = data as { images?: Array<{ url?: string } | string>; image?: { url?: string }; url?: string };
+  const images = Array.isArray(payload.images) ? payload.images : [];
+  for (const item of images) {
+    if (typeof item === "string" && /^https?:\/\//i.test(item)) return item;
+    if (item && typeof item === "object" && item.url && /^https?:\/\//i.test(item.url)) return item.url;
+  }
+  if (payload.image?.url && /^https?:\/\//i.test(payload.image.url)) return payload.image.url;
+  if (payload.url && /^https?:\/\//i.test(payload.url)) return payload.url;
+  return "";
+}
+
 export async function uploadLocalPublicPath(publicPath: string) {
   configureFal();
   const data = await readPublicFile(publicPath);
@@ -68,7 +81,7 @@ export async function generateGptImage25Flare(options: {
       logs: false,
       abortSignal: options.abortSignal,
     });
-    const url = result.data?.images?.[0]?.url as string | undefined;
+    const url = firstFalImageUrl(result.data);
     if (!url) throw new Error("GPT Image 2.5 Flare did not return an image.");
     return url;
   }
@@ -85,7 +98,7 @@ export async function generateGptImage25Flare(options: {
     logs: false,
     abortSignal: options.abortSignal,
   });
-  const url = result.data?.images?.[0]?.url as string | undefined;
+  const url = firstFalImageUrl(result.data);
   if (!url) throw new Error("GPT Image 2.5 Flare did not return an image.");
   return url;
 }

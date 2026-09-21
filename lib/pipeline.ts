@@ -21,7 +21,15 @@ async function persistImage(project: Project, remoteUrl: string, parts: string[]
   const withExt = [...parts];
   const last = withExt.at(-1) || "image";
   withExt[withExt.length - 1] = last.endsWith(ext) ? last : `${last}${ext}`;
-  return downloadToPublic(remoteUrl, withExt, project);
+  try {
+    return await downloadToPublic(remoteUrl, withExt, project);
+  } catch {
+    return {
+      fileName: withExt.at(-1) || "image.png",
+      publicPath: remoteUrl,
+      absolute: remoteUrl,
+    };
+  }
 }
 
 async function persistVideo(project: Project, remoteUrl: string, parts: string[]) {
@@ -222,8 +230,8 @@ type LookResult = {
 
 function applyLookToCharacter(character: Character, look: LookResult) {
   character.portraitFileName = look.fileName;
-  character.portraitPublicPath = look.publicPath;
-  character.portraitRemoteUrl = look.remoteUrl;
+  character.portraitPublicPath = look.publicPath || look.remoteUrl;
+  character.portraitRemoteUrl = look.remoteUrl || look.publicPath;
   character.lookConfirmed = false;
   if (look.revisionNotes) character.lookRevisionUsed = true;
   else if (look.fromPhoto && look.source) character.sourceRefId = look.source.id;
@@ -260,14 +268,20 @@ async function createCharacterLook(
     inputUrls,
     abortSignal,
   });
-  const saved = await persistImage(project, remoteUrl, [
-    project.id,
-    "characters",
-    `${character.slug}-look-${Date.now()}-${createId("look")}`,
-  ]);
+  if (!remoteUrl) throw new Error(`Fal did not return a look for ${character.name}.`);
+  let saved;
+  try {
+    saved = await persistImage(project, remoteUrl, [
+      project.id,
+      "characters",
+      `${character.slug}-look-${Date.now()}-${createId("look")}`,
+    ]);
+  } catch {
+    saved = { fileName: `${character.slug}-look.png`, publicPath: remoteUrl, absolute: remoteUrl };
+  }
   return {
     fileName: saved.fileName,
-    publicPath: saved.publicPath,
+    publicPath: saved.publicPath || remoteUrl,
     remoteUrl,
     fromPhoto,
     source: photo,
@@ -275,10 +289,13 @@ async function createCharacterLook(
   };
 }
 
+function hasUsableLook(character: Character) {
+  return isHttpUrl(character.portraitRemoteUrl) || isHttpUrl(character.portraitPublicPath);
+}
+
 function characterNeedsLook(character: Character, source?: ReferenceAsset) {
-  const hasLook = Boolean(character.portraitRemoteUrl || character.portraitPublicPath);
   const sameSource = source ? character.sourceRefId === source.id : !character.sourceRefId;
-  return !(hasLook && sameSource);
+  return !(hasUsableLook(character) && sameSource);
 }
 
 export async function generateCharacterLook(
@@ -303,7 +320,11 @@ async function requestLooks(
   abortSignal?: AbortSignal,
 ) {
   return Promise.allSettled(
-    characters.map((character) => createCharacterLook(project, character, abortSignal, undefined, sources.get(character.id))),
+    characters.map(async (character) => {
+      const look = await createCharacterLook(project, character, abortSignal, undefined, sources.get(character.id));
+      applyLookToCharacter(character, look);
+      return look;
+    }),
   );
 }
 
@@ -323,10 +344,7 @@ export async function ensureCharacterLooks(project: Project, onStatus: StatusFn,
   let abortError: unknown;
   for (let index = 0; index < pending.length; index += 1) {
     const result = settled[index];
-    if (result.status === "fulfilled") {
-      applyLookToCharacter(pending[index], result.value);
-      continue;
-    }
+    if (result.status === "fulfilled") continue;
     if (isAbortError(result.reason)) abortError = result.reason;
     else retry.push(pending[index]);
   }
@@ -339,10 +357,7 @@ export async function ensureCharacterLooks(project: Project, onStatus: StatusFn,
     abortError = undefined;
     for (let index = 0; index < retry.length; index += 1) {
       const result = settled[index];
-      if (result.status === "fulfilled") {
-        applyLookToCharacter(retry[index], result.value);
-        continue;
-      }
+      if (result.status === "fulfilled") continue;
       if (isAbortError(result.reason)) abortError = result.reason;
       else onStatus(`Couldn't cast ${retry[index].name}.`);
     }
