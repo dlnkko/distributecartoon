@@ -800,16 +800,6 @@ export function StudioApp() {
   }
 
   const history = useMemo(() => historyFromProjects(projects), [projects]);
-  const drafts = useMemo(
-    () =>
-      projects.filter((item) => {
-        const hasVideo =
-          item.batches.some((batch) => batchVideoSrc(batch)) || (item.archivedVideos || []).some((clip) => clip.publicPath);
-        if (hasVideo) return false;
-        return Boolean(item.scriptText || item.scriptName || item.scenes.length || projectAwaitingVideo(item));
-      }),
-    [projects],
-  );
   const credits = profile?.credits ?? 120;
 
   if (!project) {
@@ -846,6 +836,17 @@ export function StudioApp() {
           </button>
         </div>
 
+        <div className="px-3 pb-3">
+          <button
+            type="button"
+            onClick={() => void createNew()}
+            className="btn-primary flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ink)] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(28,25,23,0.16)]"
+          >
+            <PlusIcon />
+            Create a video
+          </button>
+        </div>
+
         <nav className="flex min-h-0 flex-1 flex-col gap-1 px-3">
           <button
             type="button"
@@ -859,16 +860,6 @@ export function StudioApp() {
           >
             <VideosIcon />
             Your videos
-          </button>
-          <button
-            type="button"
-            onClick={() => void createNew()}
-            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm ${
-              pane === "studio" ? "bg-white shadow-sm" : "hover:bg-white/70"
-            }`}
-          >
-            <PlusIcon />
-            Create a video
           </button>
         </nav>
 
@@ -898,32 +889,10 @@ export function StudioApp() {
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg)]">
-        <header className="flex items-center gap-3 px-3 py-3 md:px-6">
-          <button type="button" className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm md:hidden" onClick={() => setSidebarOpen(true)}>
-            Menu
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="display truncate text-xl md:text-2xl">{pane === "library" ? "Your videos" : project.title}</h2>
-          </div>
-          {pane === "studio" ? (
-            <button
-              type="button"
-              onClick={() => setPane("library")}
-              className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
-            >
-              Your videos
-            </button>
-          ) : (
-            <button type="button" onClick={() => void createNew()} className="btn-primary rounded-2xl bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white">
-              Create a video
-            </button>
-          )}
-        </header>
-
         {pane === "library" ? (
           <VideosDashboard
             videos={history}
-            drafts={drafts}
+            onMenu={() => setSidebarOpen(true)}
             onPlay={(item) =>
               setExpanded({
                 src: assetSrc(item.src),
@@ -932,7 +901,6 @@ export function StudioApp() {
                 downloadName: videoDownloadName(item.title, item.index, item.parts),
               })
             }
-            onOpenDraft={(item) => void selectProject(item)}
             onOpenProject={(projectId) => {
               const found = projects.find((entry) => entry.id === projectId);
               if (found) void selectProject(found);
@@ -941,6 +909,21 @@ export function StudioApp() {
           />
         ) : (
           <>
+        <header className="flex items-center gap-3 px-3 py-3 md:px-6">
+          <button type="button" className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm md:hidden" onClick={() => setSidebarOpen(true)}>
+            Menu
+          </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="display truncate text-xl md:text-2xl">{project.title}</h2>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPane("library")}
+            className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
+          >
+            Your videos
+          </button>
+        </header>
             <StepBar current={step} />
             <div className="scroll-thin mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
           {step === "script" ? (
@@ -1152,82 +1135,80 @@ function StepBar({ current }: { current: WorkflowStep }) {
 
 function VideosDashboard({
   videos,
-  drafts,
+  onMenu,
   onPlay,
-  onOpenDraft,
   onOpenProject,
   onCreate,
 }: {
   videos: HistoryVideo[];
-  drafts: Project[];
+  onMenu: () => void;
   onPlay: (item: HistoryVideo) => void;
-  onOpenDraft: (item: Project) => void;
   onOpenProject: (projectId: string) => void;
   onCreate: () => void;
 }) {
-  const empty = videos.length === 0 && drafts.length === 0;
+  const empty = videos.length === 0;
   return (
-    <div className="scroll-thin flex-1 overflow-y-auto px-3 pb-10 md:px-8">
-      <div className="mx-auto w-full max-w-6xl">
-        <p className="max-w-xl text-sm text-[var(--muted)]">
-          Every video you generate lands here, including new versions after Edit scenes.
-        </p>
+    <div className="scroll-thin flex-1 overflow-y-auto px-4 pb-12 sm:px-6 lg:px-8">
+      <div className="mx-auto w-full max-w-7xl">
+        <div className="flex flex-col gap-5 pt-5 sm:flex-row sm:items-end sm:justify-between sm:pt-7">
+          <div className="flex min-w-0 items-start gap-3">
+            <button type="button" className="mt-1 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm md:hidden" onClick={onMenu}>
+              Menu
+            </button>
+            <div className="min-w-0">
+              <h2 className="display text-[2rem] leading-none sm:text-[2.35rem]">Your videos</h2>
+              <p className="mt-2 text-sm text-[var(--muted)]">
+                {empty ? "Finished videos will appear here." : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onCreate}
+            className="btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-6 py-3 text-[15px] font-semibold text-white shadow-[0_14px_32px_rgba(28,25,23,0.2)]"
+          >
+            <PlusIcon />
+            Create a video
+          </button>
+        </div>
 
         {empty ? (
-          <div className="mt-16 flex flex-col items-center rounded-[32px] border border-dashed border-[var(--line)] bg-white/70 px-6 py-16 text-center">
-            <p className="display text-2xl">Nothing here yet</p>
-            <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">Create a video and it will show up on this board as soon as it is ready.</p>
-            <button type="button" onClick={onCreate} className="btn-primary mt-6 rounded-2xl bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white">
+          <div className="mt-14 flex flex-col items-center rounded-[28px] border border-dashed border-[var(--line)] bg-white/75 px-6 py-20 text-center">
+            <p className="display text-2xl">No videos yet</p>
+            <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">When a video finishes generating, it will show up on this board.</p>
+            <button
+              type="button"
+              onClick={onCreate}
+              className="btn-primary mt-7 inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-6 py-3 text-[15px] font-semibold text-white"
+            >
+              <PlusIcon />
               Create a video
             </button>
           </div>
         ) : (
-          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {drafts.map((item) => {
-              const waiting = projectAwaitingVideo(item);
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => onOpenDraft(item)}
-                  className="group overflow-hidden rounded-[28px] border border-[var(--line)] bg-white text-left shadow-[0_10px_30px_rgba(28,25,23,0.04)] hover:shadow-[0_16px_40px_rgba(28,25,23,0.08)]"
-                >
-                  <div className="relative aspect-video bg-[#ece8e1]">
-                    <div className="absolute inset-0 grid place-items-center text-sm text-[var(--muted)]">
-                      {waiting ? "Generating…" : "In progress"}
-                    </div>
-                  </div>
-                  <div className="px-4 py-3">
-                    <p className="truncate font-medium">{item.title || "Untitled video"}</p>
-                    <p className="mt-0.5 text-[12px] text-[var(--muted)]">
-                      {waiting ? "Generating now" : "Continue"} · Updated {timeAgo(item.updatedAt)}
-                    </p>
-                  </div>
-                </button>
-              );
-            })}
+          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
             {videos.map((item) => (
               <button
                 key={item.key}
                 type="button"
                 onClick={() => onPlay(item)}
-                className="group overflow-hidden rounded-[28px] border border-[var(--line)] bg-white text-left shadow-[0_10px_30px_rgba(28,25,23,0.04)] hover:shadow-[0_16px_40px_rgba(28,25,23,0.08)]"
+                className="group overflow-hidden rounded-2xl border border-[var(--line)] bg-white text-left shadow-[0_6px_18px_rgba(28,25,23,0.04)] hover:shadow-[0_12px_28px_rgba(28,25,23,0.08)]"
               >
                 <div className="relative aspect-video overflow-hidden bg-stone-200">
                   {item.poster ? (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={assetSrc(item.poster)} alt="" className="h-full w-full object-cover" />
+                    <img src={assetSrc(item.poster)} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
                   ) : (
                     <video src={assetSrc(item.src)} muted playsInline preload="metadata" className="h-full w-full object-cover" />
                   )}
-                  <span className="absolute bottom-2 right-2 rounded-full bg-black/65 px-2 py-0.5 text-[11px] text-white">
+                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
                     {item.parts > 1 ? `Part ${item.index} · ${item.duration}s` : `${item.duration}s`}
                   </span>
                 </div>
-                <div className="flex items-start justify-between gap-3 px-4 py-3">
+                <div className="flex items-start justify-between gap-2 px-2.5 py-2">
                   <div className="min-w-0">
-                    <p className="truncate font-medium">{item.title || "Untitled video"}</p>
-                    <p className="mt-0.5 text-[12px] text-[var(--muted)]">Updated {timeAgo(item.createdAt)}</p>
+                    <p className="truncate text-[13px] font-medium">{item.title || "Untitled video"}</p>
+                    <p className="mt-0.5 text-[11px] text-[var(--muted)]">{timeAgo(item.createdAt)}</p>
                   </div>
                   <span
                     role="button"
@@ -1243,7 +1224,7 @@ function VideosDashboard({
                         onOpenProject(item.projectId);
                       }
                     }}
-                    className="shrink-0 pt-0.5 text-[12px] text-[var(--muted)] hover:text-[var(--ink)]"
+                    className="shrink-0 pt-0.5 text-[11px] text-[var(--muted)] hover:text-[var(--ink)]"
                   >
                     Edit
                   </span>
