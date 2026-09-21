@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { AgentMode, ArchivedVideo, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
+import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { projectAwaitingVideo } from "@/lib/video-jobs";
 
@@ -70,6 +70,7 @@ type HistoryVideo = {
   index: number;
   parts: number;
   aspectRatio: AspectRatio;
+  createdAt: string;
 };
 
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [
@@ -81,12 +82,13 @@ const STEPS: Array<{ id: WorkflowStep; label: string }> = [
 ];
 
 function timeAgo(iso: string) {
-  const delta = Date.now() - new Date(iso).getTime();
-  const mins = Math.max(1, Math.round(delta / 60000));
-  if (mins < 60) return `${mins}m`;
+  const delta = Date.now() - new Date(iso || 0).getTime();
+  const mins = Math.max(1, Number.isFinite(delta) ? Math.round(delta / 60000) : 1);
+  if (mins < 60) return `${mins}m ago`;
   const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h`;
-  return `${Math.round(hours / 24)}d`;
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "1 day ago" : `${days} days ago`;
 }
 
 function batchVideoSrc(batch: { videoPublicPath?: string; videoRemoteUrl?: string }) {
@@ -113,10 +115,10 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
         index: batch.index,
         parts: ready.length,
         aspectRatio: project.aspectRatio,
+        createdAt: project.updatedAt,
       });
     }
-    const archived: ArchivedVideo[] = [...(project.archivedVideos || [])].reverse();
-    for (const item of archived) {
+    for (const item of project.archivedVideos || []) {
       const src = item.publicPath;
       if (!src) continue;
       const dedupe = `${project.id}:${src}`;
@@ -132,10 +134,11 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
         index: item.index,
         parts: 1,
         aspectRatio: project.aspectRatio,
+        createdAt: item.createdAt || project.updatedAt,
       });
     }
   }
-  return videos;
+  return videos.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 }
 
 function videoDownloadName(title: string, index = 1, parts = 1) {
@@ -276,6 +279,7 @@ export function StudioApp() {
   const notifyReadyRef = useRef(false);
   const [notifyReady, setNotifyReady] = useState(false);
   const [notifyHint, setNotifyHint] = useState("");
+  const [pane, setPane] = useState<"library" | "studio">("library");
 
   useEffect(() => {
     void boot();
@@ -403,6 +407,7 @@ export function StudioApp() {
     setScriptDraft("");
     setScenesDraft([]);
     setStatus("");
+    setPane("studio");
     setSidebarOpen(false);
   }
 
@@ -534,6 +539,7 @@ export function StudioApp() {
     projectRef.current = item;
     setProject(item);
     setStatus(projectAwaitingVideo(item) ? "Generating video…" : "");
+    setPane("studio");
     setSidebarOpen(false);
     try {
       const latest = await loadProjectById(item.id, new AbortController().signal);
@@ -794,11 +800,20 @@ export function StudioApp() {
   }
 
   const history = useMemo(() => historyFromProjects(projects), [projects]);
+  const drafts = useMemo(
+    () =>
+      projects.filter((item) => {
+        const hasVideo =
+          item.batches.some((batch) => batchVideoSrc(batch)) || (item.archivedVideos || []).some((clip) => clip.publicPath);
+        if (hasVideo) return false;
+        return Boolean(item.scriptText || item.scriptName || item.scenes.length || projectAwaitingVideo(item));
+      }),
+    [projects],
+  );
   const credits = profile?.credits ?? 120;
-  const creditMax = Math.max(120, credits);
 
   if (!project) {
-    return <div className="grid h-screen place-items-center text-[var(--muted)]">Opening studio…</div>;
+    return <div className="grid h-screen place-items-center text-[var(--muted)]">Loading…</div>;
   }
 
   const step = project.workflowStep || "script";
@@ -820,106 +835,44 @@ export function StudioApp() {
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[280px] flex-col border-r border-[var(--line)] bg-[#f3efe8] transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[240px] flex-col border-r border-[var(--line)] bg-[#f3efe8] transition-transform md:static md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between px-5 pb-3 pt-5">
+        <div className="flex items-center justify-between px-5 pb-4 pt-5">
           <h1 className="display text-2xl">distribute.to</h1>
           <button type="button" className="rounded-xl px-2 py-1 text-sm md:hidden" onClick={() => setSidebarOpen(false)}>
             Close
           </button>
         </div>
-        <button
-          type="button"
-          onClick={() => void createNew()}
-          className="btn-primary mx-4 mb-4 rounded-2xl bg-[var(--ink)] px-4 py-2.5 text-sm font-medium text-white"
-        >
-          New video
-        </button>
 
-        <div className="scroll-thin min-h-0 flex-1 space-y-5 overflow-y-auto px-3 pb-4">
-          <section>
-            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--muted)]">Projects</p>
-            <div className="space-y-1">
-              {projects.map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => {
-                    void selectProject(item);
-                  }}
-                  className={`w-full rounded-2xl px-3 py-2.5 text-left ${
-                    item.id === project.id ? "bg-white shadow-sm" : "hover:bg-white/70"
-                  }`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <p className="truncate text-sm font-medium">{item.title}</p>
-                    <span className="text-[10px] text-[var(--muted)]">{timeAgo(item.updatedAt)}</span>
-                  </div>
-                  <p className="mt-0.5 truncate text-[11px] text-[var(--muted)]">
-                    {item.scriptName || (item.scenes.length ? `${item.scenes.length} scenes` : "No script")} · {item.style}
-                  </p>
-                </button>
-              ))}
-            </div>
-          </section>
+        <nav className="flex min-h-0 flex-1 flex-col gap-1 px-3">
+          <button
+            type="button"
+            onClick={() => {
+              setPane("library");
+              setSidebarOpen(false);
+            }}
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm ${
+              pane === "library" ? "bg-white shadow-sm" : "hover:bg-white/70"
+            }`}
+          >
+            <VideosIcon />
+            Your videos
+          </button>
+          <button
+            type="button"
+            onClick={() => void createNew()}
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm ${
+              pane === "studio" ? "bg-white shadow-sm" : "hover:bg-white/70"
+            }`}
+          >
+            <PlusIcon />
+            Create a video
+          </button>
+        </nav>
 
-          <section>
-            <p className="px-2 pb-2 text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--muted)]">History</p>
-            {history.length === 0 ? (
-              <p className="px-2 text-sm text-[var(--muted)]">Generated videos will show up here.</p>
-            ) : (
-              <div className="space-y-1">
-                {history.map((item) => (
-                  <button
-                    key={item.key}
-                    type="button"
-                    onClick={() => {
-                      const found = projects.find((entry) => entry.id === item.projectId);
-                      if (found) void selectProject(found);
-                      setExpanded({
-                        src: assetSrc(item.src),
-                        poster: item.poster ? assetSrc(item.poster) : undefined,
-                        label: item.title,
-                        downloadName: videoDownloadName(item.title, item.index, item.parts),
-                      });
-                    }}
-                    className="flex w-full items-center gap-2 rounded-2xl px-2 py-2 text-left hover:bg-white/80"
-                  >
-                    <div className="h-12 w-9 overflow-hidden rounded-lg bg-stone-200">
-                      {item.poster ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={assetSrc(item.poster)} alt="" className="h-full w-full object-cover" />
-                      ) : (
-                        <span className="grid h-full place-items-center text-[10px] text-[var(--muted)]">▶</span>
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="truncate text-sm">{item.title}</p>
-                      <p className="text-[11px] text-[var(--muted)]">
-                        {item.parts > 1 ? `Part ${item.index} · ${item.duration}s` : `Video · ${item.duration}s`}
-                      </p>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-
-        <div className="border-t border-[var(--line)] bg-[#f3efe8] p-3">
-          <div className="mb-3 rounded-2xl bg-white px-3 py-3">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-[var(--muted)]">Credits</span>
-              <span className="font-medium">
-                {credits}/{creditMax}
-              </span>
-            </div>
-            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-stone-200">
-              <div className="h-full rounded-full bg-[var(--accent)]" style={{ width: `${Math.min(100, (credits / creditMax) * 100)}%` }} />
-            </div>
-          </div>
+        <div className="p-3">
           <button
             type="button"
             onClick={() => setAccountOpen(true)}
@@ -934,8 +887,11 @@ export function StudioApp() {
               )}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">Account</span>
-              <span className="block truncate text-[11px] text-[var(--muted)]">{profile?.email || "Account"}</span>
+              <span className="block truncate text-sm font-medium">Your account</span>
+              <span className="block truncate text-[11px] text-[var(--muted)]">
+                {profile?.email || "Account"}
+                {profile ? ` · ${credits} credits` : ""}
+              </span>
             </span>
           </button>
         </div>
@@ -947,13 +903,46 @@ export function StudioApp() {
             Menu
           </button>
           <div className="min-w-0 flex-1">
-            <h2 className="display truncate text-xl md:text-2xl">{project.title}</h2>
+            <h2 className="display truncate text-xl md:text-2xl">{pane === "library" ? "Your videos" : project.title}</h2>
           </div>
+          {pane === "studio" ? (
+            <button
+              type="button"
+              onClick={() => setPane("library")}
+              className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
+            >
+              Your videos
+            </button>
+          ) : (
+            <button type="button" onClick={() => void createNew()} className="btn-primary rounded-2xl bg-[var(--ink)] px-4 py-2 text-sm font-medium text-white">
+              Create a video
+            </button>
+          )}
         </header>
 
-        <StepBar current={step} />
-
-        <div className="scroll-thin mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
+        {pane === "library" ? (
+          <VideosDashboard
+            videos={history}
+            drafts={drafts}
+            onPlay={(item) =>
+              setExpanded({
+                src: assetSrc(item.src),
+                poster: item.poster ? assetSrc(item.poster) : undefined,
+                label: item.title,
+                downloadName: videoDownloadName(item.title, item.index, item.parts),
+              })
+            }
+            onOpenDraft={(item) => void selectProject(item)}
+            onOpenProject={(projectId) => {
+              const found = projects.find((entry) => entry.id === projectId);
+              if (found) void selectProject(found);
+            }}
+            onCreate={() => void createNew()}
+          />
+        ) : (
+          <>
+            <StepBar current={step} />
+            <div className="scroll-thin mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
           {step === "script" ? (
             <ScriptStep
               key={project.id}
@@ -1028,6 +1017,8 @@ export function StudioApp() {
 
           {!busy && status && step !== "produce" ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
         </div>
+          </>
+        )}
       </section>
 
       <input
@@ -1156,6 +1147,113 @@ function StepBar({ current }: { current: WorkflowStep }) {
         );
       })}
     </ol>
+  );
+}
+
+function VideosDashboard({
+  videos,
+  drafts,
+  onPlay,
+  onOpenDraft,
+  onOpenProject,
+  onCreate,
+}: {
+  videos: HistoryVideo[];
+  drafts: Project[];
+  onPlay: (item: HistoryVideo) => void;
+  onOpenDraft: (item: Project) => void;
+  onOpenProject: (projectId: string) => void;
+  onCreate: () => void;
+}) {
+  const empty = videos.length === 0 && drafts.length === 0;
+  return (
+    <div className="scroll-thin flex-1 overflow-y-auto px-3 pb-10 md:px-8">
+      <div className="mx-auto w-full max-w-6xl">
+        <p className="max-w-xl text-sm text-[var(--muted)]">
+          Every video you generate lands here, including new versions after Edit scenes.
+        </p>
+
+        {empty ? (
+          <div className="mt-16 flex flex-col items-center rounded-[32px] border border-dashed border-[var(--line)] bg-white/70 px-6 py-16 text-center">
+            <p className="display text-2xl">Nothing here yet</p>
+            <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">Create a video and it will show up on this board as soon as it is ready.</p>
+            <button type="button" onClick={onCreate} className="btn-primary mt-6 rounded-2xl bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white">
+              Create a video
+            </button>
+          </div>
+        ) : (
+          <div className="mt-8 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
+            {drafts.map((item) => {
+              const waiting = projectAwaitingVideo(item);
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onOpenDraft(item)}
+                  className="group overflow-hidden rounded-[28px] border border-[var(--line)] bg-white text-left shadow-[0_10px_30px_rgba(28,25,23,0.04)] hover:shadow-[0_16px_40px_rgba(28,25,23,0.08)]"
+                >
+                  <div className="relative aspect-video bg-[#ece8e1]">
+                    <div className="absolute inset-0 grid place-items-center text-sm text-[var(--muted)]">
+                      {waiting ? "Generating…" : "In progress"}
+                    </div>
+                  </div>
+                  <div className="px-4 py-3">
+                    <p className="truncate font-medium">{item.title || "Untitled video"}</p>
+                    <p className="mt-0.5 text-[12px] text-[var(--muted)]">
+                      {waiting ? "Generating now" : "Continue"} · Updated {timeAgo(item.updatedAt)}
+                    </p>
+                  </div>
+                </button>
+              );
+            })}
+            {videos.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => onPlay(item)}
+                className="group overflow-hidden rounded-[28px] border border-[var(--line)] bg-white text-left shadow-[0_10px_30px_rgba(28,25,23,0.04)] hover:shadow-[0_16px_40px_rgba(28,25,23,0.08)]"
+              >
+                <div className="relative aspect-video overflow-hidden bg-stone-200">
+                  {item.poster ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={assetSrc(item.poster)} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <video src={assetSrc(item.src)} muted playsInline preload="metadata" className="h-full w-full object-cover" />
+                  )}
+                  <span className="absolute bottom-2 right-2 rounded-full bg-black/65 px-2 py-0.5 text-[11px] text-white">
+                    {item.parts > 1 ? `Part ${item.index} · ${item.duration}s` : `${item.duration}s`}
+                  </span>
+                </div>
+                <div className="flex items-start justify-between gap-3 px-4 py-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium">{item.title || "Untitled video"}</p>
+                    <p className="mt-0.5 text-[12px] text-[var(--muted)]">Updated {timeAgo(item.createdAt)}</p>
+                  </div>
+                  <span
+                    role="button"
+                    tabIndex={0}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenProject(item.projectId);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        onOpenProject(item.projectId);
+                      }
+                    }}
+                    className="shrink-0 pt-0.5 text-[12px] text-[var(--muted)] hover:text-[var(--ink)]"
+                  >
+                    Edit
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -2039,6 +2137,15 @@ function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function VideosIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="3.5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.5" />
+      <path d="M6.8 6.2 10 8l-3.2 1.8V6.2Z" fill="currentColor" />
     </svg>
   );
 }
