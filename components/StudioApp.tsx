@@ -1492,7 +1492,7 @@ function SetupStep({
           onChange={onDuration}
         />
         <p className="mt-4 text-sm text-[var(--muted)]">
-          Whole video, 5 to 300 seconds. Up to 30s generates in one take; longer videos continue in sequence.
+          Whole video, 5 to 300 seconds. Up to 30s is one take. Longer videos split into 30s parts, and the last part is whatever is left.
         </p>
       </section>
 
@@ -1643,7 +1643,7 @@ function ReviewStep({
       ))}
 
       <p className="text-sm text-[var(--muted)]">
-        Total {totalSeconds}s{totalSeconds > 30 ? " · generated in sequence" : " · one take"}
+        Total {totalSeconds}s{totalSeconds > 30 ? ` · ${Math.floor(totalSeconds / 30)}×30s${totalSeconds % 30 ? ` + ${totalSeconds % 30}s` : ""}` : " · one take"}
       </p>
 
       <div className="mt-auto flex items-center justify-between pt-2">

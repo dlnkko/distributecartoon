@@ -128,7 +128,7 @@ export async function generateGptImage25Flare(options: {
   return generateFalGptImage25Flare(options);
 }
 
-export async function generateSeedance25ReferenceVideo(options: {
+type SeedanceRequest = {
   prompt: string;
   duration?: number;
   aspectRatio?: "16:9" | "9:16" | "1:1" | "adaptive";
@@ -139,9 +139,12 @@ export async function generateSeedance25ReferenceVideo(options: {
   abortSignal?: AbortSignal;
   existingTaskId?: string;
   onTaskCreated?: (taskId: string) => void | Promise<void>;
-}) {
-  let taskId = options.existingTaskId?.trim() || "";
-  if (!taskId || taskId === "pending") {
+};
+
+export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
+  const existing = options.existingTaskId?.trim() || "";
+  if (existing && existing !== "pending") return existing;
+  throwIfAborted(options.abortSignal);
     const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
     const aspectRatio = options.aspectRatio === "9:16" ? "9:16" : options.aspectRatio === "1:1" ? "1:1" : "16:9";
     const input_references: Array<Record<string, unknown>> = [];
@@ -178,8 +181,12 @@ export async function generateSeedance25ReferenceVideo(options: {
     if (!response.ok || !json.id) {
       throw new Error(jobError(json, `OpenRouter Seedance create failed (${response.status})`));
     }
-    taskId = json.id;
+    const taskId = json.id;
     await options.onTaskCreated?.(taskId);
-  }
+    return taskId;
+}
+
+export async function generateSeedance25ReferenceVideo(options: SeedanceRequest) {
+  const taskId = await submitSeedance25ReferenceVideo(options);
   return waitForTask(taskId, undefined, "video");
 }

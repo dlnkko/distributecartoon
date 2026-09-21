@@ -1,9 +1,9 @@
 import OpenAI from "openai";
 import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
-import { ensureLongformAnchors, generateBatchVideo, summarizeLibrary } from "./pipeline";
+import { generateBatchVideo, generatePlannedVideos, planSeedanceBatches, summarizeLibrary } from "./pipeline";
 import { englishExtraName, englishSpeakerName, packedScenePrompt } from "./style";
-import { clipDurationForScenes, estimateSceneSeconds, parseDurationFromText, shouldGenerateOneShot } from "./timing";
+import { estimateSceneSeconds, parseDurationFromText, shouldGenerateOneShot } from "./timing";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
@@ -437,53 +437,6 @@ function uniqueList(names: string[]) {
   return out;
 }
 
-function collapseToOneShot(project: Project, previous: Map<number, Batch>) {
-  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes) || !project.scenes.length) return;
-  const sceneIndexes = project.scenes.map((scene) => scene.index);
-  const source =
-    project.batches.find((batch) => batch.sceneIndexes.length === sceneIndexes.length) || project.batches[0];
-  const next: Batch = {
-    id: createId("batch"),
-    index: 1,
-    duration: clipDurationForScenes(
-      project.scenes,
-      project.targetDurationSeconds,
-      project.targetDurationSeconds,
-      project.scenes.length,
-    ),
-    sceneIndexes,
-    characterNames: uniqueList(project.scenes.flatMap((scene) => scene.characterNames || [])),
-    extraNames: uniqueList(project.scenes.flatMap((scene) => scene.extraNames || [])),
-    introducesNewLead: true,
-    newLeadNames: uniqueList(project.scenes.flatMap((scene) => scene.characterNames || [])),
-    cameraPlan:
-      project.scenes
-        .map((scene) => scene.camera)
-        .filter(Boolean)
-        .join(" / ") ||
-      source?.cameraPlan ||
-      "",
-    videoPrompt: packedScenePrompt(project, sceneIndexes, source?.videoPrompt || ""),
-    framePrompt: source?.framePrompt || "",
-    pacingNotes: source?.pacingNotes || "One-shot Seedance clip covering the full short.",
-    status: "planned",
-  };
-  const prior =
-    [...previous.values()].find((item) => JSON.stringify(item.sceneIndexes) === JSON.stringify(sceneIndexes)) ||
-    previous.get(1);
-  if (prior && JSON.stringify(prior.sceneIndexes) === JSON.stringify(sceneIndexes)) {
-    next.id = prior.id;
-    next.status = prior.videoPublicPath ? "done" : prior.status === "planned" ? next.status : prior.status;
-    next.frameFileName = prior.frameFileName;
-    next.framePublicPath = prior.framePublicPath;
-    next.frameRemoteUrl = prior.frameRemoteUrl;
-    next.videoFileName = prior.videoFileName;
-    next.videoPublicPath = prior.videoPublicPath;
-    next.videoRemoteUrl = prior.videoRemoteUrl;
-  }
-  project.batches = [next];
-}
-
 function scaleScenesToTarget(project: Project) {
   const target = clampTotalDuration(project.targetDurationSeconds);
   project.targetDurationSeconds = target;
@@ -669,59 +622,12 @@ async function executeTool(
     }
     case "plan_video_batches": {
       project.durationPending = false;
-      if (!project.targetDurationSeconds) {
-        project.targetDurationSeconds = clampTotalDuration(
-          project.scenes.reduce((sum, scene) => sum + scene.estimatedSeconds, 0),
-        );
-      }
-      const previous = new Map(project.batches.map((batch) => [batch.index, batch]));
-      const batches = (args.batches as Array<Record<string, unknown>>) || [];
-      project.batches = batches.map((item) => {
-        const sceneIndexes = (item.scene_indexes as number[]) || [];
-        const scenes = sceneIndexes
-          .map((index) => project.scenes.find((entry) => entry.index === index))
-          .filter((scene): scene is Scene => Boolean(scene));
-        const allScenes = scenes.length === project.scenes.length;
-        const next = {
-          id: createId("batch"),
-          index: Number(item.index),
-          duration: clipDurationForScenes(
-            scenes,
-            Number(item.duration) || undefined,
-            allScenes ? project.targetDurationSeconds : undefined,
-            project.scenes.length,
-          ),
-          sceneIndexes,
-          characterNames: (item.character_names as string[]) || [],
-          extraNames: (item.extra_names as string[]) || [],
-          introducesNewLead: Boolean(item.introduces_new_lead),
-          newLeadNames: (item.new_lead_names as string[]) || [],
-          cameraPlan: String(item.camera_plan || ""),
-          videoPrompt: packedScenePrompt(project, sceneIndexes, String(item.video_prompt || "")),
-          framePrompt: String(item.frame_prompt || ""),
-          pacingNotes: String(item.pacing_notes || ""),
-          status: "planned" as const,
-        };
-        const prior = previous.get(next.index);
-        if (prior && JSON.stringify(prior.sceneIndexes) === JSON.stringify(sceneIndexes)) {
-          return {
-            ...next,
-            id: prior.id,
-            status: prior.videoPublicPath ? ("done" as const) : prior.status === "planned" ? next.status : prior.status,
-            frameFileName: prior.frameFileName,
-            framePublicPath: prior.framePublicPath,
-            frameRemoteUrl: prior.frameRemoteUrl,
-            videoFileName: prior.videoFileName,
-            videoPublicPath: prior.videoPublicPath,
-            videoRemoteUrl: prior.videoRemoteUrl,
-            kieVideoTaskId: prior.kieVideoTaskId,
-          };
-        }
-        return next;
-      });
-      collapseToOneShot(project, previous);
+      planSeedanceBatches(project);
       await saveProject(project);
-      return { batches: project.batches.length, prompts: project.batches.map((batch) => batch.videoPrompt) };
+      return {
+        batches: project.batches.map((batch) => ({ index: batch.index, duration: batch.duration, scenes: batch.sceneIndexes })),
+        prompts: project.batches.map((batch) => batch.videoPrompt),
+      };
     }
     case "generate_batch_frame": {
       return { skipped: true, reason: "No first-frame still. Character looks are enough." };
@@ -801,15 +707,39 @@ export async function runAgent(options: {
   if (mode === "produce") options.project.workflowStep = "produce";
   await saveProject(options.project);
 
+  if (mode === "produce") {
+    const onStatus = (text: string) => options.onEvent({ type: "status", text });
+    await generatePlannedVideos(options.project, onStatus, options.abortSignal);
+    options.onEvent({ type: "project", project: options.project });
+    const ready = options.project.batches.filter((batch) => {
+      const src = batch.videoPublicPath || batch.videoRemoteUrl;
+      if (!src) return false;
+      return !options.project.messages.some((message) => message.attachments?.some((item) => item.src === src));
+    });
+    if (ready.length) {
+      options.project.messages.push({
+        id: createId("msg"),
+        role: "assistant",
+        content: ready.length === 1 ? "Video ready." : `${ready.length} parts are ready.`,
+        createdAt: new Date().toISOString(),
+        attachments: ready.map((batch) => ({
+          kind: "video" as const,
+          src: batch.videoPublicPath || batch.videoRemoteUrl || "",
+          poster: batch.framePublicPath,
+          label: ready.length === 1 ? "Video ready" : `Part ${batch.index}`,
+        })),
+      });
+      await saveProject(options.project);
+    }
+    options.project.workflowStep = "produce";
+    await saveProject(options.project);
+    options.onEvent({ type: "project", project: options.project });
+    return;
+  }
+
   const { openaiApiKey, openaiModel } = getSecrets();
   if (!openaiApiKey) {
     throw new Error("OPENAI_API_KEY is missing for the GPT-5.6 Luna agent.");
-  }
-
-  if (mode === "produce" && !shouldGenerateOneShot(options.project.targetDurationSeconds, options.project.scenes)) {
-    const onStatus = (text: string) => options.onEvent({ type: "status", text });
-    await ensureLongformAnchors(options.project, onStatus, options.abortSignal);
-    options.onEvent({ type: "project", project: options.project });
   }
 
   const client = new OpenAI({ apiKey: openaiApiKey });

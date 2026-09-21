@@ -1,12 +1,12 @@
 import { downloadToPublic, extensionFromUrl } from "./assets";
-import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, uploadKieFile, waitForTask } from "./kie";
-import { clampClipDuration, createId, slugify, normalizeAspectRatio } from "./ids";
+import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
+import { clampClipDuration, clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, realKieVideoTaskId } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
-import { shouldGenerateOneShot } from "./timing";
+import { sceneIndexesForParts, scaleEstimatedSeconds, seedancePartDurations, shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -820,6 +820,133 @@ function assignClipToCharacters(
   }
 }
 
+function sameSceneList(left: number[], right: number[]) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+export function planSeedanceBatches(project: Project) {
+  const fallback = project.scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0) || 15;
+  const target = clampTotalDuration(project.targetDurationSeconds || fallback);
+  project.targetDurationSeconds = target;
+  const scaled = scaleEstimatedSeconds(
+    project.scenes.map((scene) => scene.estimatedSeconds || 0),
+    target,
+  );
+  project.scenes.forEach((scene, index) => {
+    scene.estimatedSeconds = scaled[index] ?? scene.estimatedSeconds;
+  });
+  const parts = seedancePartDurations(target);
+  const groups = sceneIndexesForParts(
+    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    parts,
+  );
+  const previous = project.batches;
+  project.batches = parts.map((duration, index) => {
+    const sceneIndexes = groups[index]?.length ? groups[index] : project.scenes.map((scene) => scene.index);
+    const scenes = sceneIndexes
+      .map((sceneIndex) => project.scenes.find((scene) => scene.index === sceneIndex))
+      .filter((scene): scene is Project["scenes"][number] => Boolean(scene));
+    const prior = previous.find(
+      (batch) =>
+        batch.duration === duration &&
+        sameSceneList(batch.sceneIndexes, sceneIndexes) &&
+        Boolean(batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)),
+    );
+    const names = [...new Set(scenes.flatMap((scene) => scene.characterNames || []))];
+    return {
+      id: prior?.id || createId("batch"),
+      index: index + 1,
+      duration,
+      sceneIndexes,
+      characterNames: names,
+      extraNames: [...new Set(scenes.flatMap((scene) => scene.extraNames || []))],
+      introducesNewLead: index === 0,
+      newLeadNames: index === 0 ? names : [],
+      cameraPlan: scenes
+        .map((scene) => scene.camera)
+        .filter(Boolean)
+        .join(" / "),
+      videoPrompt: prior?.videoPrompt || packedScenePrompt(project, sceneIndexes, "", duration),
+      framePrompt: prior?.framePrompt || "",
+      pacingNotes: `Part ${index + 1} of ${parts.length}, ${duration}s.`,
+      status: (prior?.videoPublicPath || prior?.videoRemoteUrl
+        ? "done"
+        : prior?.kieVideoTaskId
+          ? "generating_video"
+          : "planned") as Batch["status"],
+      frameFileName: prior?.frameFileName,
+      framePublicPath: prior?.framePublicPath,
+      frameRemoteUrl: prior?.frameRemoteUrl,
+      videoFileName: prior?.videoFileName,
+      videoPublicPath: prior?.videoPublicPath,
+      videoRemoteUrl: prior?.videoRemoteUrl,
+      kieVideoTaskId: prior?.kieVideoTaskId,
+    };
+  });
+  return project.batches;
+}
+
+export async function generatePlannedVideos(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
+  throwIfAborted(abortSignal);
+  planSeedanceBatches(project);
+  await saveSoon(project);
+  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+    await ensureLongformAnchors(project, onStatus, abortSignal);
+  }
+  const total = project.batches.length;
+  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
+    if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
+    throwIfAborted(abortSignal);
+    onStatus(`Sending part ${batch.index} of ${total} (${batch.duration}s)…`);
+    const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt, batch.duration);
+    const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
+    const labeled = labeledReferencePrompt({
+      images: imageEntries,
+      videos: videoEntries,
+      style: project.style,
+      project,
+      sceneIndexes: batch.sceneIndexes,
+      videoPrompt: prompt,
+    });
+    batch.videoPrompt = labeled;
+    batch.status = "generating_video";
+    batch.kieVideoTaskId = "pending";
+    await saveSoon(project);
+    const taskId = await submitSeedance25ReferenceVideo({
+      prompt: labeled,
+      duration: batch.duration,
+      aspectRatio: normalizeAspectRatio(project.aspectRatio),
+      referenceImageUrls: imageEntries.map((item) => item.url),
+      referenceVideoUrls: videoEntries.map((item) => item.url),
+      generateAudio: true,
+      resolution: "480p",
+      onTaskCreated: async (id) => {
+        batch.kieVideoTaskId = id;
+        batch.status = "generating_video";
+        await saveSoon(project);
+      },
+    });
+    batch.kieVideoTaskId = taskId;
+    await saveSoon(project);
+  }
+
+  const settled = await Promise.allSettled(
+    project.batches.map(async (batch) => {
+      if (batch.videoPublicPath || batch.videoRemoteUrl) return;
+      const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
+      if (!taskId) return;
+      onStatus(`Rendering part ${batch.index} of ${total} (${batch.duration}s)…`);
+      const remoteUrl = await waitForTask(taskId, undefined, "video");
+      await attachGeneratedVideo(project, batch, remoteUrl);
+      await saveSoon(project);
+      onStatus(`Part ${batch.index} is ready.`);
+    }),
+  );
+  await saveSoon(project);
+  const failed = settled.find((result) => result.status === "rejected");
+  if (failed && failed.status === "rejected") throw failed.reason;
+}
+
 export async function generateBatchVideo(
   project: Project,
   batchIndex: number,
@@ -866,7 +993,7 @@ async function runGenerateBatchVideo(
     await ensureLongformAnchors(project, onStatus, abortSignal);
   }
 
-  const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt);
+  const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt, batch.duration);
 
   async function finishExisting(source: Batch) {
     copyVideoFields(batch, source);
@@ -930,7 +1057,7 @@ async function runGenerateBatchVideo(
       duration: batch.duration,
       aspectRatio: normalizeAspectRatio(project.aspectRatio),
       referenceImageUrls: imageEntries.map((item) => item.url),
-      referenceVideoUrls: videoEntries.slice(0, 1).map((item) => item.url),
+      referenceVideoUrls: videoEntries.map((item) => item.url),
       generateAudio: true,
       resolution: "480p",
       existingTaskId: batch.kieVideoTaskId !== "pending" ? batch.kieVideoTaskId : undefined,

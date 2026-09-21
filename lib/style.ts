@@ -901,8 +901,16 @@ function ensureSceneNoBgm(text: string) {
   return prefix ? `${prefix} ${joined}` : joined;
 }
 
-export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "") {
+export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
   const usedCameras: string[] = [];
+  const chosen = sceneIndexes.map((index) => sceneByIndex(project, index)).filter((scene): scene is Scene => Boolean(scene));
+  const budget = maxSeconds && maxSeconds > 0 ? maxSeconds : 0;
+  const raw = chosen.map((scene) => Math.max(2, scene.estimatedSeconds || 4));
+  const rawSum = raw.reduce((sum, value) => sum + value, 0);
+  const fitted =
+    budget > 0 && rawSum > budget
+      ? raw.map((value) => Math.max(2, Math.round((value / rawSum) * budget)))
+      : raw.map((value) => Math.round(value));
   const timed = sceneIndexes
     .map((index, i) => {
       const scene = sceneByIndex(project, index);
@@ -931,7 +939,7 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
         .map((line) => spokenLineCue(project, scene, line.speaker, line.line))
         .filter(Boolean)
         .join(" ");
-      const seconds = Math.max(2, Math.round(scene?.estimatedSeconds || 4));
+      const seconds = fitted[i] || Math.max(2, Math.round(scene?.estimatedSeconds || 4));
       const who = sceneCastLine(scene, project);
       const body = (i === 0 && lines ? [who, lines, visual] : [who, visual, lines])
         .filter(Boolean)
