@@ -1,3 +1,4 @@
+import { samePlace } from "./places";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
 import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
 
@@ -132,10 +133,11 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
   const angle =
     "Three-quarter angle, never head-on. The angle bakes depth and distance into the image so a moving camera can hold the geometry. No flat frontal view.";
   const look = imageStyleLead(style);
+  const time = "Neutral lighting. Do not lock this place to day or night. The video will change the time of day.";
   if (fromPhoto) {
-    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} No people, no characters, no text.`;
+    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} ${time} No people, no characters, no text.`;
   }
-  return `${look}. Empty view of ${name}. ${angle} No people, no characters, no text.`;
+  return `${look}. Empty view of ${name}. ${angle} ${time} No people, no characters, no text.`;
 }
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
@@ -980,9 +982,9 @@ function ensureNamedLocations(
   const { prefix, blocks } = splitPackedScenes(text);
   const next = blocks.map((part, index) => {
     const scene = project.scenes.find((item) => item.index === sceneIndexes[index]);
-    const place = scene?.location?.trim().toLowerCase();
+    const place = scene?.location?.trim();
     if (!place) return part;
-    const hit = locations.find((item) => item.item.name.trim().toLowerCase() === place);
+    const hit = locations.find((item) => samePlace(item.item.name, place));
     if (!hit || new RegExp(`${escapeRegExp(hit.tag)}\\b`, "i").test(part)) return part;
     return `${part.replace(/[. ]+$/, "")}. ${hit.tag}.`;
   });

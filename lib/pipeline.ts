@@ -5,10 +5,11 @@ import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, norma
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, realKieVideoTaskId } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
+import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { sceneIndexesForParts, scaleEstimatedSeconds, seedancePartDurations, shouldGenerateOneShot } from "./timing";
-import type { Batch, Character, Project, ReferenceAsset } from "./types";
+import type { Batch, Character, LocationPlate, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
 
@@ -258,29 +259,23 @@ function storyPlaces(project: Project) {
     (asset) => asset.kind === "location" && (asset.originalRemoteUrl || asset.originalPublicPath),
   );
   const places: Array<{ name: string; photo?: ReferenceAsset }> = [];
-  const seen = new Set<string>();
   function add(name: string, photo?: ReferenceAsset) {
-    const clean = name.trim();
-    const key = clean.toLowerCase();
-    if (!clean || seen.has(key) || /^(unknown|none|n\/a|tbd)$/i.test(clean)) return;
-    if (photo && places.some((place) => place.photo?.id === photo.id)) return;
-    seen.add(key);
+    const clean = placeLabel(name);
+    if (!clean || /^(unknown|none|n\/a|tbd)$/i.test(clean)) return;
+    const hit = places.find((place) => samePlace(place.name, clean));
+    if (hit) {
+      if (photo && !hit.photo) hit.photo = photo;
+      hit.name = richerPlaceName(hit.name, clean);
+      return;
+    }
     places.push({ name: clean, photo });
   }
   for (const scene of project.scenes) add(scene.location);
   for (const photo of photos) {
     const label = photo.label.trim();
     if (!label || /^location\s*\d+$/i.test(label)) continue;
-    const hit = places.find((place) => {
-      const name = place.name.toLowerCase();
-      const needle = label.toLowerCase();
-      return name === needle || name.includes(needle) || needle.includes(name);
-    });
-    if (hit) {
-      if (!hit.photo) hit.photo = photo;
-      continue;
-    }
-    if (promptReadyReferences(project, undefined, true).some((asset) => asset.id === photo.id)) add(label, photo);
+    if (!promptReadyReferences(project, undefined, true).some((asset) => asset.id === photo.id)) continue;
+    add(label, photo);
   }
   return places;
 }
@@ -335,41 +330,39 @@ async function ensureCharacterAnchors(project: Project, onStatus: StatusFn, abor
 async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   project.locationPlates = Array.isArray(project.locationPlates) ? project.locationPlates : [];
   const missing = storyPlaces(project).filter(
-    (place) => !project.locationPlates!.some((plate) => plate.name.toLowerCase() === place.name.toLowerCase() && isHttpUrl(plate.remoteUrl)),
+    (place) => !project.locationPlates!.some((plate) => samePlace(plate.name, place.name) && isHttpUrl(plate.remoteUrl)),
   );
-  await Promise.all(
-    missing.map(async (place) => {
-      onStatus(`Building ${place.name}…`);
+  for (const place of missing) {
+    onStatus(`Building ${place.name}…`);
+    try {
+      const photo = place.photo
+        ? await resolveUploadUrl(place.photo.originalRemoteUrl, place.photo.originalPublicPath, abortSignal)
+        : "";
+      const remoteUrl = await generateGptImage25Flare({
+        prompt: locationPlatePrompt(place.name, project.style, Boolean(photo)),
+        aspectRatio: project.aspectRatio,
+        resolution: "2K",
+        inputUrls: photo ? [photo] : [],
+        abortSignal,
+      });
+      let saved;
       try {
-        const photo = place.photo
-          ? await resolveUploadUrl(place.photo.originalRemoteUrl, place.photo.originalPublicPath, abortSignal)
-          : "";
-        const remoteUrl = await generateGptImage25Flare({
-          prompt: locationPlatePrompt(place.name, project.style, Boolean(photo)),
-          aspectRatio: project.aspectRatio,
-          resolution: "2K",
-          inputUrls: photo ? [photo] : [],
-          abortSignal,
-        });
-        let saved;
-        try {
-          saved = await persistImage(project, remoteUrl, [project.id, "locations", slugify(place.name) || "place"]);
-        } catch {
-          saved = { fileName: "place.png", publicPath: remoteUrl, absolute: remoteUrl };
-        }
-        project.locationPlates = (project.locationPlates || []).filter((plate) => plate.name.toLowerCase() !== place.name.toLowerCase());
-        project.locationPlates.push({
-          name: place.name,
-          publicPath: saved.publicPath || remoteUrl,
-          remoteUrl,
-        });
-        await saveSoon(project);
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        onStatus(`Couldn't build ${place.name}. The story will still generate.`);
+        saved = await persistImage(project, remoteUrl, [project.id, "locations", slugify(place.name) || "place"]);
+      } catch {
+        saved = { fileName: "place.png", publicPath: remoteUrl, absolute: remoteUrl };
       }
-    }),
-  );
+      project.locationPlates = (project.locationPlates || []).filter((plate) => !samePlace(plate.name, place.name));
+      project.locationPlates.push({
+        name: place.name,
+        publicPath: saved.publicPath || remoteUrl,
+        remoteUrl,
+      });
+      await saveSoon(project);
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      onStatus(`Couldn't build ${place.name}. The story will still generate.`);
+    }
+  }
 }
 
 export async function ensureLongformAnchors(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
@@ -726,7 +719,17 @@ async function collectLongformReferences(project: Project, batch: Batch, abortSi
     if (portrait) imageEntries.push({ url: portrait, kind: "character", name: character.name });
   }
 
-  for (const plate of project.locationPlates || []) {
+  const scenePlaces = batch.sceneIndexes
+    .map((index) => project.scenes.find((scene) => scene.index === index)?.location || "")
+    .filter(Boolean);
+  const chosenPlates: LocationPlate[] = [];
+  for (const place of scenePlaces) {
+    const plate = (project.locationPlates || []).find(
+      (item) => samePlace(item.name, place) && !chosenPlates.includes(item),
+    );
+    if (plate) chosenPlates.push(plate);
+  }
+  for (const plate of chosenPlates) {
     const url = await resolveUploadUrl(plate.remoteUrl, plate.publicPath, abortSignal);
     if (!url) continue;
     imageEntries.push({ url, kind: "location", name: plate.name });
