@@ -168,6 +168,7 @@ export type Project = {
   joinedVideoFileName?: string;
   joinedSource?: string;
   produceStartedAt?: string;
+  keepGenerating?: boolean;
   pendingQuestions: string[];
   messages: ChatMessage[];
   createdAt: string;

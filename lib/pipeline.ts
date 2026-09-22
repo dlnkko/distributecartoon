@@ -78,6 +78,7 @@ function leadNames(project: Project, names: string[]) {
 }
 
 export async function resetInFlightBatches(project: Project) {
+  if (project.keepGenerating) return project;
   let changed = false;
   for (const batch of project.batches) {
     if (batch.status === "generating_video" && batch.kieVideoTaskId) continue;
@@ -1024,8 +1025,14 @@ async function submitMissingStoryJobs(
 
 export async function generatePlannedVideos(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   throwIfAborted(abortSignal);
+  project.keepGenerating = true;
   project.produceStartedAt = nowIso();
   planSeedanceBatches(project);
+  for (const batch of project.batches) {
+    if (!batch.videoPublicPath && !batch.videoRemoteUrl && !realKieVideoTaskId(batch.kieVideoTaskId)) {
+      batch.status = "generating_video";
+    }
+  }
   await saveSoon(project);
   const longform = !shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
   if (longform) {

@@ -289,6 +289,7 @@ export function StudioApp() {
   const fileRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const projectsRef = useRef<Project[]>([]);
   const refInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const projectRef = useRef<Project | null>(null);
   const settingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -304,6 +305,8 @@ export function StudioApp() {
       return current.filter((id) => id !== projectId);
     });
   }
+
+  projectsRef.current = projects;
 
   useEffect(() => {
     void boot();
@@ -352,7 +355,8 @@ export function StudioApp() {
         busy ||
         generatingIds.length ||
         projectAwaitingVideo(projectRef.current) ||
-        projectIsGenerating(projectRef.current)
+        projectIsGenerating(projectRef.current) ||
+        projectsRef.current.some((item) => projectIsGenerating(item))
       ) {
         void syncProjects();
       }
@@ -485,18 +489,23 @@ export function StudioApp() {
       setStatus("Generating your video…");
     }
     else setStatus("");
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
+    const controller = mode === "produce" ? null : new AbortController();
+    if (controller) {
+      abortRef.current?.abort();
+      abortRef.current = controller;
+    }
     try {
       const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectId: project.id, mode }),
-        signal: controller.signal,
+        signal: controller?.signal,
       });
       if (!res.body) {
-        setStatus("No response from the server.");
+        if (mode === "produce") {
+          markGenerating(project.id, true);
+          setStatus("Generating your video…");
+        } else setStatus("No response from the server.");
         return;
       }
       const reader = res.body.getReader();
@@ -526,8 +535,8 @@ export function StudioApp() {
           }
         }
       }
-      if (!lastError) {
-        const refreshed = await loadProjectById(project.id, controller.signal);
+        if (!lastError) {
+        const refreshed = await loadProjectById(project.id, controller?.signal || new AbortController().signal);
         if (refreshed) {
           remember(refreshed);
           if (mode === "plan" && refreshed.scenes.length) setScenesDraft(refreshed.scenes.map(cloneScene));
@@ -555,15 +564,7 @@ export function StudioApp() {
       if (mode === "produce") {
         if (projectDeliveredSrc(projectRef.current)) markGenerating(project.id, false);
         else markGenerating(project.id, true);
-        setStatus(
-          (error as Error).name === "AbortError"
-            ? projectDeliveredSrc(projectRef.current)
-              ? ""
-              : "Generating your video…"
-            : error instanceof Error
-              ? error.message
-              : "Request failed.",
-        );
+        setStatus(projectDeliveredSrc(projectRef.current) ? "" : "Generating your video…");
       } else {
         markGenerating(project.id, false);
         setStatus((error as Error).name === "AbortError" ? "Stopped." : error instanceof Error ? error.message : "Request failed.");
@@ -574,27 +575,9 @@ export function StudioApp() {
         if (recovered) remember(recovered);
       }
     } finally {
-      if (abortRef.current === controller) abortRef.current = null;
+      if (controller && abortRef.current === controller) abortRef.current = null;
       setBusy(false);
     }
-  }
-
-  async function stopProcessing() {
-    abortRef.current?.abort();
-    abortRef.current = null;
-    setBusy(false);
-    if (!project) return;
-    try {
-      const json = await loadProjectById(project.id, new AbortController().signal);
-      if (json) {
-        remember(json);
-        setStatus(projectAwaitingVideo(json) ? "Generating your video…" : projectDeliveredSrc(json) ? "" : "Stopped.");
-        return;
-      }
-    } catch {
-      // El estado se refresca al volver.
-    }
-    setStatus(projectAwaitingVideo(projectRef.current) ? "Generating your video…" : "Stopped.");
   }
 
   async function selectProject(item: Project) {
@@ -1085,7 +1068,6 @@ export function StudioApp() {
               notifyReady={notifyReady}
               notifyHint={notifyHint}
               onNotifyMe={() => void enableReadyNotify()}
-              onStop={() => void stopProcessing()}
               onEditScenes={() => void patchProject({ workflowStep: "review" })}
               onExpand={(item) => setExpanded(item)}
             />
@@ -1929,7 +1911,6 @@ function ProduceStep({
   notifyReady,
   notifyHint,
   onNotifyMe,
-  onStop,
   onEditScenes,
   onExpand,
 }: {
@@ -1939,7 +1920,6 @@ function ProduceStep({
   notifyReady: boolean;
   notifyHint: string;
   onNotifyMe: () => void;
-  onStop: () => void;
   onEditScenes: () => void;
   onExpand: (item: { src: string; poster?: string; label?: string; downloadName?: string }) => void;
 }) {
@@ -1961,7 +1941,7 @@ function ProduceStep({
           <h3 className="display text-3xl md:text-4xl">{heading}</h3>
           {working ? (
             <p className="mt-1 text-sm text-[var(--muted)]">
-              You can leave this page. The video will still appear here.
+              You can leave this page, or lose connection. The video still finishes and shows up in Your videos.
             </p>
           ) : null}
         </div>
@@ -1974,9 +1954,6 @@ function ProduceStep({
               className="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-70"
             >
               {notifyReady ? "Notifications on" : "Notify me when ready"}
-            </button>
-            <button type="button" onClick={onStop} className="rounded-full border border-[var(--danger)]/20 bg-white px-3 py-1.5 text-sm text-[var(--danger)]">
-              Stop
             </button>
           </div>
         ) : null}
