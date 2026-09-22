@@ -77,21 +77,81 @@ export function shouldGenerateOneShot(targetSeconds?: number, scenes?: Array<Pic
   return estimated > 0 && estimated <= SEEDANCE_MAX_SECONDS;
 }
 
+const EMPTY_SCENE_TEXT = /^(what happens(?: in this scene)?|where this is|n\/a|none|tbd|placeholder|unknown|\.+)?$/i;
+
+export function sceneHasStory(scene: Pick<Scene, "summary" | "dialogue">) {
+  const summary = (scene.summary || "").trim();
+  if ((scene.dialogue || []).some((line) => Boolean(line.line?.trim()))) return true;
+  return Boolean(summary) && !EMPTY_SCENE_TEXT.test(summary);
+}
+
+export type SeedancePartPlan = {
+  duration: number;
+  sceneIndexes: number[];
+};
+
+function sceneSpan(seconds: number) {
+  const value = Number(seconds);
+  if (!Number.isFinite(value) || value <= 0) return 2;
+  return Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, Math.round(value * 10) / 10));
+}
+
+export function packScenesIntoParts(
+  scenes: Array<{ index: number; estimatedSeconds: number }>,
+  targetSeconds?: number,
+): SeedancePartPlan[] {
+  if (!scenes.length) {
+    const total = Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(Number(targetSeconds) || 4)));
+    return [{ duration: total, sceneIndexes: [] }];
+  }
+
+  const packed: SeedancePartPlan[] = [];
+  let indexes: number[] = [];
+  let used = 0;
+  for (const scene of scenes) {
+    const span = sceneSpan(scene.estimatedSeconds);
+    if (indexes.length && used + span > SEEDANCE_MAX_SECONDS) {
+      packed.push({ duration: used, sceneIndexes: indexes });
+      indexes = [];
+      used = 0;
+    }
+    indexes.push(scene.index);
+    used += span;
+  }
+  if (indexes.length) packed.push({ duration: used, sceneIndexes: indexes });
+
+  const merged: SeedancePartPlan[] = [];
+  for (const part of packed) {
+    const prev = merged.at(-1);
+    if (prev && part.duration < 4 && prev.duration + part.duration <= SEEDANCE_MAX_SECONDS) {
+      prev.sceneIndexes.push(...part.sceneIndexes);
+      prev.duration += part.duration;
+      continue;
+    }
+    merged.push({ duration: part.duration, sceneIndexes: [...part.sceneIndexes] });
+  }
+
+  const durations = merged.map((part) => Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))));
+  const target = Math.round(Number(targetSeconds));
+  if (Number.isFinite(target) && target > 0 && durations.length) {
+    const last = durations.length - 1;
+    const sum = durations.reduce((acc, value) => acc + value, 0);
+    durations[last] = Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, durations[last] + (target - sum)));
+  }
+
+  return merged.map((part, index) => ({
+    duration: durations[index] ?? Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))),
+    sceneIndexes: part.sceneIndexes,
+  }));
+}
+
+export function formatPartPlan(parts: SeedancePartPlan[]) {
+  if (parts.length <= 1) return `${parts[0]?.duration || 0}s · one take`;
+  return parts.map((part) => `${part.duration}s`).join(" + ");
+}
+
 export function seedancePartDurations(totalSeconds: number): number[] {
-  const total = Math.min(300, Math.max(4, Math.round(Number(totalSeconds) || 4)));
-  if (total <= SEEDANCE_MAX_SECONDS) return [total];
-  const parts: number[] = [];
-  let left = total;
-  while (left > SEEDANCE_MAX_SECONDS) {
-    parts.push(SEEDANCE_MAX_SECONDS);
-    left -= SEEDANCE_MAX_SECONDS;
-  }
-  if (left >= 4) parts.push(left);
-  else if (left > 0 && parts.length) {
-    parts[parts.length - 1] -= 4 - left;
-    parts.push(4);
-  }
-  return parts;
+  return packScenesIntoParts([], totalSeconds).map((part) => part.duration);
 }
 
 export function scaleEstimatedSeconds(values: number[], target: number): number[] {
@@ -120,47 +180,10 @@ export function scaleEstimatedSeconds(values: number[], target: number): number[
 
 export function sceneIndexesForParts(
   scenes: Array<{ index: number; estimatedSeconds: number }>,
-  parts: number[],
+  _parts?: number[],
+  targetSeconds?: number,
 ): number[][] {
-  if (!scenes.length) return parts.map(() => []);
-  let cursor = 0;
-  const windows = parts.map((duration) => {
-    const start = cursor;
-    cursor += duration;
-    return { start, end: cursor, indexes: [] as number[] };
-  });
-  let time = 0;
-  for (const scene of scenes) {
-    const span = Math.max(0.5, scene.estimatedSeconds || 0);
-    const start = time;
-    const end = time + span;
-    time = end;
-    let placed = false;
-    windows.forEach((window) => {
-      const overlap = Math.min(end, window.end) - Math.max(start, window.start);
-      if (overlap >= Math.min(4, span * 0.34)) {
-        window.indexes.push(scene.index);
-        placed = true;
-      }
-    });
-    if (placed) continue;
-    let best = 0;
-    let bestOverlap = -1;
-    windows.forEach((window, index) => {
-      const overlap = Math.min(end, window.end) - Math.max(start, window.start);
-      if (overlap > bestOverlap) {
-        bestOverlap = overlap;
-        best = index;
-      }
-    });
-    windows[best].indexes.push(scene.index);
-  }
-  for (let index = 0; index < windows.length; index += 1) {
-    if (windows[index].indexes.length) continue;
-    const neighbor = windows[index - 1]?.indexes.at(-1) || windows[index + 1]?.indexes[0] || scenes[0].index;
-    windows[index].indexes.push(neighbor);
-  }
-  return windows.map((window) => [...new Set(window.indexes)]);
+  return packScenesIntoParts(scenes, targetSeconds).map((part) => part.sceneIndexes);
 }
 
 export function clipDurationForScenes(

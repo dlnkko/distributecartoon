@@ -3,7 +3,7 @@ import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, generatePlannedVideos, planSeedanceBatches, summarizeLibrary } from "./pipeline";
 import { englishExtraName, englishSpeakerName, packedScenePrompt } from "./style";
-import { estimateSceneSeconds, parseDurationFromText, shouldGenerateOneShot } from "./timing";
+import { estimateSceneSeconds, parseDurationFromText, sceneHasStory, shouldGenerateOneShot } from "./timing";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
@@ -19,7 +19,7 @@ Pipeline real:
 3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto a Pixar o claymation; nunca inventes pelo, piel, ropa ni especie. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a look for a Narrator or unseen voice-over. If the script is narrator VO and does not name whose voice, keep speaker as Narrator (is_extra true); the system picks any fitting off-screen voice. If an on-screen character has dialogue, that is their realistic lipsync. If the girl on screen is clearly the one narrating, those lines belong to her — do not invent a separate Narrator look. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
 4. NO first-frame still. Only character look portraits are generated. Seedance 2.5 R2V receives those portraits plus product/logo/location photos when the script uses them. The system maps files to @Image1, @Image2, @Image3 in upload order and writes those tags INSIDE the scenes when that person or object is on screen. Do not dump "@Image2 is Guy. Match his design..." at the start of the prompt.
 5. Duración de cada ESCENA: si hay diálogo, el tiempo es el de decirlo con calma. Si casi no pasa nada (un beat, un insert, un corte), 2 a 3 segundos, según complejidad, intención y relevancia. No alargues una escena vacía ni comprimas una frase hablada.
-6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, empaqueta en clips de 4-30s.
+6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, empaqueta escenas enteras en clips de 4-30s. Nunca partas una escena a la mitad ni la repitas en el clip siguiente: si al segundo 28 entra una escena de 5s, cierra ese clip en 28s y empieza el siguiente con esa escena. La suma de clips cubre targetDurationSeconds.
 7. Si el guion es largo (más de 30s), con varias escenas y diálogos, estructura varios clips de 4-30s. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
 8. El aspect ratio del proyecto (16:9 o 9:16) ya lo aplica el sistema. No lo cambies salvo que el usuario lo pida.
 9. Animar con Seedance 2.5 Reference-to-Video. Menciona @ImageN / @VideoN en la escena en la que aparecen, no en un preámbulo.
@@ -70,7 +70,7 @@ Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If narrator VO does not name a voice, keep speaker as Narrator and do not invent a look. If an on-screen character is the one speaking or clearly narrating, those lines belong to them. At most 4 leads. Put background names in extra_names, not character_names.
 Every scene must list who is on screen. Write emotion and keep spatial continuity from the previous scene. Keep a character the same age and size until a later scene explicitly shows they grew. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
-Make scene times add up to the project's targetDurationSeconds.
+Make scene times add up to the project's targetDurationSeconds. Never add an empty or placeholder scene to fill leftover seconds; lengthen a real scene instead.
 Put the hook spoken line in scene 1 so audio starts at 0s.
 Then STOP. Do not plan batches. Do not generate frames or video. Do not ask questions.`;
 
@@ -78,7 +78,7 @@ const PRODUCE_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PRODUCE.
 The user already approved the storyboard. Do NOT rewrite or re-extract scenes.
-If targetDurationSeconds is 30 or less, call plan_video_batches with EXACTLY one batch covering every scene at that duration (Seedance 2.5 one-shot). Otherwise pack into 4-30s clips whose durations add up to targetDurationSeconds.
+If targetDurationSeconds is 30 or less, call plan_video_batches with EXACTLY one batch covering every scene at that duration (Seedance 2.5 one-shot). Otherwise pack whole scenes into 4-30s clips whose durations add up to targetDurationSeconds. Never repeat a scene across clips.
 Then call generate_video_batch for each batch in order until all clips exist. Do not generate a first-frame still.
 Do not ask questions. Do not chat.`;
 
@@ -172,7 +172,7 @@ const tools: OpenAI.Responses.Tool[] = [
               estimated_seconds: {
                 type: "number",
                 description:
-                  "Seconds this scene needs. Dialogue = time to say it calmly. Quiet/simple beats = 2-3s by complexity and intent. Do not pad empty scenes.",
+                  "Seconds this scene needs. Dialogue = time to say it calmly. Quiet/simple beats = 2-3s by complexity and intent. Do not create empty or leftover scenes to fill time.",
               },
               camera: {
                 type: "string",
@@ -543,6 +543,10 @@ async function executeTool(
           camera: String(item.camera || ""),
         };
       }) as Scene[];
+      const withStory = project.scenes.filter(sceneHasStory);
+      if (withStory.length) {
+        project.scenes = withStory.map((scene, index) => ({ ...scene, index: index + 1 }));
+      }
       refineStoryLeads(project);
       const cue =
         typeof project.targetDurationSeconds === "number"

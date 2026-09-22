@@ -8,7 +8,7 @@ import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPromp
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
-import { sceneIndexesForParts, scaleEstimatedSeconds, seedancePartDurations, shouldGenerateOneShot } from "./timing";
+import { packScenesIntoParts, scaleEstimatedSeconds, sceneHasStory, shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, LocationPlate, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -838,6 +838,10 @@ function sameSceneList(left: number[], right: number[]) {
 }
 
 export function planSeedanceBatches(project: Project) {
+  const usable = project.scenes.filter(sceneHasStory);
+  if (usable.length && usable.length !== project.scenes.length) {
+    project.scenes = usable.map((scene, index) => ({ ...scene, index: index + 1 }));
+  }
   const fallback = project.scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0) || 15;
   const target = clampTotalDuration(project.targetDurationSeconds || fallback);
   project.targetDurationSeconds = target;
@@ -848,14 +852,14 @@ export function planSeedanceBatches(project: Project) {
   project.scenes.forEach((scene, index) => {
     scene.estimatedSeconds = scaled[index] ?? scene.estimatedSeconds;
   });
-  const parts = seedancePartDurations(target);
-  const groups = sceneIndexesForParts(
+  const parts = packScenesIntoParts(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-    parts,
+    target,
   );
   const previous = project.batches;
-  project.batches = parts.map((duration, index) => {
-    const sceneIndexes = groups[index]?.length ? groups[index] : project.scenes.map((scene) => scene.index);
+  project.batches = parts.map((part, index) => {
+    const duration = part.duration;
+    const sceneIndexes = part.sceneIndexes.length ? part.sceneIndexes : project.scenes.map((scene) => scene.index);
     const scenes = sceneIndexes
       .map((sceneIndex) => project.scenes.find((scene) => scene.index === sceneIndex))
       .filter((scene): scene is Project["scenes"][number] => Boolean(scene));

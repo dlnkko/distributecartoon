@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
+import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
 import { projectAwaitingVideo } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
@@ -681,9 +682,17 @@ export function StudioApp() {
     const controller = new AbortController();
     abortRef.current = controller;
     try {
-      const total = scenesDraft.reduce((sum, scene) => sum + Math.max(2, Math.round(scene.estimatedSeconds || 0)), 0);
+      const scenes = scenesDraft
+        .filter(sceneHasStory)
+        .map((scene, index) => ({ ...scene, index: index + 1 }));
+      if (!scenes.length) {
+        setStatus("Every scene is empty. Add action or dialogue first.");
+        setBusy(false);
+        return;
+      }
+      const total = scenes.reduce((sum, scene) => sum + Math.max(2, Math.round(scene.estimatedSeconds || 0)), 0);
       const saved = await patchProject({
-        scenes: scenesDraft,
+        scenes,
         targetDurationSeconds: Math.min(300, Math.max(5, total)),
         workflowStep: "cast",
         resetGeneration: true,
@@ -1132,20 +1141,20 @@ function cloneScene(scene: Scene): Scene {
 function StepBar({ current }: { current: WorkflowStep }) {
   const index = STEPS.findIndex((item) => item.id === current);
   return (
-    <ol className="mx-auto mb-4 flex w-full max-w-4xl items-center gap-2 px-3 md:px-6">
+    <ol className="mx-auto mb-3 flex w-full max-w-4xl items-center gap-1.5 px-3 md:px-6">
       {STEPS.map((item, i) => {
         const active = i === index;
         const done = i < index;
         return (
-          <li key={item.id} className="flex min-w-0 flex-1 items-center gap-2">
+          <li key={item.id} className="flex min-w-0 flex-1 items-center gap-1.5">
             <span
-              className={`grid size-6 shrink-0 place-items-center rounded-full text-[11px] font-medium ${
+              className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium ${
                 active ? "bg-[var(--ink)] text-white" : done ? "bg-[var(--accent)] text-white" : "bg-stone-200 text-stone-500"
               }`}
             >
               {i + 1}
             </span>
-            <span className={`hidden truncate text-xs font-medium sm:inline ${active ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>{item.label}</span>
+            <span className={`hidden truncate text-[11px] font-medium sm:inline ${active ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>{item.label}</span>
             {i < STEPS.length - 1 ? <span className="hidden h-px flex-1 bg-stone-200 sm:block" /> : null}
           </li>
         );
@@ -1300,7 +1309,7 @@ function ScriptStep({
     <div className="flex flex-1 flex-col">
       <div ref={infoRef}>
         <div className="flex flex-wrap items-center gap-3">
-          <h3 className="display text-3xl md:text-4xl">Add the script</h3>
+          <h3 className="display text-2xl md:text-3xl">Add the script</h3>
           <button
             type="button"
             aria-label="Script input info"
@@ -1328,20 +1337,20 @@ function ScriptStep({
           </div>
         ) : null}
       </div>
-      <p className="mt-2 text-sm text-[var(--muted)]">Upload a PDF or Word file, or type the script or storyboard.</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Upload a PDF or Word file, or type the script.</p>
 
       <button
         type="button"
         onClick={onPickFile}
         disabled={uploadLocked}
         title={typing ? "Clear the typed text to upload a file." : undefined}
-        className={`mt-6 flex min-h-[168px] flex-col items-center justify-center gap-2 rounded-[28px] border border-dashed px-6 text-center ${
+        className={`mt-4 flex min-h-[108px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-5 text-center ${
           uploadLocked
             ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400 opacity-60"
             : "border-stone-300 bg-white hover:border-stone-400 hover:bg-stone-50 hover:shadow-[0_12px_32px_rgba(28,25,23,0.06)]"
         }`}
       >
-        <span className="grid size-12 place-items-center rounded-2xl bg-stone-100 text-stone-500">
+        <span className="grid size-9 place-items-center rounded-xl bg-stone-100 text-stone-500">
           <ScriptIcon />
         </span>
         <span className="text-sm font-medium text-[var(--ink)]">{fileAttached ? scriptName : "Upload PDF or Word"}</span>
@@ -1353,14 +1362,14 @@ function ScriptStep({
         </button>
       ) : null}
 
-      <label className="mt-6 text-sm font-medium text-[var(--muted)]">or type it here</label>
+      <label className="mt-4 text-xs font-medium text-[var(--muted)]">or type it here</label>
       <textarea
         ref={textareaRef}
         value={value}
         disabled={pasteLocked}
         onChange={(event) => onChange(event.target.value)}
         placeholder={fileAttached ? "Remove the file to type the script instead." : "Type or paste the full script or storyboard…"}
-        className="mt-2 min-h-[160px] max-h-[280px] w-full resize-none overflow-y-auto rounded-[24px] border border-[var(--line)] bg-white px-4 py-3 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
+        className="mt-1.5 min-h-[120px] max-h-[220px] w-full resize-none overflow-y-auto rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
       />
 
       <div className="mt-auto flex justify-end pt-6">
@@ -1407,24 +1416,51 @@ function SetupStep({
   onContinue: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-5">
+    <div className="flex flex-1 flex-col gap-3">
       <div>
-        <h3 className="display text-3xl md:text-4xl">Look and length</h3>
-        <p className="mt-2 text-sm text-[var(--muted)]">
-          Photos are optional. For a real person or animal, type the role from the script so we restyle that photo as
-          that character. Products, locations, and logos are only used if the script mentions them.
-        </p>
+        <h3 className="display text-2xl md:text-3xl">Look and length</h3>
+        <p className="mt-1 text-sm text-[var(--muted)]">Photos are optional. Name a role if you restyle a real person.</p>
       </div>
 
       <section className="setup-card">
-        <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
-          Real-life characters to adapt · up to 4
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Style</p>
+            <Segmented
+              value={project.style}
+              options={[
+                { id: "pixar", label: "Pixar" },
+                { id: "claymation", label: "Claymation" },
+              ]}
+              onChange={(value) => onStyle(value as VisualStyle)}
+            />
+          </div>
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Format</p>
+            <AspectPicker value={project.aspectRatio || "16:9"} onChange={onAspect} />
+          </div>
+        </div>
+        <div className="mt-4">
+          <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
+          <DurationControl
+            value={project.targetDurationSeconds || 15}
+            resetKey={project.id}
+            disabled={busy}
+            onChange={onDuration}
+          />
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            5–300s. Up to 30s is one take. Longer videos keep each scene whole: if the next scene would pass 30s, that
+            clip ends there.
+          </p>
+        </div>
+      </section>
+
+      <section className="setup-card">
+        <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
+          Characters · up to 4
         </p>
-        <p className="mt-1 mb-4 text-sm text-[var(--muted)]">
-          One real photo per character. Type the role from the script (Cat, Dog, Maya). We restyle that photo as that
-          character at casting. Leave empty if you do not have a photo.
-        </p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <p className="mt-1 mb-3 text-xs text-[var(--muted)]">One photo per role from the script. Leave empty if you do not have one.</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {characters.map((slot, index) => (
             <CharacterSlot
               key={slot.id}
@@ -1440,8 +1476,8 @@ function SetupStep({
       </section>
 
       <section className="setup-card">
-        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
           {products.map((slot) => (
             <UploadTile
               key={slot.id}
@@ -1455,8 +1491,8 @@ function SetupStep({
       </section>
 
       <section className="setup-card">
-        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Location · up to 2</p>
-        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Location · up to 2</p>
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {locations.map((slot) => (
             <UploadTile
               key={slot.id}
@@ -1470,8 +1506,8 @@ function SetupStep({
       </section>
 
       <section className="setup-card">
-        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Logo · 1</p>
-        <div className="grid grid-cols-1 gap-3 sm:max-w-[260px]">
+        <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Logo · 1</p>
+        <div className="grid grid-cols-1 gap-2 sm:max-w-[220px]">
           {logos.map((slot) => (
             <UploadTile
               key={slot.id}
@@ -1482,39 +1518,6 @@ function SetupStep({
             />
           ))}
         </div>
-      </section>
-
-      <section className="setup-card">
-        <div className="grid gap-6 sm:grid-cols-2">
-          <div>
-            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Style</p>
-            <Segmented
-              value={project.style}
-              options={[
-                { id: "pixar", label: "Pixar" },
-                { id: "claymation", label: "Claymation" },
-              ]}
-              onChange={(value) => onStyle(value as VisualStyle)}
-            />
-          </div>
-          <div>
-            <p className="mb-3 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Resolution</p>
-            <AspectPicker value={project.aspectRatio || "16:9"} onChange={onAspect} />
-          </div>
-        </div>
-      </section>
-
-      <section className="setup-card">
-        <p className="mb-4 text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Video length</p>
-        <DurationControl
-          value={project.targetDurationSeconds || 15}
-          resetKey={project.id}
-          disabled={busy}
-          onChange={onDuration}
-        />
-        <p className="mt-4 text-sm text-[var(--muted)]">
-          Whole video, 5 to 300 seconds. Up to 30s is one take. Longer videos split into 30s parts, and the last part is whatever is left.
-        </p>
       </section>
 
       <div className="mt-auto flex items-center justify-between pt-2">
@@ -1551,23 +1554,46 @@ function ReviewStep({
     onChange(scenes.map((scene, i) => (i === index ? { ...scene, ...patch } : scene)));
   }
 
+  function remove(index: number) {
+    if (scenes.length <= 1) return;
+    onChange(scenes.filter((_, i) => i !== index).map((scene, i) => ({ ...scene, index: i + 1 })));
+  }
+
   const totalSeconds = scenes.reduce((sum, scene) => sum + Math.max(2, Math.round(scene.estimatedSeconds || 0)), 0);
+  const parts = packScenesIntoParts(
+    scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    totalSeconds,
+  );
+  const partByScene = new Map<number, number>();
+  parts.forEach((part, partIndex) => {
+    for (const sceneIndex of part.sceneIndexes) partByScene.set(sceneIndex, partIndex + 1);
+  });
+  const canContinue = scenes.some(sceneHasStory);
 
   return (
-    <div className="flex flex-1 flex-col gap-4">
-      <div>
-        <h3 className="display text-3xl">Edit scenes</h3>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Set how long each scene lasts. That timing goes into the video prompt.
+    <div className="flex flex-1 flex-col gap-3">
+      <div className="flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h3 className="display text-2xl md:text-3xl">Edit scenes</h3>
+          <p className="mt-1 text-sm text-[var(--muted)]">Keep each scene whole. Delete a blank one if it has no action.</p>
+        </div>
+        <p className="text-xs text-[var(--muted)]">
+          {totalSeconds}s · {formatPartPlan(parts)}
         </p>
       </div>
 
-      {scenes.map((scene, index) => (
-        <article key={scene.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4 shadow-sm">
-          <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <p className="text-xs font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Scene {scene.index || index + 1}</p>
-            <label className="flex items-center gap-2 text-xs font-medium text-[var(--ink)]">
-              Duration
+      {scenes.map((scene, index) => {
+        const empty = !sceneHasStory(scene);
+        const part = partByScene.get(scene.index);
+        return (
+        <article key={scene.id} className={`rounded-2xl border bg-white p-3 ${empty ? "border-amber-200" : "border-[var(--line)]"}`}>
+          <div className="mb-2 flex items-center gap-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
+              Scene {scene.index || index + 1}
+              {part ? ` · Part ${part}` : ""}
+              {empty ? " · Empty" : ""}
+            </p>
+            <label className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-[var(--ink)]">
               <input
                 type="number"
                 min={2}
@@ -1577,57 +1603,74 @@ function ReviewStep({
                 onChange={(event) =>
                   update(index, { estimatedSeconds: Math.min(30, Math.max(2, Number(event.target.value) || 2)) })
                 }
-                className="w-16 rounded-lg border border-stone-200 bg-stone-50 px-2 py-1.5 text-right text-sm text-[var(--ink)] outline-none"
+                className="w-12 rounded-md border border-stone-200 bg-stone-50 px-1.5 py-1 text-right text-xs tabular-nums outline-none"
               />
               s
             </label>
+            <button
+              type="button"
+              disabled={busy || scenes.length <= 1}
+              aria-label={`Delete scene ${scene.index || index + 1}`}
+              onClick={() => remove(index)}
+              className="rounded-md px-2 py-1 text-[11px] font-medium text-stone-400 hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-30"
+            >
+              Delete
+            </button>
           </div>
           <input
             value={scene.title}
             disabled={busy}
             onChange={(event) => update(index, { title: event.target.value })}
             placeholder="Title"
-            className="mb-2 w-full rounded-xl bg-stone-50 px-3 py-2 text-sm font-medium outline-none"
+            className="mb-2 w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm font-medium outline-none"
           />
-          <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Direction</label>
-          <input
-            value={scene.camera}
-            disabled={busy}
-            onChange={(event) => update(index, { camera: event.target.value })}
-            placeholder="Wide shot, eye level"
-            className="mb-3 w-full rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none"
-          />
-          <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Action</label>
-          <textarea
-            value={scene.summary}
-            disabled={busy}
-            onChange={(event) => update(index, { summary: event.target.value })}
-            placeholder="What happens in this scene"
-            className="mb-3 min-h-[72px] w-full resize-none rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none"
-          />
-          <label className="mb-1 block text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Location</label>
-          <input
-            value={scene.location}
-            disabled={busy}
-            onChange={(event) => update(index, { location: event.target.value })}
-            placeholder="Where this is"
-            className="mb-3 w-full rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none"
-          />
+          <div className="mb-2 grid gap-2 sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Direction</span>
+              <input
+                value={scene.camera}
+                disabled={busy}
+                onChange={(event) => update(index, { camera: event.target.value })}
+                placeholder="Wide shot, eye level"
+                className="w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
+              />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Location</span>
+              <input
+                value={scene.location}
+                disabled={busy}
+                onChange={(event) => update(index, { location: event.target.value })}
+                placeholder="Where this is"
+                className="w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
+              />
+            </label>
+          </div>
+          <label className="mb-2 block">
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Action</span>
+            <textarea
+              value={scene.summary}
+              disabled={busy}
+              onChange={(event) => update(index, { summary: event.target.value })}
+              placeholder="What happens in this scene"
+              className="min-h-[56px] w-full resize-none rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
+            />
+          </label>
           <div className="flex items-center justify-between">
-            <label className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Dialogue</label>
+            <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Dialogue</label>
             <button
               type="button"
               disabled={busy}
               onClick={() => update(index, { dialogue: [...scene.dialogue, { speaker: "", line: "" }] })}
-              className="text-xs text-[var(--accent)]"
+              className="text-[11px] text-[var(--accent)]"
             >
               Add line
             </button>
           </div>
-          <div className="mt-2 space-y-2">
-            {scene.dialogue.length === 0 ? <p className="text-xs text-[var(--muted)]">No dialogue in this scene.</p> : null}
+          <div className="mt-1.5 space-y-1.5">
+            {scene.dialogue.length === 0 ? <p className="text-[11px] text-[var(--muted)]">No dialogue.</p> : null}
             {scene.dialogue.map((line, lineIndex) => (
-              <div key={`${scene.id}-d-${lineIndex}`} className="grid grid-cols-[7rem_1fr_auto] gap-2">
+              <div key={`${scene.id}-d-${lineIndex}`} className="grid grid-cols-[6.5rem_1fr_auto] gap-1.5">
                 <input
                   value={line.speaker}
                   disabled={busy}
@@ -1636,7 +1679,7 @@ function ReviewStep({
                     const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, speaker: event.target.value } : item));
                     update(index, { dialogue });
                   }}
-                  className="rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none"
+                  className="rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
                 />
                 <input
                   value={line.line}
@@ -1646,14 +1689,14 @@ function ReviewStep({
                     const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, line: event.target.value } : item));
                     update(index, { dialogue });
                   }}
-                  className="rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none"
+                  className="rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
                 />
                 <button
                   type="button"
                   disabled={busy}
                   aria-label="Remove line"
                   onClick={() => update(index, { dialogue: scene.dialogue.filter((_, i) => i !== lineIndex) })}
-                  className="px-2 text-sm text-stone-400 hover:text-[var(--danger)]"
+                  className="px-1.5 text-sm text-stone-400 hover:text-[var(--danger)]"
                 >
                   ×
                 </button>
@@ -1661,11 +1704,8 @@ function ReviewStep({
             ))}
           </div>
         </article>
-      ))}
-
-      <p className="text-sm text-[var(--muted)]">
-        Total {totalSeconds}s{totalSeconds > 30 ? ` · ${Math.floor(totalSeconds / 30)}×30s${totalSeconds % 30 ? ` + ${totalSeconds % 30}s` : ""}` : " · one take"}
-      </p>
+        );
+      })}
 
       <div className="mt-auto flex items-center justify-between pt-2">
         <BackButton disabled={busy} onClick={onBack}>
@@ -1673,7 +1713,7 @@ function ReviewStep({
         </BackButton>
         <button
           type="button"
-          disabled={busy || scenes.length === 0}
+          disabled={busy || !canContinue}
           onClick={onContinue}
           className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
         >
@@ -1701,24 +1741,22 @@ function CastStep({
   const ready = characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
 
   return (
-    <div className="flex flex-1 flex-col gap-4">
+    <div className="flex flex-1 flex-col gap-3">
       <div>
-        <h3 className="display text-3xl">Approve the cast</h3>
+        <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Only the main characters in the story appear here — not crowd, b-roll, or background extras. Each look is that
-          character alone: one pose, plain background. If you uploaded a real photo for that role, we adapted it to this
-          style. Approve them, or change each character once.
+          Main characters only. One pose each. Change a look once if needed.
         </p>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {characters.map((character) => {
           const src = lookSrc(character);
           const fallback = lookFallbackSrc(character);
           const draft = notes[character.id] || "";
           return (
-            <article key={character.id} className="rounded-[24px] border border-[var(--line)] bg-white p-4 shadow-sm">
-              <div className="aspect-square overflow-hidden rounded-2xl bg-stone-100">
+            <article key={character.id} className="rounded-2xl border border-[var(--line)] bg-white p-3">
+              <div className="aspect-square overflow-hidden rounded-xl bg-stone-100">
                 {src ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -1735,20 +1773,20 @@ function CastStep({
                   </div>
                 )}
               </div>
-              <p className="mt-3 font-medium">{character.name}</p>
+              <p className="mt-2 text-sm font-medium">{character.name}</p>
               {character.description ? (
-                <p className="mt-1 line-clamp-2 text-xs text-[var(--muted)]">{character.description}</p>
+                <p className="mt-0.5 line-clamp-2 text-[11px] text-[var(--muted)]">{character.description}</p>
               ) : null}
               {character.lookRevisionUsed ? (
-                <p className="mt-3 text-xs text-[var(--muted)]">This look can only be changed once.</p>
+                <p className="mt-2 text-[11px] text-[var(--muted)]">This look can only be changed once.</p>
               ) : (
-                <div className="mt-3 space-y-2">
+                <div className="mt-2 space-y-1.5">
                   <textarea
                     value={draft}
                     disabled={busy || !src}
                     onChange={(event) => setNotes((current) => ({ ...current, [character.id]: event.target.value }))}
                     placeholder="What to change in this look…"
-                    className="min-h-[72px] w-full resize-none rounded-xl bg-stone-50 px-3 py-2 text-sm outline-none disabled:opacity-50"
+                    className="min-h-[52px] w-full resize-none rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
                   />
                   <button
                     type="button"
@@ -1953,13 +1991,13 @@ function DurationControl({
   }
 
   return (
-    <div className="flex h-20 w-fit items-center rounded-[26px] border border-[var(--line)] bg-stone-50 p-1.5">
+    <div className="flex h-12 w-fit items-center rounded-2xl border border-[var(--line)] bg-stone-50 p-1">
       <button
         type="button"
         disabled={disabled || seconds <= 5}
         aria-label="Decrease duration"
         onClick={() => bump(-1)}
-        className="grid size-14 place-items-center rounded-[20px] text-2xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
+        className="grid size-10 place-items-center rounded-xl text-xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
       >
         −
       </button>
@@ -1969,7 +2007,7 @@ function DurationControl({
         disabled={disabled}
         aria-label="Duration in seconds"
         value={text}
-        className="w-24 bg-transparent text-center text-3xl font-semibold tabular-nums outline-none"
+        className="w-16 bg-transparent text-center text-xl font-semibold tabular-nums outline-none"
         onChange={(event) => setText(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
         onBlur={() => commitNumber(text)}
         onKeyDown={(event) => {
@@ -1986,7 +2024,7 @@ function DurationControl({
         disabled={disabled || seconds >= 300}
         aria-label="Increase duration"
         onClick={() => bump(1)}
-        className="grid size-14 place-items-center rounded-[20px] text-2xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
+        className="grid size-10 place-items-center rounded-xl text-xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
       >
         +
       </button>
@@ -1996,11 +2034,11 @@ function DurationControl({
 
 function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (value: AspectRatio) => void }) {
   return (
-    <div className="flex w-full items-center rounded-[22px] bg-stone-100 p-[3px]">
+    <div className="flex w-full items-center rounded-xl bg-stone-100 p-[3px]">
       <button
         type="button"
         onClick={() => onChange("16:9")}
-        className={`flex h-[56px] flex-1 items-center justify-center gap-2 rounded-[20px] px-3 text-left ${
+        className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
           value === "16:9" ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
         }`}
       >
@@ -2013,7 +2051,7 @@ function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (valu
       <button
         type="button"
         onClick={() => onChange("9:16")}
-        className={`flex h-[56px] flex-1 items-center justify-center gap-2 rounded-[20px] px-3 text-left ${
+        className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
           value === "9:16" ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
         }`}
       >
@@ -2037,7 +2075,7 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex h-[56px] w-full items-center rounded-full bg-stone-100 p-[3px]">
+    <div className="flex h-11 w-full items-center rounded-full bg-stone-100 p-[3px]">
       {options.map((option) => (
         <button
           key={option.id}
@@ -2087,7 +2125,7 @@ function CharacterSlot({
         placeholder="Role in the script (e.g. Cat)"
         onChange={(event) => setName(event.target.value)}
         onBlur={() => onLabel(slot, name.trim() || fallback)}
-        className="w-full rounded-xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm outline-none disabled:opacity-50"
+        className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
       />
     </div>
   );
@@ -2109,13 +2147,13 @@ function UploadTile({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-[88px] w-full items-center gap-3 rounded-2xl border border-dashed border-stone-300 bg-stone-50/70 px-3 py-2 text-left hover:border-stone-400 hover:bg-white hover:shadow-[0_10px_28px_rgba(28,25,23,0.06)] disabled:opacity-50"
+      className="flex min-h-[64px] w-full items-center gap-2.5 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-2.5 py-1.5 text-left hover:border-stone-400 hover:bg-white disabled:opacity-50"
     >
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={preview} alt="" className="size-12 shrink-0 rounded-xl object-cover" />
+        <img src={preview} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
       ) : (
-        <span className="grid size-12 shrink-0 place-items-center rounded-xl bg-stone-50 text-stone-400">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-stone-50 text-stone-400">
           <PlusIcon />
         </span>
       )}

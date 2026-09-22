@@ -135,19 +135,17 @@ a.btn-primary {
 .setup-card {
   border: 1px solid var(--line);
   background: #fff;
-  border-radius: 24px;
-  padding: 1.15rem 1.25rem;
+  border-radius: 16px;
+  padding: 0.85rem 0.95rem;
   transition:
-    transform 0.2s cubic-bezier(0.22, 1, 0.36, 1),
     box-shadow 0.2s ease,
     border-color 0.2s ease;
 }
 
 @media (prefers-reduced-motion: no-preference) {
   .setup-card:hover {
-    transform: translateY(-3px);
     border-color: rgba(28, 25, 23, 0.16);
-    box-shadow: 0 16px 40px rgba(28, 25, 23, 0.08);
+    box-shadow: 0 8px 22px rgba(28, 25, 23, 0.05);
   }
 }
 
