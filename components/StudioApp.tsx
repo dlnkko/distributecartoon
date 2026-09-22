@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
-import { projectAwaitingVideo, projectDeliveredSrc, projectIsMultipart } from "@/lib/video-jobs";
+import { projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -284,6 +284,14 @@ export function StudioApp() {
   const [notifyReady, setNotifyReady] = useState(false);
   const [notifyHint, setNotifyHint] = useState("");
   const [pane, setPane] = useState<"library" | "studio">("library");
+  const [generatingIds, setGeneratingIds] = useState<string[]>([]);
+
+  function markGenerating(projectId: string, active: boolean) {
+    setGeneratingIds((current) => {
+      if (active) return current.includes(projectId) ? current : [...current, projectId];
+      return current.filter((id) => id !== projectId);
+    });
+  }
 
   useEffect(() => {
     void boot();
@@ -310,8 +318,10 @@ export function StudioApp() {
         if (!hadVideo && hasVideo && notifyReadyRef.current) {
           void showReadyNotification(latest.title || "New video");
         }
-        if (hasVideo && !projectAwaitingVideo(latest)) setStatus("");
-        else if (projectAwaitingVideo(latest) && !busy) setStatus("Generating your video…");
+        if (hasVideo) {
+          markGenerating(latest.id, false);
+          if (!projectAwaitingVideo(latest)) setStatus("");
+        } else if (projectAwaitingVideo(latest) && !busy) setStatus("Generating your video…");
       } catch {
         // Keep the last snapshot until the next poll.
       }
@@ -326,7 +336,7 @@ export function StudioApp() {
     window.addEventListener("focus", onResume);
     window.addEventListener("online", onResume);
     const timer = window.setInterval(() => {
-      if (busy || projectAwaitingVideo(projectRef.current)) void syncProjects();
+      if (busy || projectAwaitingVideo(projectRef.current) || generatingIds.length) void syncProjects();
     }, 8000);
 
     return () => {
@@ -337,7 +347,7 @@ export function StudioApp() {
       window.removeEventListener("focus", onResume);
       window.removeEventListener("online", onResume);
     };
-  }, [project?.id, busy]);
+  }, [project?.id, busy, generatingIds.length]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -450,7 +460,11 @@ export function StudioApp() {
   async function run(mode: AgentMode) {
     if (!project || busy) return;
     setBusy(true);
-    if (mode === "produce") setStatus("Generating your video…");
+    if (mode === "produce") {
+      markGenerating(project.id, true);
+      setPane("library");
+      setStatus("Generating your video…");
+    }
     else setStatus("");
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -489,6 +503,7 @@ export function StudioApp() {
           }
           if (event.type === "error" && event.text) {
             lastError = event.text;
+            markGenerating(project.id, false);
             setStatus(event.text);
           }
         }
@@ -498,9 +513,14 @@ export function StudioApp() {
         if (refreshed) remember(refreshed);
         const latest = projectRef.current;
         const videoReady = Boolean(projectDeliveredSrc(latest));
-        if (videoReady) setStatus("");
-        else if (projectAwaitingVideo(latest)) setStatus("Generating your video…");
-        else setStatus("");
+        if (videoReady) {
+          markGenerating(project.id, false);
+          setStatus("");
+        } else if (projectAwaitingVideo(latest)) setStatus("Generating your video…");
+        else {
+          markGenerating(project.id, false);
+          setStatus("");
+        }
         if (mode === "produce" && notifyReadyRef.current && videoReady) {
           void showReadyNotification(latest?.title || "New video");
         }
@@ -508,7 +528,9 @@ export function StudioApp() {
     } catch (error) {
       if ((error as Error).name === "AbortError") {
         setStatus(projectAwaitingVideo(projectRef.current) ? "Generating your video…" : "Stopped.");
+        if (!projectAwaitingVideo(projectRef.current)) markGenerating(project.id, false);
       } else {
+        markGenerating(project.id, false);
         setStatus(error instanceof Error ? error.message : "Request failed.");
       }
       if (project?.id) {
@@ -543,7 +565,7 @@ export function StudioApp() {
     projectRef.current = item;
     setProject(item);
     setStatus(projectAwaitingVideo(item) ? "Generating your video…" : "");
-    setPane("studio");
+    setPane(projectIsGenerating(item) || generatingIds.includes(item.id) ? "library" : "studio");
     setSidebarOpen(false);
     try {
       const latest = await loadProjectById(item.id, new AbortController().signal);
@@ -684,6 +706,7 @@ export function StudioApp() {
       if (!leads.length) {
         await patchProject({ workflowStep: "produce" });
         setBusy(false);
+        setPane("library");
         await run("produce");
         return;
       }
@@ -756,6 +779,7 @@ export function StudioApp() {
       return;
     }
     setBusy(false);
+    setPane("library");
     await run("produce");
   }
 
@@ -812,7 +836,27 @@ export function StudioApp() {
   }
 
   const history = useMemo(() => historyFromProjects(projects), [projects]);
+  const generating = useMemo(
+    () =>
+      projects
+        .filter((item) => !projectDeliveredSrc(item))
+        .filter((item) => generatingIds.includes(item.id) || projectIsGenerating(item))
+        .map((item) => ({
+          projectId: item.id,
+          title: item.title || "Untitled video",
+          duration: item.targetDurationSeconds || item.batches.reduce((sum, batch) => sum + (batch.duration || 0), 0) || 15,
+          aspectRatio: item.aspectRatio,
+        })),
+    [projects, generatingIds],
+  );
   const credits = profile?.credits ?? 120;
+
+  useEffect(() => {
+    const current = projectRef.current;
+    if (!current) return;
+    if (projectDeliveredSrc(current)) return;
+    if (generatingIds.includes(current.id) || projectIsGenerating(current)) setPane("library");
+  }, [generatingIds, project?.id, project?.workflowStep, project?.joinedVideoPublicPath, project?.batches]);
 
   if (!project) {
     return <div className="grid h-screen place-items-center text-[var(--muted)]">Loading…</div>;
@@ -904,6 +948,8 @@ export function StudioApp() {
         {pane === "library" ? (
           <VideosDashboard
             videos={history}
+            generating={generating}
+            error={pane === "library" && status && !busy && /couldn't|failed|error|stopped|request failed/i.test(status) ? status : ""}
             onMenu={() => setSidebarOpen(true)}
             onPlay={(item) =>
               setExpanded({
@@ -1147,18 +1193,29 @@ function StepBar({ current }: { current: WorkflowStep }) {
 
 function VideosDashboard({
   videos,
+  generating,
+  error,
   onMenu,
   onPlay,
   onOpenProject,
   onCreate,
 }: {
   videos: HistoryVideo[];
+  generating: Array<{ projectId: string; title: string; duration: number; aspectRatio: AspectRatio }>;
+  error?: string;
   onMenu: () => void;
   onPlay: (item: HistoryVideo) => void;
   onOpenProject: (projectId: string) => void;
   onCreate: () => void;
 }) {
-  const empty = videos.length === 0;
+  const empty = videos.length === 0 && generating.length === 0;
+  const summary = empty
+    ? "Finished videos will appear here."
+    : generating.length
+      ? videos.length
+        ? `${generating.length} generating · ${videos.length} finished`
+        : "Generating your video"
+      : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`;
   return (
     <div className="scroll-thin flex-1 overflow-y-auto px-4 pb-12 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-7xl">
@@ -1169,9 +1226,7 @@ function VideosDashboard({
             </button>
             <div className="min-w-0">
               <h2 className="display text-[2rem] leading-none sm:text-[2.35rem]">Your videos</h2>
-              <p className="mt-2 text-sm text-[var(--muted)]">
-                {empty ? "Finished videos will appear here." : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`}
-              </p>
+              <p className="mt-2 text-sm text-[var(--muted)]">{summary}</p>
             </div>
           </div>
           <button
@@ -1183,6 +1238,7 @@ function VideosDashboard({
             Create a video
           </button>
         </div>
+        {error ? <p className="mt-4 text-sm text-[var(--danger)]">{error}</p> : null}
 
         {empty ? (
           <div className="mt-14 flex flex-col items-center rounded-[28px] border border-dashed border-[var(--line)] bg-white/75 px-6 py-20 text-center">
@@ -1199,6 +1255,29 @@ function VideosDashboard({
           </div>
         ) : (
           <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+            {generating.map((item) => (
+              <article
+                key={`generating-${item.projectId}`}
+                className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white text-left shadow-[0_6px_18px_rgba(28,25,23,0.04)]"
+              >
+                <div className="relative aspect-video overflow-hidden bg-stone-900">
+                  <div className="shimmer absolute inset-0 opacity-40" />
+                  <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
+                  <div className="absolute inset-0 grid place-items-center px-3">
+                    <p className="status-breathe text-center text-[12px] font-medium tracking-wide text-white">
+                      <span className="status-dots">Generating your video</span>
+                    </p>
+                  </div>
+                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
+                    {item.duration}s
+                  </span>
+                </div>
+                <div className="px-2.5 py-2">
+                  <p className="truncate text-[13px] font-medium">{item.title}</p>
+                  <p className="mt-0.5 text-[11px] text-[var(--muted)]">Generating your video</p>
+                </div>
+              </article>
+            ))}
             {videos.map((item) => (
               <button
                 key={item.key}

@@ -39,6 +39,12 @@ export function projectAwaitingVideo(
   );
 }
 
+export function projectIsGenerating(
+  project?: Pick<Project, "batches" | "joinedVideoPublicPath" | "joinedVideoRemoteUrl"> | null,
+) {
+  return Boolean(project && !projectDeliveredSrc(project) && projectAwaitingVideo(project));
+}
+
 export function realKieVideoTaskId(taskId?: string) {
   const id = taskId?.trim();
   if (!id || id === "pending") return "";

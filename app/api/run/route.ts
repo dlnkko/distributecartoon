@@ -65,7 +65,7 @@ export async function POST(request: Request) {
         await runAgent({
           project,
           mode: body.mode!,
-          abortSignal: request.signal,
+          abortSignal: body.mode === "produce" ? undefined : request.signal,
           onEvent: (event) => {
             if (event.type === "status" && event.text) send({ type: "status", text: event.text });
             if (event.type === "project" && event.project) send({ type: "project", project: event.project });
