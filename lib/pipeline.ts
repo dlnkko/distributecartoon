@@ -301,8 +301,23 @@ async function rememberAnchor(project: Project, character: Character, remoteUrl:
   await saveSoon(project);
 }
 
+function characterHasDialogue(project: Project, character: Character) {
+  const key = character.name.trim().toLowerCase();
+  if (!key) return false;
+  return project.scenes.some((scene) =>
+    (scene.dialogue || []).some((line) => {
+      const speaker = (line.speaker || "").trim();
+      if (!speaker || !(line.line || "").trim()) return false;
+      if (isUnseenVoice({ name: speaker, description: "" })) return false;
+      return speaker.toLowerCase() === key;
+    }),
+  );
+}
+
 async function ensureCharacterAnchors(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
-  const pending = leadCharacters(project).filter((character) => hasUsableLook(character) && !hasFreshAnchor(character));
+  const pending = leadCharacters(project).filter(
+    (character) => characterHasDialogue(project, character) && hasUsableLook(character) && !hasFreshAnchor(character),
+  );
   await Promise.all(
     pending.map(async (character) => {
       const source = anchorSourceUrl(character);
@@ -384,6 +399,7 @@ async function resumeLongformAnchors(project: Project) {
   if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return false;
   let changed = false;
   for (const character of leadCharacters(project)) {
+    if (!characterHasDialogue(project, character)) continue;
     const taskId = realKieVideoTaskId(character.anchorVideoTaskId);
     if (!taskId || hasFreshAnchor(character)) continue;
     const peek = await peekKieTask(taskId);
@@ -717,10 +733,12 @@ async function collectLongformReferences(project: Project, batch: Batch, abortSi
 
   for (const character of leadCharacters(project)) {
     if (!cast.has(character.name.toLowerCase())) continue;
-    const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
-    if (video) {
-      videoEntries.push({ url: video, kind: "character", name: character.name });
-      continue;
+    if (characterHasDialogue(project, character)) {
+      const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
+      if (video) {
+        videoEntries.push({ url: video, kind: "character", name: character.name });
+        continue;
+      }
     }
     const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
     if (portrait) imageEntries.push({ url: portrait, kind: "character", name: character.name });

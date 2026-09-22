@@ -99,6 +99,11 @@ function batchVideoSrc(batch: { videoPublicPath?: string; videoRemoteUrl?: strin
   return batch.videoPublicPath || batch.videoRemoteUrl || "";
 }
 
+function videoMadeAt(project: Project, src: string) {
+  const match = (project.archivedVideos || []).find((item) => item.publicPath === src && item.createdAt);
+  return match?.createdAt || project.createdAt || "";
+}
+
 function historyFromProjects(projects: Project[]): HistoryVideo[] {
   const videos: HistoryVideo[] = [];
   const seen = new Set<string>();
@@ -121,7 +126,7 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
           index: 1,
           parts: 1,
           aspectRatio: project.aspectRatio,
-          createdAt: project.updatedAt,
+          createdAt: videoMadeAt(project, joined),
         });
       }
     }
@@ -141,11 +146,15 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
         index: item.index,
         parts: 1,
         aspectRatio: project.aspectRatio,
-        createdAt: item.createdAt || project.updatedAt,
+        createdAt: item.createdAt || project.createdAt || "",
       });
     }
   }
-  return videos.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  return videos.sort((a, b) => {
+    const left = new Date(a.createdAt).getTime();
+    const right = new Date(b.createdAt).getTime();
+    return (Number.isFinite(right) ? right : 0) - (Number.isFinite(left) ? left : 0);
+  });
 }
 
 function videoDownloadName(title: string, index = 1, parts = 1) {
