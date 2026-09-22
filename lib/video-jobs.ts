@@ -52,3 +52,23 @@ export function realKieVideoTaskId(taskId?: string) {
   if (!id || id === "pending") return "";
   return id;
 }
+
+const STORY_RESUME_AFTER_MS = 4 * 60 * 1000;
+const STORY_RESUME_BEFORE_MS = 2 * 60 * 60 * 1000;
+
+export function storyBatchNeedsSubmit(
+  batch: Pick<Batch, "videoPublicPath" | "videoRemoteUrl" | "kieVideoTaskId">,
+) {
+  if (batch.videoPublicPath || batch.videoRemoteUrl) return false;
+  return !realKieVideoTaskId(batch.kieVideoTaskId);
+}
+
+export function produceShouldResumeStory(
+  project?: Pick<Project, "produceStartedAt" | "batches" | "joinedVideoPublicPath" | "joinedVideoRemoteUrl"> | null,
+  now = Date.now(),
+) {
+  if (!project?.produceStartedAt || !project.batches.length || projectDeliveredSrc(project)) return false;
+  const age = now - new Date(project.produceStartedAt).getTime();
+  if (!Number.isFinite(age) || age < STORY_RESUME_AFTER_MS || age >= STORY_RESUME_BEFORE_MS) return false;
+  return project.batches.some((batch) => storyBatchNeedsSubmit(batch));
+}
