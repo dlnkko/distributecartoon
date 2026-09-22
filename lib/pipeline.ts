@@ -191,7 +191,6 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
     }
   }
   if (await resumeLongformAnchors(project)) changed = true;
-  if (await submitMissingStoryJobs(project, () => undefined)) changed = true;
   const parts = project.batches.filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl);
   if (parts.length > 1 && parts.length === project.batches.length) {
     try {
@@ -911,17 +910,12 @@ async function submitMissingStoryJobs(
   options?: { force?: boolean },
 ) {
   if (projectDeliveredSrc(project) || !project.scenes.length) return false;
+  if (!options?.force) return false;
   throwIfAborted(abortSignal);
   planSeedanceBatches(project);
-  const age = Date.now() - new Date(project.updatedAt || 0).getTime();
-  const anchorsBusy = leadCharacters(project).some(
-    (character) => realKieVideoTaskId(character.anchorVideoTaskId) && !hasFreshAnchor(character),
-  );
-  if (!options?.force && (anchorsBusy || age < 60_000)) return false;
   let submitted = false;
   for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
     if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
-    if (!options?.force && batch.kieVideoTaskId === "pending" && age < 60_000) continue;
     throwIfAborted(abortSignal);
     onStatus("Generating your video…");
     try {
@@ -969,6 +963,7 @@ async function submitMissingStoryJobs(
 
 export async function generatePlannedVideos(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   throwIfAborted(abortSignal);
+  project.produceStartedAt = nowIso();
   planSeedanceBatches(project);
   await saveSoon(project);
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {

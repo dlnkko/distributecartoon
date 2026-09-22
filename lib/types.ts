@@ -167,6 +167,7 @@ export type Project = {
   joinedVideoRemoteUrl?: string;
   joinedVideoFileName?: string;
   joinedSource?: string;
+  produceStartedAt?: string;
   pendingQuestions: string[];
   messages: ChatMessage[];
   createdAt: string;

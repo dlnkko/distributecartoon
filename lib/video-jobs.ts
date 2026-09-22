@@ -40,12 +40,11 @@ export function projectAwaitingVideo(
 }
 
 export function projectIsGenerating(
-  project?: Pick<Project, "batches" | "joinedVideoPublicPath" | "joinedVideoRemoteUrl" | "workflowStep" | "scenes"> | null,
+  project?: Pick<Project, "batches" | "joinedVideoPublicPath" | "joinedVideoRemoteUrl" | "produceStartedAt"> | null,
 ) {
-  if (!project || projectDeliveredSrc(project)) return false;
-  if (projectAwaitingVideo(project)) return true;
-  if (project.workflowStep === "produce" && (project.scenes?.length || 0) > 0) return true;
-  return project.batches.some((batch) => !batch.videoPublicPath && !batch.videoRemoteUrl);
+  if (!project || projectDeliveredSrc(project) || !projectAwaitingVideo(project)) return false;
+  const started = Date.now() - new Date(project.produceStartedAt || 0).getTime();
+  return Boolean(project.produceStartedAt) && Number.isFinite(started) && started >= 0 && started < 2 * 60 * 60 * 1000;
 }
 
 export function realKieVideoTaskId(taskId?: string) {
