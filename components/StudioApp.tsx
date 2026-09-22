@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
-import { projectAwaitingVideo } from "@/lib/video-jobs";
+import { projectAwaitingVideo, projectDeliveredSrc, projectIsMultipart } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -100,9 +100,10 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
   const videos: HistoryVideo[] = [];
   const seen = new Set<string>();
   for (const project of projects) {
-    const joined = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
+    const joined = projectDeliveredSrc(project);
     const ready = project.batches.filter((batch) => batchVideoSrc(batch));
-    const partSrcs = new Set(joined ? ready.map((batch) => batchVideoSrc(batch)) : []);
+    const hideParts = projectIsMultipart(project);
+    const partSrcs = new Set(ready.map((batch) => batchVideoSrc(batch)).filter(Boolean));
     if (joined) {
       const dedupe = `${project.id}:${joined}`;
       if (!seen.has(dedupe)) {
@@ -121,28 +122,9 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
         });
       }
     }
-    for (const batch of ready) {
-      const src = batchVideoSrc(batch);
-      if (partSrcs.has(src)) continue;
-      const dedupe = `${project.id}:${src}`;
-      if (seen.has(dedupe)) continue;
-      seen.add(dedupe);
-      videos.push({
-        key: `${project.id}-${batch.id}`,
-        projectId: project.id,
-        title: project.title,
-        src,
-        poster: batch.framePublicPath,
-        duration: batch.duration,
-        index: batch.index,
-        parts: ready.length,
-        aspectRatio: project.aspectRatio,
-        createdAt: project.updatedAt,
-      });
-    }
     for (const item of project.archivedVideos || []) {
       const src = item.publicPath;
-      if (!src || partSrcs.has(src)) continue;
+      if (!src || (hideParts && partSrcs.has(src))) continue;
       const dedupe = `${project.id}:${src}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
@@ -322,14 +304,14 @@ export function StudioApp() {
         const currentId = projectRef.current?.id;
         const latest = currentId ? list.find((item) => item.id === currentId) : undefined;
         if (!latest) return;
-        const hadVideo = Boolean(projectRef.current?.batches.some((batch) => batchVideoSrc(batch)));
+        const hadVideo = Boolean(projectDeliveredSrc(projectRef.current));
         remember(latest);
-        const hasVideo = latest.batches.some((batch) => batchVideoSrc(batch));
+        const hasVideo = Boolean(projectDeliveredSrc(latest));
         if (!hadVideo && hasVideo && notifyReadyRef.current) {
           void showReadyNotification(latest.title || "New video");
         }
         if (hasVideo && !projectAwaitingVideo(latest)) setStatus("");
-        else if (projectAwaitingVideo(latest) && !busy) setStatus("Generating video…");
+        else if (projectAwaitingVideo(latest) && !busy) setStatus("Generating your video…");
       } catch {
         // Keep the last snapshot until the next poll.
       }
@@ -468,7 +450,7 @@ export function StudioApp() {
   async function run(mode: AgentMode) {
     if (!project || busy) return;
     setBusy(true);
-    if (mode === "produce") setStatus("Generating video…");
+    if (mode === "produce") setStatus("Generating your video…");
     else setStatus("");
     abortRef.current?.abort();
     const controller = new AbortController();
@@ -499,7 +481,7 @@ export function StudioApp() {
           if (!line) continue;
           const event = JSON.parse(line) as { type: string; text?: string; project?: Project };
           if (event.type === "status" && event.text && mode === "produce") {
-            setStatus(event.text);
+            setStatus(/couldn't|failed|error|stopped/i.test(event.text) ? event.text : "Generating your video…");
           }
           if (event.type === "project" && event.project) {
             remember(event.project);
@@ -515,9 +497,9 @@ export function StudioApp() {
         const refreshed = await loadProjectById(project.id, controller.signal);
         if (refreshed) remember(refreshed);
         const latest = projectRef.current;
-        const videoReady = Boolean(latest?.batches.some((batch) => batchVideoSrc(batch)));
+        const videoReady = Boolean(projectDeliveredSrc(latest));
         if (videoReady) setStatus("");
-        else if (projectAwaitingVideo(latest)) setStatus("Generating video…");
+        else if (projectAwaitingVideo(latest)) setStatus("Generating your video…");
         else setStatus("");
         if (mode === "produce" && notifyReadyRef.current && videoReady) {
           void showReadyNotification(latest?.title || "New video");
@@ -525,7 +507,7 @@ export function StudioApp() {
       }
     } catch (error) {
       if ((error as Error).name === "AbortError") {
-        setStatus(projectAwaitingVideo(projectRef.current) ? "Generating video…" : "Stopped.");
+        setStatus(projectAwaitingVideo(projectRef.current) ? "Generating your video…" : "Stopped.");
       } else {
         setStatus(error instanceof Error ? error.message : "Request failed.");
       }
@@ -548,19 +530,19 @@ export function StudioApp() {
       const json = await loadProjectById(project.id, new AbortController().signal);
       if (json) {
         remember(json);
-        setStatus(projectAwaitingVideo(json) ? "Generating video…" : json.batches.some((batch) => batchVideoSrc(batch)) ? "" : "Stopped.");
+        setStatus(projectAwaitingVideo(json) ? "Generating your video…" : projectDeliveredSrc(json) ? "" : "Stopped.");
         return;
       }
     } catch {
       // El estado se refresca al volver.
     }
-    setStatus(projectAwaitingVideo(projectRef.current) ? "Generating video…" : "Stopped.");
+    setStatus(projectAwaitingVideo(projectRef.current) ? "Generating your video…" : "Stopped.");
   }
 
   async function selectProject(item: Project) {
     projectRef.current = item;
     setProject(item);
-    setStatus(projectAwaitingVideo(item) ? "Generating video…" : "");
+    setStatus(projectAwaitingVideo(item) ? "Generating your video…" : "");
     setPane("studio");
     setSidebarOpen(false);
     try {
@@ -993,10 +975,10 @@ export function StudioApp() {
             <ReviewStep
               scenes={scenesDraft}
               busy={busy}
-              hasVideo={project.batches.some((batch) => batchVideoSrc(batch))}
+              hasVideo={Boolean(projectDeliveredSrc(project))}
               onChange={setScenesDraft}
               onBack={() =>
-                void (project.batches.some((batch) => batchVideoSrc(batch))
+                void (projectDeliveredSrc(project)
                   ? patchProject({ scenes: scenesDraft, workflowStep: "produce" })
                   : patchProject({ workflowStep: "setup" }))
               }
@@ -1839,13 +1821,16 @@ function ProduceStep({
   onEditScenes: () => void;
   onExpand: (item: { src: string; poster?: string; label?: string; downloadName?: string }) => void;
 }) {
-  const joined = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
-  const ready = project.batches.filter((batch) => batchVideoSrc(batch));
+  const delivered = projectDeliveredSrc(project);
   const awaiting = projectAwaitingVideo(project);
-  const totalParts = Math.max(ready.length, project.batches.length);
   const working = busy || awaiting;
-  const done = Boolean(ready.length) && !working;
-  const heading = done ? "Your video" : working ? "Directing" : ready.length ? "Your video" : "Generating";
+  const done = Boolean(delivered) && !working;
+  const duration =
+    project.targetDurationSeconds ||
+    project.batches.reduce((sum, batch) => sum + (batch.duration || 0), 0) ||
+    15;
+  const poster = project.batches.find((batch) => batch.framePublicPath)?.framePublicPath;
+  const heading = done ? "Your video" : "Generating your video";
 
   return (
     <div className="flex flex-1 flex-col gap-5">
@@ -1853,9 +1838,9 @@ function ProduceStep({
         <div>
           <h3 className="display text-3xl md:text-4xl">{heading}</h3>
           {working ? (
-            <p className="mt-1 text-sm text-[var(--muted)]">{status || "You can leave this page. The video will still appear here."}</p>
-          ) : !ready.length ? (
-            <p className="mt-1 text-sm text-[var(--muted)]">You can leave this page. The video will still appear here.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              You can leave this page. The video will still appear here.
+            </p>
           ) : null}
         </div>
         {working ? (
@@ -1877,64 +1862,28 @@ function ProduceStep({
       {working && notifyHint ? <p className="text-right text-xs text-[var(--muted)]">{notifyHint}</p> : null}
       {!working && status ? <p className="text-sm text-[var(--danger)]">{status}</p> : null}
 
-      <div className="space-y-6">
-        {project.batches.length === 0 && working ? (
-          <VideoStage
-            title={project.title}
-            aspect={project.aspectRatio}
-            styleName={project.style}
-            duration={project.targetDurationSeconds || 15}
-            waiting
-          />
-        ) : null}
-        {joined ? (
-          <VideoStage
-            title={project.title}
-            aspect={project.aspectRatio}
-            styleName={project.style}
-            duration={ready.reduce((sum, batch) => sum + (batch.duration || 0), 0) || project.targetDurationSeconds || 0}
-            src={assetSrc(joined)}
-            poster={ready[0]?.framePublicPath ? assetSrc(ready[0].framePublicPath) : undefined}
-            downloadName={videoDownloadName(project.title)}
-            onExpand={() =>
-              onExpand({
-                src: assetSrc(joined),
-                poster: ready[0]?.framePublicPath ? assetSrc(ready[0].framePublicPath) : undefined,
-                label: project.title,
-                downloadName: videoDownloadName(project.title),
-              })
-            }
-          />
-        ) : null}
-        {!joined
-          ? project.batches.map((batch) => (
-          <VideoStage
-            key={batch.id}
-            title={project.title}
-            aspect={project.aspectRatio}
-            styleName={project.style}
-            duration={batch.duration}
-            status={batch.status}
-            src={batchVideoSrc(batch) ? assetSrc(batchVideoSrc(batch)) : undefined}
-            poster={batch.framePublicPath ? assetSrc(batch.framePublicPath) : undefined}
-            part={totalParts > 1 ? batch.index : undefined}
-            parts={totalParts > 1 ? totalParts : undefined}
-            waiting={!batchVideoSrc(batch)}
-            downloadName={videoDownloadName(project.title, batch.index, Math.max(1, totalParts))}
-            onExpand={
-              batchVideoSrc(batch)
-                ? () =>
-                    onExpand({
-                      src: assetSrc(batchVideoSrc(batch)),
-                      poster: batch.framePublicPath ? assetSrc(batch.framePublicPath) : undefined,
-                      label: project.title,
-                      downloadName: videoDownloadName(project.title, batch.index, Math.max(1, totalParts)),
-                    })
-                : undefined
-            }
-          />
-        ))
-          : null}
+      <div>
+        <VideoStage
+          title={project.title}
+          aspect={project.aspectRatio}
+          styleName={project.style}
+          duration={duration}
+          src={delivered ? assetSrc(delivered) : undefined}
+          poster={poster ? assetSrc(poster) : undefined}
+          waiting={!delivered}
+          downloadName={videoDownloadName(project.title)}
+          onExpand={
+            delivered
+              ? () =>
+                  onExpand({
+                    src: assetSrc(delivered),
+                    poster: poster ? assetSrc(poster) : undefined,
+                    label: project.title,
+                    downloadName: videoDownloadName(project.title),
+                  })
+              : undefined
+          }
+        />
       </div>
 
       {done ? (
@@ -2358,7 +2307,7 @@ function VideoStage({
                   <div className="absolute inset-0 grid place-items-center px-4">
                     <p className="status-breathe text-center text-sm font-medium tracking-wide text-white">
                       <span className="status-dots">
-                        {waiting ? "Animating this shot" : "Waiting"}
+                        {waiting ? "Generating your video" : "Waiting"}
                       </span>
                     </p>
                   </div>
@@ -2369,7 +2318,7 @@ function VideoStage({
                 <div className="shimmer absolute inset-0 opacity-40" />
                 <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
                 <p className="status-breathe relative px-3 text-center text-sm text-white/80">
-                  <span className="status-dots">{waiting ? "Animating this shot" : "Waiting"}</span>
+                  <span className="status-dots">{waiting ? "Generating your video" : "Waiting"}</span>
                 </p>
               </div>
             )}

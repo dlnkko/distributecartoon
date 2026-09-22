@@ -302,7 +302,7 @@ async function ensureCharacterAnchors(project: Project, onStatus: StatusFn, abor
       if (character.anchorSourceUrl && character.anchorSourceUrl !== source) delete character.anchorVideoTaskId;
       const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
       if (!portrait) return;
-      onStatus(`Recording ${character.name}…`);
+      onStatus("Generating your video…");
       try {
         const remoteUrl = await generateSeedance25ReferenceVideo({
           prompt: characterAnchorPrompt(character.name, project.style),
@@ -333,7 +333,7 @@ async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortS
     (place) => !project.locationPlates!.some((plate) => samePlace(plate.name, place.name) && isHttpUrl(plate.remoteUrl)),
   );
   for (const place of missing) {
-    onStatus(`Building ${place.name}…`);
+    onStatus("Generating your video…");
     try {
       const photo = place.photo
         ? await resolveUploadUrl(place.photo.originalRemoteUrl, place.photo.originalPublicPath, abortSignal)
@@ -910,11 +910,10 @@ export async function generatePlannedVideos(project: Project, onStatus: StatusFn
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     await ensureLongformAnchors(project, onStatus, abortSignal);
   }
-  const total = project.batches.length;
   for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
     if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
     throwIfAborted(abortSignal);
-    onStatus(`Sending part ${batch.index} of ${total} (${batch.duration}s)…`);
+    onStatus("Generating your video…");
     const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt, batch.duration);
     const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
     const labeled = labeledReferencePrompt({
@@ -952,11 +951,10 @@ export async function generatePlannedVideos(project: Project, onStatus: StatusFn
       if (batch.videoPublicPath || batch.videoRemoteUrl) return;
       const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
       if (!taskId) return;
-      onStatus(`Rendering part ${batch.index} of ${total} (${batch.duration}s)…`);
+      onStatus("Generating your video…");
       const remoteUrl = await waitForTask(taskId, undefined, "video");
       await attachGeneratedVideo(project, batch, remoteUrl);
       await saveSoon(project);
-      onStatus(`Part ${batch.index} is ready.`);
     }),
   );
   await saveSoon(project);
@@ -977,7 +975,7 @@ async function joinReadyParts(project: Project, onStatus: StatusFn) {
   const key = parts.map((batch) => `${batch.index}:${batch.videoRemoteUrl || batch.videoPublicPath}`).join("|");
   const existing = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
   if (project.joinedSource === key && existing) return;
-  onStatus("Joining the parts…");
+  onStatus("Generating your video…");
   const buffers = [];
   for (const batch of parts) {
     buffers.push(await readPublicFile(batch.videoRemoteUrl || batch.videoPublicPath || ""));
@@ -1116,8 +1114,7 @@ async function runGenerateBatchVideo(
       videoPrompt: prompt,
     });
 
-    const voiceNote = videoEntries[0]?.name ? ` Voice ref: ${videoEntries[0].name}.` : "";
-    onStatus(`Animating the video (${batch.duration}s)…${voiceNote}`);
+    onStatus("Generating your video…");
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: labeled,
       duration: batch.duration,
