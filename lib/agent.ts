@@ -2,7 +2,7 @@ import OpenAI from "openai";
 import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, generatePlannedVideos, planSeedanceBatches, summarizeLibrary } from "./pipeline";
-import { englishExtraName, englishSpeakerName, packedScenePrompt } from "./style";
+import { englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { estimateSceneSeconds, parseDurationFromText, sceneHasStory, shouldGenerateOneShot } from "./timing";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
@@ -16,7 +16,7 @@ Language: always reply in English, clear and concrete.
 Pipeline real:
 1. PRIMERO el guion. No pidas imágenes ni generes video si aún no hay script.
 2. Extraer escenas, diálogos, locaciones y personajes.
-3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto a Pixar o claymation; nunca inventes pelo, piel, ropa ni especie. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a look for a Narrator or unseen voice-over. If the script is narrator VO and does not name whose voice, keep speaker as Narrator (is_extra true); the system picks any fitting off-screen voice. If an on-screen character has dialogue, that is their realistic lipsync. If the girl on screen is clearly the one narrating, those lines belong to her — do not invent a separate Narrator look. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
+3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto a Pixar o claymation; nunca inventes pelo, piel, ropa ni especie. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a look for a Narrator or unseen voice-over. If the script is narrator VO and does not name whose voice, keep speaker as Narrator (is_extra true); the system picks any fitting off-screen voice. If an on-screen character has dialogue, that is their realistic lipsync. A speaker named Narrator is always off-screen voice-over. Never give those lines to an on-screen character and never lipsync them. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
 4. NO first-frame still. Only character look portraits are generated. Seedance 2.5 R2V receives those portraits plus product/logo/location photos when the script uses them. The system maps files to @Image1, @Image2, @Image3 in upload order and writes those tags INSIDE the scenes when that person or object is on screen. Do not dump "@Image2 is Guy. Match his design..." at the start of the prompt.
 5. Duración de cada ESCENA: si hay diálogo, el tiempo es el de decirlo con calma. Si casi no pasa nada (un beat, un insert, un corte), 2 a 3 segundos, según complejidad, intención y relevancia. No alargues una escena vacía ni comprimas una frase hablada.
 6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, empaqueta escenas enteras en clips de 4-30s. Nunca partas una escena a la mitad ni la repitas en el clip siguiente: si al segundo 28 entra una escena de 5s, cierra ese clip en 28s y empieza el siguiente con esa escena. La suma de clips cubre targetDurationSeconds.
@@ -39,7 +39,7 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - Cada cambio de escena: SCENE 1 (5s). [English camera names only]. action. The man says: "line". CUT. SCENE 2 (4s). ...
 - Respeta estimated_seconds: SCENE N (Xs).
 - El diálogo o voiceover EMPIEZA en el segundo 0. SCENE 1 abre con la primera línea hablada, sin intro muda.
-- Voz, una sola vez en el cierre (el sistema lo escribe): diálogo on-screen = lipsync con la voz realista de ESE personaje. Voiceover de narrador sin voz nombrada = off-screen con cualquier voz que encaje, sin cuerpo de narrador. Si el VO es de un personaje concreto, usa su voz. No repitas esta regla dentro de cada SCENE.
+- Voz, una sola vez en el cierre (el sistema lo escribe): diálogo on-screen = lipsync con la voz realista de ESE personaje. Si el speaker es Narrator, es voz en off: nadie mueve la boca y ningún personaje la dice. Nunca pases una línea de Narrator a un personaje en cuadro. No repitas esta regla dentro de cada SCENE.
 - Dentro de cada escena, nombra el producto/logo/locación con @ImageN cuando aparece en ESA escena, igual que los personajes. Nunca lo dejes solo al final del prompt.
 - Cámara: varía el plano y el ángulo en CADA escena. Usa SOLO nombres en inglés: extreme wide shot, wide shot, full shot, medium full shot, medium shot, medium close-up, close-up, extreme close-up, insert, two-shot, over the shoulder, POV, eye level, low angle, high angle, bird's eye, worm's eye, dutch angle, pan, tilt, dolly, tracking shot, steadicam, crane, zoom, handheld, dolly zoom. Nunca nombres en español.
 - Planos: nunca inventes un segundo cuerpo del mismo personaje. Over-the-shoulder = hombro de A, cara de B, A ≠ B. Si solo hay un personaje en cuadro, no uses OTS ni two-shot. Estas reglas van en el cierre del prompt UNA vez, no repetidas en cada escena. OTS sí puede llevar su línea de cámara solo en ESA escena.
@@ -49,12 +49,12 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - Quién está en cuadro: en character_names solo los principals de ESA escena; en extra_names secundarios visibles. El sistema escribe una frase breve: "Only Luna and Milo participate in this scene." o "Only the dogs, cats and Luna participate in this scene."
 - Time-lapse / varias acciones en una escena: NUNCA bullets. Cada beat es una frase física completa. El sistema inserta "CUT to" entre beats para que se lean como clips separados (día/noche, distinto set), no como una acción seguida de 2s. Ejemplo: "Young Milo falls asleep on a desk, tiny body on the papers. CUT to a stop-motion growth change showing him larger on the same desk. CUT to older Milo batting at a toy across the floor. CUT to movie night, older Milo curling up beside Luna on the couch."
 - El video_prompt va 100% en inglés, salvo las comillas del diálogo si el guion está en otro idioma. Nombres cortos en inglés (Luna, Milo, the man). Nunca "Hombre de 40 años".
-- Cada línea de diálogo una sola vez. No repeated lines. Cierra CADA SCENE con "No background music." Nunca soundtrack ni BGM.
+- Cada línea de diálogo una sola vez. No repeated lines. Cierra CADA SCENE con "[NO BGM]". Nunca soundtrack ni BGM. Si un producto adjunto sale en la escena, una sola frase dice cómo: puesto en el personaje, en la mano, primer vistazo y aún no puesto, cerca, o lejos.
 - Super breve. Nada de "cinematic masterpiece". No repitas el párrafo de física/clones, oclusión, eyeline, escala ni props en cada SCENE; el sistema lo pone una sola vez al final y solo añade una frase concreta si esa escena lo pide.
 - Ejemplo Pixar:
-  Pixar style throughout the whole video. SCENE 1 (6s). Eye level, medium shot. Luna lipsyncs: "Si te suelto, ¿vas a volver?" Luna holds a red balloon over the sunset city. No background music. CUT. SCENE 2 (4s). Tracking shot, full shot. The balloon rises through clotheslines as she runs to the railing. No background music.
+  Pixar style throughout the whole video. SCENE 1 (6s). Eye level, medium shot. Luna lipsyncs: "Si te suelto, ¿vas a volver?" Luna holds a red balloon over the sunset city. [NO BGM] CUT. SCENE 2 (4s). Tracking shot, full shot. The balloon rises through clotheslines as she runs to the railing. [NO BGM]
 - Ejemplo claymation:
-  Claymation style throughout the whole video. SCENE 1 (5s). Wide shot, eye level. Voiceover: "Out on the water, something moved." A 40-year-old man walks along the beach, then suddenly notices a big dolphin far out in the sea. No background music. CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The man lipsyncs: "Wow, that's amazing!" No background music.
+  Claymation style throughout the whole video. SCENE 1 (5s). Wide shot, eye level. Off-screen narrator voice-over, no lipsync: "Out on the water, something moved." A 40-year-old man walks along the beach, then suddenly notices a big dolphin far out in the sea. Narrator lines stay off-screen. Mouths stay closed. [NO BGM] CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The man lipsyncs: "Wow, that's amazing!" [NO BGM]
 
 Herramientas:
 - Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad. En camera usa solo nombres en inglés y cambia de plano en cada escena. En summaries, write the blocking so space and size stay continuous from the previous scene. If A talks to B, A looks at B. Glow behind a body is occluded. Hands keep contact with doors and utensils. Show emotion in faces, eyes, ears, tails, and body. Show complete physical actions. Keep the attached product packaging (pouch vs bottle). Keep age/size locked until a later scene shows growth. List every on-screen principal in character_names and background animals/people in extra_names. Never write a time-lapse as a bullet list; write each beat as a full physical sentence so the system can insert CUT to. Never clone a character. Do not paste physics lectures into every summary.
@@ -68,7 +68,7 @@ const PLAN_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
-Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If narrator VO does not name a voice, keep speaker as Narrator and do not invent a look. If an on-screen character is the one speaking or clearly narrating, those lines belong to them. At most 4 leads. Put background names in extra_names, not character_names.
+Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion and keep spatial continuity from the previous scene. Keep a character the same age and size until a later scene explicitly shows they grew. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
 Make scene times add up to the project's targetDurationSeconds. Never add an empty or placeholder scene to fill leftover seconds; lengthen a real scene instead.
 Put the hook spoken line in scene 1 so audio starts at 0s.
@@ -125,7 +125,7 @@ const tools: OpenAI.Responses.Tool[] = [
               is_extra: {
                 type: "boolean",
                 description:
-                  "True for unseen narrators/voice-over with no on-screen body, crowd, b-roll, montage, numbered extras (Dog 2, Owner 3), and background pets/people. If VO does not name whose voice, keep a Narrator extra. Do not create a separate Narrator look if an on-screen character is the one speaking. False only for story principals who need a look.",
+                  "True for Narrator and unseen voice-over, crowd, b-roll, montage, numbered extras (Dog 2, Owner 3), and background pets/people. Narrator lines stay Narrator and are never lipsync. False only for story principals who need a look.",
               },
               look_known: { type: "boolean" },
             },
@@ -143,7 +143,7 @@ const tools: OpenAI.Responses.Tool[] = [
               summary: {
                 type: "string",
                 description:
-                  "What happens, starting with the opening beat. Show complete physical actions and visible emotion (face, eyes, ears, tail, posture). Keep blocking continuous with the previous scene: if someone is trapped in a corner, they are still there until they move. If a character starts tiny/baby/young, keep that size here unless THIS scene is the explicit growth. Same scale versus chairs, tables, and doors. If A speaks to B, write that A looks at B, not the camera. If they grip a door or utensil, write the contact. If glow or lights sit behind someone, they occlude it. Keep the attached product packaging: a pouch stays a pouch. Never write a time-lapse as a bullet list: write each montage beat as a full physical sentence. Do not append physics-rule lectures.",
+                  "What happens, starting with the opening beat. Show complete physical actions and visible emotion (face, eyes, ears, tail, posture). Keep blocking continuous with the previous scene: if someone is trapped in a corner, they are still there until they move. If a character starts tiny/baby/young, keep that size here unless THIS scene is the explicit growth. Same scale versus chairs, tables, and doors. If A speaks to B, write that A looks at B, not the camera. If they grip a door or utensil, write the contact. If glow or lights sit behind someone, they occlude it. If an attached product is in this scene, add one short sentence: worn on a named character, held or used by them, seen for the first time and not yet worn, a close-up, or far in the shot. Never show it worn in a first-look scene. Never write a time-lapse as a bullet list: write each montage beat as a full physical sentence. Do not append physics-rule lectures.",
               },
               location: { type: "string" },
               character_names: {
@@ -163,7 +163,7 @@ const tools: OpenAI.Responses.Tool[] = [
                   type: "object",
                   additionalProperties: false,
                   properties: {
-                    speaker: { type: "string", description: "On-screen speaker name for lipsync, or Narrator for unspecified voiceover. Never a Spanish label." },
+                    speaker: { type: "string", description: "On-screen speaker name for lipsync, or Narrator for voice-over. Narrator is never an on-screen character and is never lipsync. Never a Spanish label." },
                     line: { type: "string" },
                   },
                   required: ["speaker", "line"],
@@ -569,6 +569,7 @@ async function executeTool(
       }));
       ensureReferenceSlots(project);
       syncReferenceInclusion(project);
+      stampProductPlacement(project);
       project.workflowStep = "review";
       await saveProject(project);
       return {

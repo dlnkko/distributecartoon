@@ -242,15 +242,6 @@ export function isUnseenVoice(character: Pick<Character, "name" | "description">
   );
 }
 
-function namedVoiceHost(project: Project, narrator: Pick<Character, "name" | "description"> & { voiceNotes?: string }) {
-  const blob = `${narrator.name} ${narrator.description} ${narrator.voiceNotes || ""}`.toLowerCase();
-  const visible = project.characters.filter((character) => !isUnseenVoice(character) && !character.isExtra);
-  return visible.find((character) => {
-    const name = character.name.trim().toLowerCase();
-    return name.length > 1 && blob.includes(name);
-  });
-}
-
 function mergeUnseenNarrators(project: Project) {
   const unseen = project.characters.filter(isUnseenVoice);
   if (!unseen.length) return;
@@ -258,13 +249,7 @@ function mergeUnseenNarrators(project: Project) {
   for (const narrator of unseen) {
     narrator.isExtra = true;
     const from = characterKey(narrator.name);
-    const host = namedVoiceHost(project, narrator);
     for (const scene of project.scenes || []) {
-      if (host) {
-        for (const line of scene.dialogue || []) {
-          if (characterKey(line.speaker) === from) line.speaker = host.name;
-        }
-      }
       scene.characterNames = (scene.characterNames || []).filter((name) => characterKey(name) !== from);
       scene.extraNames = (scene.extraNames || []).filter((name) => characterKey(name) !== from);
     }

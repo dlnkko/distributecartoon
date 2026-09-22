@@ -18,15 +18,15 @@ export function videoAudioLead() {
 }
 
 export function sceneAudioClose() {
-  return "No background music.";
+  return "[NO BGM]";
 }
 
 export function videoVoiceLead() {
-  return "On-screen dialogue uses that character's realistic lipsync. Unspecified narrator voiceover uses any fitting off-screen voice, not a visible narrator.";
+  return "On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed.";
 }
 
 export function videoCloseLead() {
-  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Unspecified narrator voiceover uses any fitting off-screen voice, not a visible narrator. Speak from 0s. No repeated lines.";
+  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed. Speak from 0s. No repeated lines.";
 }
 
 export function videoStyleLead(style: VisualStyle) {
@@ -51,6 +51,7 @@ function stripVideoStyleLead(text: string) {
     .replace(/^Do not (?:switch look|change the look)\.?\s*/i, "")
     .replace(/^Maintain the exact same[^.]+visual style\.?\s*/i, "")
     .replace(/^No background music\.?\s*/i, "")
+    .replace(/^\[NO BGM\]\s*/i, "")
     .replace(/^Speak from 0s\.?\s*/i, "")
     .replace(/^No repeated lines\.?\s*/i, "")
     .replace(/^(?:Natural )?ambient sound and dialogue only\.?\s*/i, "")
@@ -466,7 +467,7 @@ function spokenLineCue(project: Project, scene: Scene | undefined, speakerRaw: s
   const line = text.replace(/^["']+|["']+$/g, "").trim();
   if (!speaker || !line) return "";
   if (isVoiceoverSpeaker(project, speakerRaw) || isVoiceoverSpeaker(project, speaker)) {
-    return `Voiceover: "${line}"`;
+    return `Off-screen narrator voice-over, no lipsync: "${line}"`;
   }
   const onScreen = sceneOnScreenNames(scene, project).some((name) => {
     const label = speakerLabel(project, name);
@@ -515,7 +516,7 @@ function attributeDialogueInPrompt(prompt: string, project: Project, sceneIndexe
       const text = (line.line || "").replace(/^["']+|["']+$/g, "").trim();
       if (!speaker || !text) continue;
       const quote = `"${text}"`;
-      if (new RegExp(`(?:says|lipsyncs|voiceover):\\s*${escapeRegExp(quote)}`, "i").test(next)) continue;
+      if (new RegExp(`(?:says|lipsyncs|voiceover|no lipsync):\\s*${escapeRegExp(quote)}`, "i").test(next)) continue;
       if (next.includes(quote)) next = next.replace(quote, spokenLineCue(project, scene, line.speaker || "", text));
     }
   }
@@ -566,12 +567,16 @@ function withCraftLocks(action: string, scene?: Scene, project?: Project) {
     if (!alreadyHas(next, lock)) next += ` ${lock}`;
   }
 
-  const spoken = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
+  const spoken = (scene?.dialogue || []).filter(
+    (line) => line.speaker && line.line && !(project && isVoiceoverSpeaker(project, line.speaker)),
+  );
   if (names.length >= 2 && spoken.length && !/\b(fourth wall|to camera|into the (?:camera|lens)|looks? (?:at|into) (?:the )?(?:camera|lens))\b/i.test(blob)) {
-    const speakerRaw = spoken.find((line) => names.some((name) => name.toLowerCase() === line.speaker.trim().toLowerCase()))?.speaker || names[0];
-    const speaker = names.find((name) => name.toLowerCase() === speakerRaw.trim().toLowerCase()) || names[0];
-    const other = names.find((name) => name.toLowerCase() !== speaker.toLowerCase());
-    if (other) {
+    const speakerRaw = spoken.find((line) => names.some((name) => name.toLowerCase() === line.speaker.trim().toLowerCase()));
+    const speaker = speakerRaw
+      ? names.find((name) => name.toLowerCase() === speakerRaw.speaker.trim().toLowerCase())
+      : undefined;
+    const other = speaker ? names.find((name) => name.toLowerCase() !== speaker.toLowerCase()) : undefined;
+    if (speaker && other) {
       const lock = `${speaker} looks at ${other}, not the camera.`;
       if (!alreadyHas(next, lock)) next += ` ${lock}`;
     }
@@ -715,16 +720,67 @@ function expandMontageAction(summary: string) {
     .join(" ");
 }
 
+function statesProductPlacement(text: string) {
+  return /\b(worn on the character|not worn|not yet|not already on|held and used|close detail|sits far|first time here|only appears as this action)\b/i.test(
+    text,
+  );
+}
+
+function productPlacementLine(action: string, label: string) {
+  const blob = action.toLowerCase();
+  const name = label.trim() || "The attached product";
+  if (/\b(first time|unbox|looking at the product|looks at the product|notices the product)\b/.test(blob)) {
+    return `${name} is seen for the first time here, not worn and not already on the character.`;
+  }
+  if (/\b(worn|wearing|in (?:her|his|their) ears|puts (?:it|them) on|already wearing)\b/.test(blob)) {
+    return `${name} is worn on the character in this shot.`;
+  }
+  if (/\b(holds? (?:the product|it|them)|holding (?:the product|it|them)|in (?:her|his|their) hand|picks? (?:it|them) up)\b/.test(blob)) {
+    return `${name} is held and used by the character, not already worn.`;
+  }
+  if (/\b(close-?up|insert|macro)\b/.test(blob)) {
+    return `${name} is a close detail, not worn.`;
+  }
+  if (/\b(far away|in the background|distant)\b/.test(blob)) {
+    return `${name} sits far in the shot, not on a character.`;
+  }
+  return `${name} only appears as this action says, not worn unless the action puts it on the character.`;
+}
+
+function productCueLabel(label: string, notes: string) {
+  const name = label.trim();
+  if (name && !/^product\s*\d+$/i.test(name)) return name;
+  const note = notes.trim();
+  if (note && note.length <= 48 && !/^optional\b/i.test(note)) return note;
+  return "The attached product";
+}
+
+export function stampProductPlacement(project: Project) {
+  for (const scene of project.scenes) {
+    const products = scenePropCues(project, scene.index).filter((item) => item.kind === "product");
+    if (!products.length) continue;
+    const blob = `${scene.summary} ${scene.title}`;
+    if (statesProductPlacement(blob)) continue;
+    const label = productCueLabel(products[0].label, products[0].notes || "");
+    const sentence = productPlacementLine(blob, label);
+    scene.summary = `${scene.summary.replace(/[. ]+$/, "").trim()}. ${sentence}`.replace(/\s{2,}/g, " ").trim();
+  }
+  return project;
+}
+
 function withOnScreenProps(action: string, project: Project, sceneIndex: number) {
   let next = action;
   for (const asset of scenePropCues(project, sceneIndex)) {
     const label = asset.label.trim();
-    const alias = label && !/^product\s*\d+$/i.test(label) ? label : (asset.notes || "").trim();
-    const needle = alias.length >= 3 ? alias : asset.kind === "product" ? "the product pack" : label;
+    const needle = asset.kind === "product" ? productCueLabel(label, asset.notes || "") : label;
     if (!needle) continue;
+    if (asset.kind === "product") {
+      if (statesProductPlacement(next)) continue;
+      next += ` ${productPlacementLine(next, needle)}`;
+      continue;
+    }
     if (new RegExp(escapeRegExp(needle), "i").test(next)) continue;
-    if (asset.kind === "product") next += ` ${needle} is on screen.`;
-    else if (asset.kind === "logo") next += ` ${needle} is visible.`;
+    if (asset.kind === "logo") next += ` ${needle} is visible.`;
     else next += ` at ${needle}.`;
   }
   return next;
@@ -769,7 +825,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
     const name = item.name.trim();
     if (!name) return;
     if (item.kind === "product") {
-      const aliases = [name, item.notes || "", "creatine gummies", "gummies pack", "the product pack"]
+      const aliases = [name, item.notes || "", "the attached product", "the product"]
         .map((value) => value.trim())
         .filter((value) => value.length >= 4 && value.length <= 48 && !/^product\s*\d+$/i.test(value));
       const unique = [...new Set(aliases)].sort((a, b) => b.length - a.length);
@@ -777,7 +833,6 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
         replacements.push({
           pattern: new RegExp(`\\b${escapeRegExp(alias)}\\b`, "gi"),
           tag,
-          first: `${tag}, the attached pack`,
         });
       }
       return;
@@ -879,8 +934,12 @@ function ensurePropTagsInScenes(
       );
       if (!match) continue;
       if (new RegExp(`${escapeRegExp(tag)}\\b`, "i").test(sceneText)) continue;
-      const extra = item.kind === "product" ? ", the attached pack" : "";
-      sceneText = `${sceneText.replace(/[. ]+$/, "")}. ${tag}${extra}.`;
+      if (item.kind === "product") {
+        if (statesProductPlacement(sceneText)) continue;
+        sceneText = `${sceneText.replace(/[. ]+$/, "")}. ${productPlacementLine(sceneText, tag)}`;
+        continue;
+      }
+      sceneText = `${sceneText.replace(/[. ]+$/, "")}. ${tag}.`;
     }
     return sceneText;
   });
@@ -892,11 +951,10 @@ function ensureSceneNoBgm(text: string) {
   const { prefix, blocks } = splitPackedScenes(text);
   const next = blocks.map((part) => {
     const physics = part.match(/\s+(Obey real-world physics:[\s\S]*)$/i);
-    const scene = (physics ? part.slice(0, physics.index) : part).replace(/\s*CUT\.\s*$/i, "").trim();
+    let scene = (physics ? part.slice(0, physics.index) : part).replace(/\s*CUT\.\s*$/i, "").trim();
     const tail = physics ? physics[1].trim() : "";
-    const withBgm = /no background music\.?\s*$/i.test(scene)
-      ? scene.replace(/no background music\.?$/i, sceneAudioClose())
-      : `${scene.replace(/[. ]+$/, "")}. ${sceneAudioClose()}`;
+    scene = scene.replace(/\s*No background music\.?/gi, " ").replace(/\s*\[NO BGM\]/gi, " ").replace(/\s{2,}/g, " ").trim();
+    const withBgm = `${scene.replace(/[. ]+$/, "")}. ${sceneAudioClose()}`;
     return tail ? `${withBgm} ${tail}` : withBgm;
   });
   const joined = next.join(" CUT. ");
@@ -936,14 +994,17 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
         scene,
         project,
       );
-      const lines = (scene?.dialogue || [])
-        .filter((line) => line.speaker && line.line)
+      const dialogue = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
+      const lines = dialogue
         .map((line) => spokenLineCue(project, scene, line.speaker, line.line))
         .filter(Boolean)
         .join(" ");
+      const narratorLock = dialogue.some((line) => isVoiceoverSpeaker(project, line.speaker))
+        ? "Narrator lines stay off-screen. Mouths stay closed."
+        : "";
       const seconds = fitted[i] || Math.max(2, Math.round(scene?.estimatedSeconds || 4));
       const who = sceneCastLine(scene, project);
-      const body = (i === 0 && lines ? [who, lines, visual] : [who, visual, lines])
+      const body = (i === 0 && lines ? [who, lines, narratorLock, visual] : [who, visual, lines, narratorLock])
         .filter(Boolean)
         .join(" ");
       return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body} ${sceneAudioClose()}`.replace(/\s+/g, " ").trim();
@@ -1002,7 +1063,7 @@ export function labeledReferencePrompt(options: {
 }) {
   let body = stripSceneStyleLocks(stripVideoStyleLead(stripIdentityDump(options.videoPrompt.trim())));
   body = body.replace(/^SCENE\s+/i, "SCENE ");
-  if (options.project && options.sceneIndexes?.length && !/\b(?:says|lipsyncs|voiceover):\s*"/i.test(body)) {
+  if (options.project && options.sceneIndexes?.length && !/\b(?:says|lipsyncs|voiceover|no lipsync):\s*"/i.test(body)) {
     body = attributeDialogueInPrompt(body, options.project, options.sceneIndexes);
   } else if (!options.project || !options.sceneIndexes?.length) {
     body = collapseRepeatedSays(scrubSpanishSpeakerPhrases(body));
