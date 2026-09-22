@@ -336,7 +336,14 @@ export function StudioApp() {
     window.addEventListener("focus", onResume);
     window.addEventListener("online", onResume);
     const timer = window.setInterval(() => {
-      if (busy || projectAwaitingVideo(projectRef.current) || generatingIds.length) void syncProjects();
+      if (
+        busy ||
+        generatingIds.length ||
+        projectAwaitingVideo(projectRef.current) ||
+        projectIsGenerating(projectRef.current)
+      ) {
+        void syncProjects();
+      }
     }, 8000);
 
     return () => {
@@ -503,7 +510,6 @@ export function StudioApp() {
           }
           if (event.type === "error" && event.text) {
             lastError = event.text;
-            markGenerating(project.id, false);
             setStatus(event.text);
           }
         }
@@ -516,10 +522,9 @@ export function StudioApp() {
         if (videoReady) {
           markGenerating(project.id, false);
           setStatus("");
-        } else if (projectAwaitingVideo(latest)) setStatus("Generating your video…");
-        else {
-          markGenerating(project.id, false);
-          setStatus("");
+        } else {
+          markGenerating(project.id, true);
+          setStatus("Generating your video…");
         }
         if (mode === "produce" && notifyReadyRef.current && videoReady) {
           void showReadyNotification(latest?.title || "New video");
@@ -527,10 +532,12 @@ export function StudioApp() {
       }
     } catch (error) {
       if ((error as Error).name === "AbortError") {
-        setStatus(projectAwaitingVideo(projectRef.current) ? "Generating your video…" : "Stopped.");
-        if (!projectAwaitingVideo(projectRef.current)) markGenerating(project.id, false);
+        if (projectDeliveredSrc(projectRef.current)) markGenerating(project.id, false);
+        else markGenerating(project.id, true);
+        setStatus(projectDeliveredSrc(projectRef.current) ? "" : "Generating your video…");
       } else {
-        markGenerating(project.id, false);
+        if (projectDeliveredSrc(projectRef.current)) markGenerating(project.id, false);
+        else markGenerating(project.id, true);
         setStatus(error instanceof Error ? error.message : "Request failed.");
       }
       if (project?.id) {

@@ -3,7 +3,7 @@ import { concatVideoBuffers } from "./concat";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
-import { batchAwaitingVideo, realKieVideoTaskId } from "./video-jobs";
+import { batchAwaitingVideo, projectDeliveredSrc, realKieVideoTaskId } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
@@ -191,6 +191,7 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
     }
   }
   if (await resumeLongformAnchors(project)) changed = true;
+  if (await submitMissingStoryJobs(project, () => undefined)) changed = true;
   const parts = project.batches.filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl);
   if (parts.length > 1 && parts.length === project.batches.length) {
     try {
@@ -903,47 +904,79 @@ export function planSeedanceBatches(project: Project) {
   return project.batches;
 }
 
+async function submitMissingStoryJobs(
+  project: Project,
+  onStatus: StatusFn,
+  abortSignal?: AbortSignal,
+  options?: { force?: boolean },
+) {
+  if (projectDeliveredSrc(project) || !project.scenes.length) return false;
+  throwIfAborted(abortSignal);
+  planSeedanceBatches(project);
+  const age = Date.now() - new Date(project.updatedAt || 0).getTime();
+  const anchorsBusy = leadCharacters(project).some(
+    (character) => realKieVideoTaskId(character.anchorVideoTaskId) && !hasFreshAnchor(character),
+  );
+  if (!options?.force && (anchorsBusy || age < 60_000)) return false;
+  let submitted = false;
+  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
+    if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
+    if (!options?.force && batch.kieVideoTaskId === "pending" && age < 60_000) continue;
+    throwIfAborted(abortSignal);
+    onStatus("Generating your video…");
+    try {
+      const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt, batch.duration);
+      const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
+      const labeled = labeledReferencePrompt({
+        images: imageEntries,
+        videos: videoEntries,
+        style: project.style,
+        project,
+        sceneIndexes: batch.sceneIndexes,
+        videoPrompt: prompt,
+      });
+      batch.videoPrompt = labeled;
+      batch.status = "generating_video";
+      batch.kieVideoTaskId = "pending";
+      delete batch.error;
+      await saveSoon(project);
+      const taskId = await submitSeedance25ReferenceVideo({
+        prompt: labeled,
+        duration: batch.duration,
+        aspectRatio: normalizeAspectRatio(project.aspectRatio),
+        referenceImageUrls: imageEntries.map((item) => item.url),
+        referenceVideoUrls: videoEntries.map((item) => item.url),
+        generateAudio: true,
+        resolution: "480p",
+        onTaskCreated: async (id) => {
+          batch.kieVideoTaskId = id;
+          batch.status = "generating_video";
+          await saveSoon(project);
+        },
+      });
+      batch.kieVideoTaskId = taskId;
+      submitted = true;
+      await saveSoon(project);
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      batch.status = "error";
+      batch.error = error instanceof Error ? error.message : "Couldn't start this part.";
+      await saveSoon(project);
+    }
+  }
+  return submitted;
+}
+
 export async function generatePlannedVideos(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   throwIfAborted(abortSignal);
   planSeedanceBatches(project);
   await saveSoon(project);
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
-    await ensureLongformAnchors(project, onStatus, abortSignal);
+    await ensureCharacterAnchors(project, onStatus, abortSignal);
   }
-  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
-    if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
-    throwIfAborted(abortSignal);
-    onStatus("Generating your video…");
-    const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt, batch.duration);
-    const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
-    const labeled = labeledReferencePrompt({
-      images: imageEntries,
-      videos: videoEntries,
-      style: project.style,
-      project,
-      sceneIndexes: batch.sceneIndexes,
-      videoPrompt: prompt,
-    });
-    batch.videoPrompt = labeled;
-    batch.status = "generating_video";
-    batch.kieVideoTaskId = "pending";
-    await saveSoon(project);
-    const taskId = await submitSeedance25ReferenceVideo({
-      prompt: labeled,
-      duration: batch.duration,
-      aspectRatio: normalizeAspectRatio(project.aspectRatio),
-      referenceImageUrls: imageEntries.map((item) => item.url),
-      referenceVideoUrls: videoEntries.map((item) => item.url),
-      generateAudio: true,
-      resolution: "480p",
-      onTaskCreated: async (id) => {
-        batch.kieVideoTaskId = id;
-        batch.status = "generating_video";
-        await saveSoon(project);
-      },
-    });
-    batch.kieVideoTaskId = taskId;
-    await saveSoon(project);
+  await submitMissingStoryJobs(project, onStatus, abortSignal, { force: true });
+  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+    void ensureLocationPlates(project, onStatus, abortSignal).catch(() => undefined);
   }
 
   const settled = await Promise.allSettled(
