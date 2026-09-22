@@ -53,7 +53,9 @@ export function realKieVideoTaskId(taskId?: string) {
   return id;
 }
 
-const STORY_RESUME_AFTER_MS = 4 * 60 * 1000;
+// The produce function may run for 800s while it records character intros.
+// Resuming sooner would send the story before those videos exist.
+const STORY_RESUME_AFTER_MS = 14 * 60 * 1000;
 const STORY_RESUME_BEFORE_MS = 2 * 60 * 60 * 1000;
 
 export function storyBatchNeedsSubmit(

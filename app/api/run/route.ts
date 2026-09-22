@@ -6,7 +6,8 @@ import { getProject, saveProject } from "@/lib/store";
 import type { AgentMode, StudioEvent } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+// Intros finish before the story is sent. Fluid compute allows 800s (~13 min).
+export const maxDuration = 800;
 
 const produceLocks = new Map<string, Promise<void>>();
 

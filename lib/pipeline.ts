@@ -344,7 +344,7 @@ async function ensureCharacterAnchors(project: Project, onStatus: StatusFn, abor
         await rememberAnchor(project, character, remoteUrl);
       } catch (error) {
         if (isAbortError(error)) throw error;
-        onStatus(`Couldn't record ${character.name}. The story will still generate.`);
+        onStatus(`Couldn't record ${character.name}.`);
       }
     }),
   );
@@ -967,8 +967,15 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   return true;
 }
 
+function storyIntrosReady(project: Project) {
+  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return true;
+  return leadCharacters(project)
+    .filter((character) => characterHasDialogue(project, character) && hasUsableLook(character))
+    .every((character) => hasFreshAnchor(character));
+}
+
 async function resumeUnsentStoryJobs(project: Project) {
-  if (!produceShouldResumeStory(project)) return false;
+  if (!produceShouldResumeStory(project) || !storyIntrosReady(project)) return false;
   let changed = false;
   for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
     if (!storyBatchNeedsSubmit(batch) || batch.error?.startsWith("resume:")) continue;
@@ -1020,14 +1027,20 @@ export async function generatePlannedVideos(project: Project, onStatus: StatusFn
   project.produceStartedAt = nowIso();
   planSeedanceBatches(project);
   await saveSoon(project);
-  await submitMissingStoryJobs(project, onStatus, abortSignal, { force: true });
   const longform = !shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
-  const anchors = longform
-    ? ensureCharacterAnchors(project, onStatus, abortSignal).catch((error) => {
-        if (isAbortError(error)) throw error;
-      })
-    : Promise.resolve();
-  if (longform) void ensureLocationPlates(project, onStatus, abortSignal).catch(() => undefined);
+  if (longform) {
+    void ensureLocationPlates(project, onStatus, abortSignal).catch(() => undefined);
+    await ensureCharacterAnchors(project, onStatus, abortSignal);
+    const missing = leadCharacters(project).filter(
+      (character) => characterHasDialogue(project, character) && hasUsableLook(character) && !hasFreshAnchor(character),
+    );
+    if (missing.length) {
+      throw new Error(
+        `Couldn't finish the intro for ${missing.map((character) => character.name).join(", ")}. The story was not sent.`,
+      );
+    }
+  }
+  await submitMissingStoryJobs(project, onStatus, abortSignal, { force: true });
 
   const settled = await Promise.allSettled(
     project.batches.map(async (batch) => {
@@ -1040,7 +1053,7 @@ export async function generatePlannedVideos(project: Project, onStatus: StatusFn
       await saveSoon(project);
     }),
   );
-  await Promise.allSettled([anchors, saveSoon(project)]);
+  await saveSoon(project);
   const failed = settled.find((result) => result.status === "rejected");
   if (!failed) await joinReadyParts(project, onStatus);
   if (failed && failed.status === "rejected") throw failed.reason;

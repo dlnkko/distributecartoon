@@ -48,10 +48,16 @@ assert.equal(storyBatchNeedsSubmit({ ...planned, kieVideoTaskId: "job_123" }), f
 assert.equal(storyBatchNeedsSubmit({ ...planned, videoPublicPath: "/v.mp4" }), false);
 
 const stuck = project({
-  produceStartedAt: "2026-09-22T21:50:00.000Z",
+  produceStartedAt: "2026-09-22T21:45:00.000Z",
   batches: [planned],
 });
-assert.equal(produceShouldResumeStory(stuck, now), true, "a produce stuck past the intro wait should send the story");
+assert.equal(produceShouldResumeStory(stuck, now), true, "a produce stuck past the server wait should send the story");
+
+assert.equal(
+  produceShouldResumeStory({ ...stuck, produceStartedAt: "2026-09-22T21:50:00.000Z" }, now),
+  false,
+  "a produce still inside the 13 minute server wait must keep recording intros",
+);
 
 assert.equal(
   produceShouldResumeStory({ ...stuck, produceStartedAt: "2026-09-22T21:58:00.000Z" }, now),
