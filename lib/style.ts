@@ -26,12 +26,18 @@ export function videoVoiceLead() {
 }
 
 export function videoCloseLead() {
-  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Never invent extra copies of anyone. Each character has exactly one body in frame. Never clone or duplicate a character. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed. Speak from 0s. No repeated lines.";
+  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Each character is one body at a time. A clothing change is still that same person, not a second body. Keep who is in front, behind, left, and right until the action moves them. Time moves forward. Stay in the same place until the scene changes location. Never invent extra copies of anyone. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed. Speak from 0s. No repeated lines.";
 }
 
-export function videoStyleLead(style: VisualStyle) {
+export function videoStyleLead(style: VisualStyle, aspect?: string) {
   const look = style === "claymation" ? "Claymation" : "Pixar";
-  return `${look} style throughout the whole video.`;
+  const frame =
+    aspect === "9:16"
+      ? "Vertical 9:16 frame: one continuous space, and left and right stay consistent across cuts."
+      : aspect
+        ? "Horizontal 16:9 frame: the wide image is one place, so the extra width must not duplicate anyone or flip who is left, right, in front, or behind."
+        : "";
+  return frame ? `${look} style throughout the whole video. ${frame}` : `${look} style throughout the whole video.`;
 }
 
 export function styleGuide(style: VisualStyle) {
@@ -41,6 +47,7 @@ export function styleGuide(style: VisualStyle) {
 function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style(?: throughout the whole video)?\.?\s*/i, "")
+    .replace(/^(?:Horizontal 16:9|Vertical 9:16) frame:[^.]*\.\s*/i, "")
     .replace(/^@Image\d+\s+is the first frame of this shot(?:,[^.]+)?\.?\s*/i, "")
     .replace(/^Animate forward from that still\.?\s*/i, "")
     .replace(/^Hold the same cinematic camera until CUT\.?\s*/i, "")
@@ -612,6 +619,23 @@ function withCraftLocks(action: string, scene?: Scene, project?: Project) {
   return next;
 }
 
+function withSpatialContinuity(action: string, scene?: Scene, previous?: Scene) {
+  let next = action.trim();
+  if (!scene || !previous) return next;
+  const here = (scene.location || "").trim();
+  const before = (previous.location || "").trim();
+  if (here && before && samePlace(here, before)) {
+    const lock = "Same place as the previous shot. Keep who is in front, behind, left, and right until this action moves them.";
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+    return next;
+  }
+  if (here && before) {
+    const lock = "Time has moved forward into this new place. Do not leave people standing in the previous place.";
+    if (!alreadyHas(next, lock)) next += ` ${lock}`;
+  }
+  return next;
+}
+
 function ensurePhysicalLogic(summary: string, context = "") {
   let text = summary.trim();
   if (!text) return text;
@@ -980,7 +1004,11 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       const summary = rewriteProductContainers(scene?.summary || scene?.title || "", project);
       const montage = expandMontageAction(summary);
       const space = `${scene?.title || ""} ${scene?.location || ""}`;
-      const visual = withCraftLocks(
+      const previous = project.scenes
+        .filter((item) => item.index < index)
+        .sort((a, b) => b.index - a.index)[0];
+      const visual = withSpatialContinuity(
+        withCraftLocks(
         withNoClone(
           withOnScreenProps(
             montage || ensurePhysicalLogic(ensureVisibleAction(summary), space),
@@ -993,6 +1021,9 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
         ),
         scene,
         project,
+      ),
+        scene,
+        previous,
       );
       const dialogue = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
       const lines = dialogue
@@ -1010,7 +1041,7 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body} ${sceneAudioClose()}`.replace(/\s+/g, " ").trim();
     })
     .join(" CUT. ");
-  return `${videoStyleLead(project.style)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
+  return `${videoStyleLead(project.style, project.aspectRatio)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
@@ -1078,7 +1109,7 @@ export function labeledReferencePrompt(options: {
     body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
   }
   if (!/^(?:pixar|claymation) style throughout/i.test(body)) {
-    body = `${videoStyleLead(options.style)} ${body}`;
+    body = `${videoStyleLead(options.style, options.project?.aspectRatio)} ${body}`;
   }
   if (!/obey real-world physics/i.test(body)) body = `${body} ${videoCloseLead()}`;
   else if (!/on-screen dialogue uses that character/i.test(body)) body = `${body} ${videoVoiceLead()} ${videoAudioLead()}`;

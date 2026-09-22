@@ -10,6 +10,9 @@ import { projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, project
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
+  if (/^https:\/\/openrouter\.ai\/api\/v1\/videos\//i.test(publicPath)) {
+    return `/api/video?url=${encodeURIComponent(publicPath)}`;
+  }
   if (/^https?:\/\//i.test(publicPath)) return publicPath;
   const relative = publicPath.replace(/^\/(?:generated|api\/media)\//, "").replace(/^\//, "");
   return `/api/media/${relative}`;

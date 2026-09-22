@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+
+export const runtime = "nodejs";
+export const maxDuration = 300;
 import { getAuthUser, loadOwnedProject } from "@/lib/auth";
 import { normalizeAspectRatio, clampTotalDuration, createId } from "@/lib/ids";
 import { recoverPendingVideos } from "@/lib/pipeline";

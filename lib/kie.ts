@@ -1,6 +1,6 @@
 import { getSecrets } from "./config";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
-import { generateGptImage25Flare as generateFalGptImage25Flare, uploadFalBuffer, uploadLocalPublicPath } from "./fal";
+import { generateGptImage25Flare as generateFalGptImage25Flare, uploadLocalPublicPath } from "./fal";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const SEEDANCE_MODEL = "bytedance/seedance-2.5";
@@ -38,14 +38,12 @@ function contentUrl(job: OpenRouterJob) {
   return "";
 }
 
-async function publishVideoContent(url: string) {
-  const response = await fetch(url, { headers: openrouterHeaders(false) });
-  if (!response.ok) {
-    throw new Error(`Couldn't download the Seedance video (${response.status}).`);
-  }
-  const buffer = Buffer.from(await response.arrayBuffer());
-  if (!buffer.length) throw new Error("Seedance 2.5 returned an empty video.");
-  return uploadFalBuffer(buffer, `seedance-${Date.now()}.mp4`, response.headers.get("content-type") || "video/mp4");
+function isFinished(status?: string) {
+  return /^(completed|succeeded|success)$/i.test(status || "");
+}
+
+function isFailed(status?: string) {
+  return /^(failed|cancelled|canceled|expired)$/i.test(status || "");
 }
 
 async function readVideoJob(taskId: string, signal?: AbortSignal) {
@@ -65,16 +63,12 @@ async function readVideoJob(taskId: string, signal?: AbortSignal) {
 export async function peekKieTask(taskId: string): Promise<{ status: "success"; url: string } | { status: "fail"; error: string } | { status: "pending" }> {
   try {
     const job = await readVideoJob(taskId);
-    if (job.status === "completed") {
+    if (isFinished(job.status)) {
       const raw = contentUrl(job);
       if (!raw) return { status: "pending" };
-      try {
-        return { status: "success", url: await publishVideoContent(raw) };
-      } catch {
-        return { status: "success", url: raw };
-      }
+      return { status: "success", url: raw };
     }
-    if (job.status === "failed" || job.status === "cancelled" || job.status === "expired") {
+    if (isFailed(job.status)) {
       return { status: "fail", error: jobError(job, "Video generation failed.") };
     }
     return { status: "pending" };
@@ -92,12 +86,12 @@ export async function waitForTask(taskId: string, signal?: AbortSignal, kind: "i
     throwIfAborted(signal);
     try {
       const job = await readVideoJob(taskId, signal);
-      if (job.status === "completed") {
+      if (isFinished(job.status)) {
         const raw = contentUrl(job);
-        if (raw) return publishVideoContent(raw);
+        if (raw) return raw;
         emptySuccess += 1;
         if (emptySuccess > 8) throw new Error(`OpenRouter finished without a ${kind} URL.`);
-      } else if (job.status === "failed" || job.status === "cancelled" || job.status === "expired") {
+      } else if (isFailed(job.status)) {
         throw new Error(jobError(job, `${kind} generation failed.`));
       }
     } catch (error) {

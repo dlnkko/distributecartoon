@@ -91,26 +91,28 @@ export async function resetInFlightBatches(project: Project) {
 }
 
 async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: string) {
-  if (!batch.videoPublicPath) {
+  if (remoteUrl) {
+    batch.videoRemoteUrl = remoteUrl;
+    project.lastVideoRemoteUrl = remoteUrl;
+  }
+  batch.status = "done";
+  project.workflowStep = "produce";
+  if (!batch.videoPublicPath && batch.videoRemoteUrl) {
     try {
       const people = uniqueNames(batch.characterNames).map((name) => slugify(name)).join("_") || "scene";
       const fileStem = `batch-${String(batch.index).padStart(2, "0")}-${people}`;
-      const saved = await persistVideo(project, remoteUrl, [project.id, "batches", fileStem]);
+      const saved = await persistVideo(project, batch.videoRemoteUrl, [project.id, "batches", fileStem]);
       batch.videoFileName = saved.fileName;
       batch.videoPublicPath = saved.publicPath;
       project.lastVideoFileName = saved.fileName;
       project.lastVideoPublicPath = saved.publicPath;
+      delete batch.kieVideoTaskId;
     } catch {
-      // Kie already has the file; the player can use the remote URL until we persist later.
+      // The OpenRouter file is already recorded. The player can stream it until storage succeeds.
     }
-    batch.videoRemoteUrl = remoteUrl;
-    project.lastVideoRemoteUrl = remoteUrl;
-  } else if (!batch.videoRemoteUrl) {
-    batch.videoRemoteUrl = remoteUrl;
+  } else if (batch.videoPublicPath) {
+    delete batch.kieVideoTaskId;
   }
-  delete batch.kieVideoTaskId;
-  batch.status = "done";
-  project.workflowStep = "produce";
   assignClipToCharacters(project, batch, {
     id: `clip_${batch.index}`,
     fileName: batch.videoFileName || `batch-${batch.index}.mp4`,
@@ -165,8 +167,13 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
       }
       const peek = await peekKieTask(taskId);
       if (peek.status === "success") {
-        await attachGeneratedVideo(project, batch, peek.url);
+        batch.videoRemoteUrl = peek.url;
+        batch.status = "done";
+        project.workflowStep = "produce";
+        project.lastVideoRemoteUrl = peek.url;
         changed = true;
+        await saveProject(project);
+        await attachGeneratedVideo(project, batch, peek.url);
       } else if (peek.status === "fail") {
         delete batch.kieVideoTaskId;
         batch.status = "error";
