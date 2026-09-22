@@ -516,29 +516,46 @@ export function StudioApp() {
       }
       if (!lastError) {
         const refreshed = await loadProjectById(project.id, controller.signal);
-        if (refreshed) remember(refreshed);
-        const latest = projectRef.current;
-        const videoReady = Boolean(projectDeliveredSrc(latest));
-        if (videoReady) {
+        if (refreshed) {
+          remember(refreshed);
+          if (mode === "plan" && refreshed.scenes.length) setScenesDraft(refreshed.scenes.map(cloneScene));
+        }
+        if (mode === "produce") {
+          const latest = projectRef.current;
+          const videoReady = Boolean(projectDeliveredSrc(latest));
+          if (videoReady) {
+            markGenerating(project.id, false);
+            setStatus("");
+          } else {
+            markGenerating(project.id, true);
+            setStatus("Generating your video…");
+          }
+          if (notifyReadyRef.current && videoReady) {
+            void showReadyNotification(latest?.title || "New video");
+          }
+        } else {
           markGenerating(project.id, false);
           setStatus("");
-        } else {
-          markGenerating(project.id, true);
-          setStatus("Generating your video…");
-        }
-        if (mode === "produce" && notifyReadyRef.current && videoReady) {
-          void showReadyNotification(latest?.title || "New video");
+          setPane("studio");
         }
       }
     } catch (error) {
-      if ((error as Error).name === "AbortError") {
+      if (mode === "produce") {
         if (projectDeliveredSrc(projectRef.current)) markGenerating(project.id, false);
         else markGenerating(project.id, true);
-        setStatus(projectDeliveredSrc(projectRef.current) ? "" : "Generating your video…");
+        setStatus(
+          (error as Error).name === "AbortError"
+            ? projectDeliveredSrc(projectRef.current)
+              ? ""
+              : "Generating your video…"
+            : error instanceof Error
+              ? error.message
+              : "Request failed.",
+        );
       } else {
-        if (projectDeliveredSrc(projectRef.current)) markGenerating(project.id, false);
-        else markGenerating(project.id, true);
-        setStatus(error instanceof Error ? error.message : "Request failed.");
+        markGenerating(project.id, false);
+        setStatus((error as Error).name === "AbortError" ? "Stopped." : error instanceof Error ? error.message : "Request failed.");
+        setPane("studio");
       }
       if (project?.id) {
         const recovered = await loadProjectById(project.id, new AbortController().signal).catch(() => null);
@@ -572,7 +589,11 @@ export function StudioApp() {
     projectRef.current = item;
     setProject(item);
     setStatus(projectAwaitingVideo(item) ? "Generating your video…" : "");
-    setPane(projectIsGenerating(item) || generatingIds.includes(item.id) ? "library" : "studio");
+    const producing =
+      item.workflowStep === "produce" &&
+      !projectDeliveredSrc(item) &&
+      (projectIsGenerating(item) || generatingIds.includes(item.id));
+    setPane(producing ? "library" : "studio");
     setSidebarOpen(false);
     try {
       const latest = await loadProjectById(item.id, new AbortController().signal);
@@ -709,14 +730,8 @@ export function StudioApp() {
         resetGeneration: true,
       });
       if (!saved) return;
-      const leads = saved.characters.filter((character) => !character.isExtra && !isUnseenVoice(character));
-      if (!leads.length) {
-        await patchProject({ workflowStep: "produce" });
-        setBusy(false);
-        setPane("library");
-        await run("produce");
-        return;
-      }
+      setScenesDraft(scenes);
+      setPane("studio");
       const json = await requestCastLooks(saved.id, controller.signal);
       if (json.project) {
         remember(json.project);
@@ -861,6 +876,7 @@ export function StudioApp() {
   useEffect(() => {
     const current = projectRef.current;
     if (!current) return;
+    if (current.workflowStep !== "produce") return;
     if (projectDeliveredSrc(current)) return;
     if (generatingIds.includes(current.id) || projectIsGenerating(current)) setPane("library");
   }, [generatingIds, project?.id, project?.workflowStep, project?.joinedVideoPublicPath, project?.batches]);
@@ -1813,9 +1829,17 @@ function CastStep({
       <div>
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          Main characters only. One pose each. Change a look once if needed.
+          {characters.length
+            ? "Main characters only. One pose each. Change a look once if needed."
+            : "No on-screen characters in this script. Continue when you are ready to generate."}
         </p>
       </div>
+
+      {characters.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-[var(--line)] bg-white px-5 py-10 text-center text-sm text-[var(--muted)]">
+          Voice-over only. Nothing to approve here.
+        </div>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {characters.map((character) => {
