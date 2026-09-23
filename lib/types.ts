@@ -124,6 +124,7 @@ export type Batch = {
   videoRemoteUrl?: string;
   kieVideoTaskId?: string;
   attempts?: number;
+  continuityFlags?: string[];
 };
 
 export type ArchivedVideo = {

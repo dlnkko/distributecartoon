@@ -10,6 +10,6 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
   const ids = await activeProjectIds();
-  after(Promise.allSettled(ids.map((id) => driveProduce(id, 240_000))));
+  after(Promise.allSettled(ids.map((id) => driveProduce(id, 120_000))));
   return NextResponse.json({ ok: true, active: ids.length });
 }

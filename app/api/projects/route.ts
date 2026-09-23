@@ -13,7 +13,7 @@ import type { Project } from "@/lib/types";
 function nudgeGenerations(projects: Project[]) {
   const live = projects.filter((project) => project.keepGenerating);
   if (!live.length) return;
-  after(Promise.allSettled(live.map((project) => driveProduce(project.id, 45_000))));
+  after(Promise.allSettled(live.map((project) => driveProduce(project.id, 40_000))));
 }
 import { createProject, deleteProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
 import type { AspectRatio, Scene, VisualStyle, WorkflowStep } from "@/lib/types";

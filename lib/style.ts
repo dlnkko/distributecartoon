@@ -1,3 +1,4 @@
+import { continuityPass, identityLocks } from "./continuity";
 import { samePlace } from "./places";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
 import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
@@ -14,7 +15,7 @@ export function imageStyleLead(style: VisualStyle) {
 }
 
 export function videoAudioLead() {
-  return "Speak from 0s. No repeated lines.";
+  return "Dialogue starts early, but never before its speaker is on screen. Each line stays inside its own SCENE. No repeated lines.";
 }
 
 export function sceneAudioClose() {
@@ -26,7 +27,7 @@ export function videoVoiceLead() {
 }
 
 export function videoCloseLead() {
-  return "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Each character is one body at a time. A clothing change is still that same person, not a second body. Keep who is in front, behind, left, and right until the action moves them. Time moves forward. Stay in the same place until the scene changes location. Never invent extra copies of anyone. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed. Speak from 0s. No repeated lines.";
+  return `Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Each character is one body at a time. A clothing change is still that same person, not a second body. Keep who is in front, behind, left, and right until the action moves them. Time moves forward. Stay in the same place until the scene changes location. Never invent extra copies of anyone. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed. Props, background people, and set pieces persist across cuts: nothing appears or vanishes unless the action shows it. Characters never teleport or swap sides between shots. ${videoAudioLead()}`;
 }
 
 export function videoStyleLead(style: VisualStyle, aspect?: string) {
@@ -60,6 +61,8 @@ function stripVideoStyleLead(text: string) {
     .replace(/^No background music\.?\s*/i, "")
     .replace(/^\[NO BGM\]\s*/i, "")
     .replace(/^Speak from 0s\.?\s*/i, "")
+    .replace(/^Dialogue starts early, but never before its speaker is on screen\.?\s*/i, "")
+    .replace(/^Each line stays inside its own SCENE\.?\s*/i, "")
     .replace(/^No repeated lines\.?\s*/i, "")
     .replace(/^(?:Natural )?ambient sound and dialogue only\.?\s*/i, "")
     .replace(/^No (?:soundtrack|score|bgm|music|background (?:music|score|soundtrack))\.?\s*/i, "")
@@ -987,6 +990,7 @@ function ensureSceneNoBgm(text: string) {
 
 export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
   const usedCameras: string[] = [];
+  const shots = continuityPass(project);
   const chosen = sceneIndexes.map((index) => sceneByIndex(project, index)).filter((scene): scene is Scene => Boolean(scene));
   const budget = maxSeconds && maxSeconds > 0 ? maxSeconds : 0;
   const raw = chosen.map((scene) => Math.max(2, scene.estimatedSeconds || 4));
@@ -1007,7 +1011,8 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
       const previous = project.scenes
         .filter((item) => item.index < index)
         .sort((a, b) => b.index - a.index)[0];
-      const visual = withSpatialContinuity(
+      const shot = shots.get(index);
+      const tracked = withSpatialContinuity(
         withCraftLocks(
         withNoClone(
           withOnScreenProps(
@@ -1025,6 +1030,10 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
         scene,
         previous,
       );
+      const visual = (shot?.locks || []).reduce(
+        (text, lock) => (alreadyHas(text, lock) ? text : `${text.replace(/[. ]+$/, "")}. ${lock}`),
+        tracked,
+      );
       const dialogue = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
       const lines = dialogue
         .map((line) => spokenLineCue(project, scene, line.speaker, line.line))
@@ -1035,13 +1044,13 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
         : "";
       const seconds = fitted[i] || Math.max(2, Math.round(scene?.estimatedSeconds || 4));
       const who = sceneCastLine(scene, project);
-      const body = (i === 0 && lines ? [who, lines, narratorLock, visual] : [who, visual, lines, narratorLock])
+      const body = (i === 0 && lines && !shot?.revealFirst ? [who, lines, narratorLock, visual] : [who, visual, lines, narratorLock])
         .filter(Boolean)
         .join(" ");
       return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body} ${sceneAudioClose()}`.replace(/\s+/g, " ").trim();
     })
     .join(" CUT. ");
-  return `${videoStyleLead(project.style, project.aspectRatio)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
+  return `${videoStyleLead(project.style, project.aspectRatio)} ${identityLocks(project, sceneIndexes)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
@@ -1113,6 +1122,6 @@ export function labeledReferencePrompt(options: {
   }
   if (!/obey real-world physics/i.test(body)) body = `${body} ${videoCloseLead()}`;
   else if (!/on-screen dialogue uses that character/i.test(body)) body = `${body} ${videoVoiceLead()} ${videoAudioLead()}`;
-  else if (!/speak from 0s/i.test(body)) body = `${body} ${videoAudioLead()}`;
+  else if (!/never before its speaker is on screen/i.test(body)) body = `${body} ${videoAudioLead()}`;
   return collapseRepeatedSays(sanitizeReferencePrompt(body.replace(/\s{2,}/g, " ").trim()));
 }

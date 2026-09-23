@@ -82,7 +82,7 @@ function streamEvents(work: Promise<void>, bus: ReturnType<typeof eventBus>) {
 async function runProduce(project: Project, send: (event: StudioEvent) => void) {
   try {
     send({ type: "project", project });
-    const driven = await driveProduce(project.id, 240_000, {
+    const driven = await driveProduce(project.id, 120_000, {
       onStatus: (text) => send({ type: "status", text }),
       onProject: (next) => send({ type: "project", project: next }),
     });

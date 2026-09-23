@@ -1,5 +1,6 @@
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
 import { concatVideoBuffers } from "./concat";
+import { continuityFlags, projectSeed } from "./continuity";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
@@ -382,6 +383,7 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
         referenceImageUrls: [portrait],
         generateAudio: true,
         resolution: "480p",
+        seed: projectSeed(project),
         onTaskCreated: async (id) => {
           character.anchorVideoTaskId = id;
           character.anchorSourceUrl = source;
@@ -404,6 +406,9 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       if (peek.status === "pending") continue;
       if (peek.status === "success") {
         batch.videoRemoteUrl = peek.url;
+        batch.status = "done";
+        delete batch.kieVideoTaskId;
+        delete batch.error;
         await saveSoon(project);
         await attachGeneratedVideo(project, batch, peek.url);
         await saveSoon(project);
@@ -1086,6 +1091,8 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     videoPrompt: prompt,
   });
   batch.videoPrompt = labeled;
+  batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
+  if (batch.continuityFlags.length) console.info("continuity", project.id, batch.index, batch.continuityFlags);
   batch.status = "generating_video";
   batch.kieVideoTaskId = "pending";
   delete batch.error;
@@ -1098,6 +1105,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     referenceVideoUrls: videoEntries.map((item) => item.url),
     generateAudio: true,
     resolution: "480p",
+    seed: projectSeed(project),
     onTaskCreated: async (id) => {
       batch.kieVideoTaskId = id;
       batch.status = "generating_video";
@@ -1270,6 +1278,7 @@ async function runGenerateBatchVideo(
       referenceVideoUrls: videoEntries.map((item) => item.url),
       generateAudio: true,
       resolution: "480p",
+      seed: projectSeed(project),
       existingTaskId: batch.kieVideoTaskId !== "pending" ? batch.kieVideoTaskId : undefined,
       onTaskCreated: async (taskId) => {
         batch.kieVideoTaskId = taskId;

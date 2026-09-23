@@ -716,7 +716,7 @@ export async function runAgent(options: {
   if (mode === "produce") {
     const onStatus = (text: string) => options.onEvent({ type: "status", text });
     await startProduce(options.project);
-    const driven = await driveProduce(options.project.id, 240_000, { onStatus });
+    const driven = await driveProduce(options.project.id, 120_000, { onStatus });
     options.onEvent({ type: "project", project: driven || options.project });
     return;
   }

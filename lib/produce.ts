@@ -5,26 +5,29 @@ import { claimProject, saveClaimedProject, workerEnabled } from "./worker-db";
 import type { Project } from "./types";
 
 const STEP_GAP_MS = 10_000;
+// Vercel Hobby kills a function 300s after the request starts, including after() work.
+// The lease ends at that same moment, so a killed run never blocks the next one for long.
+const FUNCTION_LIFE_MS = 290_000;
 
 type DriveOptions = {
   onStatus?: (text: string) => void;
   onProject?: (project: Project) => void;
 };
 
-// Advances one generation for at most budgetMs. Vercel Hobby stops functions at 300s,
-// so a long video is finished by many short runs: the request that started it, the
-// dashboard polls, and the Supabase cron that pings /api/worker every minute.
+// Advances one generation. New steps only start inside budgetMs, which leaves room for a
+// slow step (sending parts, saving videos, joining) to finish before Vercel stops the function.
 export async function driveProduce(projectId: string, budgetMs: number, options: DriveOptions = {}) {
-  const leaseSeconds = Math.ceil(budgetMs / 1000) + 90;
-  const project = workerEnabled() ? await claimProject(projectId, leaseSeconds) : await getProject(projectId);
+  const startedAt = Date.now();
+  const deadline = startedAt + FUNCTION_LIFE_MS;
+  const leaseSeconds = () => Math.max(5, Math.ceil((deadline - Date.now()) / 1000));
+  const project = workerEnabled() ? await claimProject(projectId, leaseSeconds()) : await getProject(projectId);
   if (!project) return null;
   if (!project.keepGenerating) {
     if (workerEnabled()) await saveClaimedProject(project, 0).catch(() => undefined);
     return project;
   }
 
-  if (workerEnabled()) setProjectSaver(project.id, (next) => saveClaimedProject(next, leaseSeconds));
-  const until = Date.now() + budgetMs;
+  if (workerEnabled()) setProjectSaver(project.id, (next) => saveClaimedProject(next, leaseSeconds()));
   let state: ProduceState = "waiting";
   try {
     while (true) {
@@ -35,7 +38,7 @@ export async function driveProduce(projectId: string, budgetMs: number, options:
       }
       await saveSoon(project);
       options.onProject?.(project);
-      if (state !== "waiting" || Date.now() + STEP_GAP_MS + 20_000 > until) break;
+      if (state !== "waiting" || Date.now() + STEP_GAP_MS > startedAt + budgetMs) break;
       await abortableDelay(STEP_GAP_MS);
     }
   } finally {

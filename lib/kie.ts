@@ -130,6 +130,7 @@ type SeedanceRequest = {
   referenceVideoUrls?: string[];
   generateAudio?: boolean;
   resolution?: "480p" | "720p" | "1080p";
+  seed?: number;
   abortSignal?: AbortSignal;
   existingTaskId?: string;
   onTaskCreated?: (taskId: string) => void | Promise<void>;
@@ -158,6 +159,7 @@ export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
         aspect_ratio: aspectRatio,
         resolution: "480p",
         generate_audio: options.generateAudio !== false,
+        ...(Number.isInteger(options.seed) ? { seed: options.seed } : {}),
         ...(input_references.length ? { input_references } : {}),
         provider: {
           options: {
