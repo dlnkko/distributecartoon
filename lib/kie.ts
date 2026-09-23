@@ -46,10 +46,13 @@ function isFailed(status?: string) {
   return /^(failed|cancelled|canceled|expired)$/i.test(status || "");
 }
 
+const STATUS_TIMEOUT_MS = 20_000;
+
 async function readVideoJob(taskId: string, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(STATUS_TIMEOUT_MS);
   const response = await fetch(`${OPENROUTER_BASE}/videos/${encodeURIComponent(taskId)}`, {
     headers: openrouterHeaders(),
-    signal,
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
   });
   const json = (await response.json().catch(() => ({}))) as OpenRouterJob & { error?: { message?: string } | string };
   if (!response.ok) {
@@ -65,14 +68,18 @@ export async function peekKieTask(taskId: string): Promise<{ status: "success"; 
     const job = await readVideoJob(taskId);
     if (isFinished(job.status)) {
       const raw = contentUrl(job);
-      if (!raw) return { status: "pending" };
+      if (!raw) {
+        console.warn("openrouter job finished without a url", taskId);
+        return { status: "pending" };
+      }
       return { status: "success", url: raw };
     }
     if (isFailed(job.status)) {
       return { status: "fail", error: jobError(job, "Video generation failed.") };
     }
     return { status: "pending" };
-  } catch {
+  } catch (error) {
+    console.warn("openrouter status check failed", taskId, error instanceof Error ? error.message : error);
     return { status: "pending" };
   }
 }

@@ -54,7 +54,15 @@ export async function uploadLocalPublicPath(publicPath: string) {
 export async function uploadFalBuffer(buffer: Buffer, fileName: string, contentType: string) {
   configureFal();
   const file = new File([new Uint8Array(buffer)], fileName, { type: contentType });
-  return fal.storage.upload(file);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const stalled = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`Fal upload of ${fileName} timed out.`)), 120_000);
+  });
+  try {
+    return await Promise.race([fal.storage.upload(file), stalled]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 export async function generateGptImage25Flare(options: {

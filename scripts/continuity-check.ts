@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { continuityFlags, continuityPass, projectSeed } from "../lib/continuity";
-import { labeledReferencePrompt, packedScenePrompt } from "../lib/style";
+import { labeledReferencePrompt, narrationLines, narratorVoicePrompt, packedScenePrompt } from "../lib/style";
 import type { Character, Project, Scene } from "../lib/types";
 
 function character(name: string, description: string): Character {
@@ -128,5 +128,23 @@ assert.match(brief, /BEN \(@Image1\) speaks on camera, lips forming every word: 
 assert.match(brief, /No music, no score, no instruments/);
 assert.match(brief, /Real-world physics hold/);
 
-console.log(brief);
+const narrated = structuredClone(project);
+narrated.scenes[1].dialogue = [{ speaker: "Narrator", line: "Some mornings start slower than others, and this was one of them." }];
+const narratorVideos = [...videos, { url: "n", kind: "narrator" as const, name: "Narrator" }];
+const withNarrator = labeledReferencePrompt({ images, videos: narratorVideos, videoPrompt: "", style: "pixar", project: narrated, sceneIndexes: [1, 2, 3, 4], duration: 24 });
+assert.match(withNarrator, /@Video2 as the NARRATOR voice reference — audio only/);
+assert.match(withNarrator, /The narrator's voice is @Video2: an off-screen voice-over reference/);
+assert.match(withNarrator, /NARRATOR \(@Video2\) voice-over, off screen, no lipsync/);
+assert.doesNotMatch(withNarrator, /@Video2 speaks on camera/);
+assert.match(narratorVoicePrompt(narrated), /no faces and no mouths[\s\S]*off-screen voice-over, heard only, with no lipsync/);
+assert.match(narratorVoicePrompt(narrated), /\{Some mornings start slower than others, and this was one…\}/);
+assert.deepEqual(narrationLines(narrated, [1]), []);
+
+process.env.VIDEO_PROMPT_FORMAT = "compact";
+const compactNarrated = labeledReferencePrompt({ images, videos: narratorVideos, videoPrompt: "", style: "pixar", project: narrated, sceneIndexes: [1, 2], duration: 12 });
+assert.match(compactNarrated, /Narrator \(@Video2 voice\): off-screen voice-over only, no lipsync/);
+assert.match(compactNarrated, /Dialogue: Narrator \(@Video2 voice\) voice-over \(off-screen, no lipsync, mouths closed\)/);
+delete process.env.VIDEO_PROMPT_FORMAT;
+
+console.log(withNarrator);
 console.log("continuity checks passed");

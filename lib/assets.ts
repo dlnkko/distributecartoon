@@ -133,8 +133,14 @@ function downloadHeaders(remoteUrl: string) {
   return { Authorization: `Bearer ${openrouterApiKey}` };
 }
 
+// A stalled transfer would otherwise hold the worker lease until Vercel kills the function.
+const TRANSFER_TIMEOUT_MS = 90_000;
+
 export async function downloadToPublic(remoteUrl: string, relativeParts: string[], project?: Project) {
-  const response = await fetch(remoteUrl, { headers: downloadHeaders(remoteUrl) });
+  const response = await fetch(remoteUrl, {
+    headers: downloadHeaders(remoteUrl),
+    signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
+  });
   if (!response.ok) {
     throw new Error(`Couldn't download ${remoteUrl} (${response.status})`);
   }
@@ -152,7 +158,10 @@ export async function downloadToPublic(remoteUrl: string, relativeParts: string[
 
 export async function readPublicFile(publicPath: string) {
   if (/^https?:\/\//i.test(publicPath)) {
-    const response = await fetch(publicPath, { headers: downloadHeaders(publicPath) });
+    const response = await fetch(publicPath, {
+      headers: downloadHeaders(publicPath),
+      signal: AbortSignal.timeout(TRANSFER_TIMEOUT_MS),
+    });
     if (!response.ok) throw new Error(`Couldn't read ${publicPath}`);
     return Buffer.from(await response.arrayBuffer());
   }

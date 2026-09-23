@@ -5,7 +5,7 @@ import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask,
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, projectDeliveredSrc, realKieVideoTaskId, storyBatchNeedsSubmit } from "./video-jobs";
-import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
+import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
@@ -397,6 +397,73 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
   return { ready: speakingLeads(project).every((character) => hasFreshAnchor(character)) };
 }
 
+// Changing the voice notes or the first narrated line re-records the narrator reference.
+function narratorVoiceSource(project: Project) {
+  if (!narrationLines(project).length) return "";
+  return narratorVoicePrompt(project);
+}
+
+function freshNarratorVoice(project: Project) {
+  const source = narratorVoiceSource(project);
+  const voice = project.narratorVoice;
+  return source && voice?.remoteUrl && voice.source === source ? voice : undefined;
+}
+
+// A missing narrator reference never blocks the video: after the last attempt the story goes on without it.
+async function stepNarratorVoice(project: Project): Promise<StepResult> {
+  const source = narratorVoiceSource(project);
+  if (!source || freshNarratorVoice(project)) return { ready: true };
+  if (project.narratorVoice?.source !== source) project.narratorVoice = { source, attempts: 0 };
+  const voice = project.narratorVoice!;
+  const taskId = realKieVideoTaskId(voice.taskId);
+  if (taskId) {
+    const peek = await peekKieTask(taskId);
+    if (peek.status === "pending") return { ready: false };
+    if (peek.status === "success") {
+      let saved: { publicPath?: string };
+      try {
+        saved = await persistVideo(project, peek.url, [project.id, "anchors", "narrator-voice"]);
+      } catch {
+        saved = { publicPath: await publicVideoUrl(peek.url).catch(() => "") };
+      }
+      const url = saved.publicPath || peek.url;
+      voice.publicPath = url;
+      voice.remoteUrl = isOpenRouterContent(peek.url) && isHttpUrl(url) ? url : peek.url;
+      delete voice.taskId;
+      await saveSoon(project);
+      return { ready: true };
+    }
+    delete voice.taskId;
+  }
+  if ((voice.attempts || 0) >= MAX_JOB_ATTEMPTS) return { ready: true };
+  voice.attempts = (voice.attempts || 0) + 1;
+  try {
+    await submitSeedance25ReferenceVideo({
+      prompt: source,
+      duration: ANCHOR_SECONDS,
+      aspectRatio: normalizeAspectRatio(project.aspectRatio),
+      generateAudio: true,
+      resolution: "480p",
+      seed: projectSeed(project),
+      onTaskCreated: async (id) => {
+        voice.taskId = id;
+        await saveSoon(project);
+      },
+    });
+  } catch (error) {
+    console.warn("narrator voice submit failed", project.id, error instanceof Error ? error.message : error);
+    await saveSoon(project);
+  }
+  return { ready: false };
+}
+
+async function narratorVoiceRef(project: Project, sceneIndexes: number[], abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
+  const voice = freshNarratorVoice(project);
+  if (!voice || !narrationLines(project, sceneIndexes).length) return undefined;
+  const url = await resolveUploadUrl(voice.remoteUrl, voice.publicPath, abortSignal);
+  return url ? { url, kind: "narrator", name: "Narrator" } : undefined;
+}
+
 async function stepStoryParts(project: Project): Promise<StepResult> {
   for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
     if (batch.videoPublicPath || batch.videoRemoteUrl) continue;
@@ -407,10 +474,17 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       if (peek.status === "success") {
         batch.videoRemoteUrl = peek.url;
         batch.status = "done";
+        batch.readyAt = nowIso();
         delete batch.kieVideoTaskId;
         delete batch.error;
         await saveSoon(project);
         await attachGeneratedVideo(project, batch, peek.url);
+        batch.storedAt = nowIso();
+        console.info("part ready", project.id, batch.index, {
+          submittedAt: batch.submittedAt,
+          readyAt: batch.readyAt,
+          storedAt: batch.storedAt,
+        });
         await saveSoon(project);
         continue;
       }
@@ -474,6 +548,7 @@ export async function startProduce(project: Project) {
   project.workflowStep = "produce";
   delete project.produceError;
   for (const character of project.characters) character.anchorAttempts = 0;
+  if (project.narratorVoice) project.narratorVoice.attempts = 0;
   for (const batch of project.batches) {
     if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
     delete batch.kieVideoTaskId;
@@ -498,6 +573,10 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
     return "failed";
   }
   onStatus("Generating your video…");
+  const storyStarted = project.batches.some(
+    (batch) => batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId),
+  );
+  const narrator = storyStarted ? { ready: true } : await stepNarratorVoice(project);
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     const intros = await stepCharacterIntros(project);
     if (intros.failed) {
@@ -511,6 +590,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
     }
     if (!intros.ready) return "waiting";
   }
+  if (!narrator.ready) return "waiting";
   const story = await stepStoryParts(project);
   if (story.failed) {
     failProduce(project, story.failed);
@@ -916,7 +996,9 @@ async function collectLongformReferences(project: Project, batch: Batch, abortSi
     imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
   }
 
-  return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
+  const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
+  const characters = videoEntries.slice(0, narrator ? MAX_ANCHOR_VIDEOS - 1 : MAX_ANCHOR_VIDEOS);
+  return { imageEntries, videoEntries: narrator ? [...characters, narrator] : characters };
 }
 
 async function collectReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
@@ -961,7 +1043,9 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
     }
   }
 
-  return { imageEntries, videoEntries: videoEntries.slice(0, 1) };
+  const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
+  const clips = videoEntries.slice(0, 1);
+  return { imageEntries, videoEntries: narrator ? [...clips, narrator] : clips };
 }
 
 function assignClipToCharacters(
@@ -1110,6 +1194,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     onTaskCreated: async (id) => {
       batch.kieVideoTaskId = id;
       batch.status = "generating_video";
+      batch.submittedAt = nowIso();
       await saveSoon(project);
     },
   });
@@ -1158,6 +1243,7 @@ async function joinReadyParts(project: Project, onStatus: StatusFn) {
   project.archivedVideos = (project.archivedVideos || []).filter(
     (item) => !partIds.has(item.id) && !partSrcs.has(item.publicPath),
   );
+  console.info("video joined", project.id, parts.length);
   project.archivedVideos.push({
     id: `full_${project.id}_${Date.now()}`,
     title: project.title,

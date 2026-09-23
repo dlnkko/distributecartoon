@@ -125,6 +125,17 @@ export type Batch = {
   kieVideoTaskId?: string;
   attempts?: number;
   continuityFlags?: string[];
+  submittedAt?: string;
+  readyAt?: string;
+  storedAt?: string;
+};
+
+export type NarratorVoice = {
+  source: string;
+  taskId?: string;
+  remoteUrl?: string;
+  publicPath?: string;
+  attempts?: number;
 };
 
 export type ArchivedVideo = {
@@ -173,6 +184,7 @@ export type Project = {
   produceStartedAt?: string;
   keepGenerating?: boolean;
   platesTried?: boolean;
+  narratorVoice?: NarratorVoice;
   produceError?: string;
   pendingQuestions: string[];
   messages: ChatMessage[];

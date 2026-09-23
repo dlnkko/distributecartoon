@@ -5,7 +5,7 @@ import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
 
 export type PromptRef = {
   url: string;
-  kind: "frame" | "logo" | "product" | "location" | "other" | "video" | "character";
+  kind: "frame" | "logo" | "product" | "location" | "other" | "video" | "character" | "narrator";
   name: string;
   notes?: string;
 };
@@ -472,6 +472,38 @@ function isVoiceoverSpeaker(project: Project, speaker: string) {
   return isUnseenVoice({ name: raw, description: "", voiceNotes: "" });
 }
 
+export function narrationLines(project: Project, sceneIndexes?: number[]) {
+  const scenes = sceneIndexes ? sceneIndexes.map((index) => sceneByIndex(project, index)) : project.scenes;
+  return scenes.flatMap((scene) =>
+    (scene?.dialogue || [])
+      .filter((line) => line.speaker && (line.line || "").trim() && isVoiceoverSpeaker(project, line.speaker))
+      .map((line) => line.line.replace(/^["']+|["']+$/g, "").trim()),
+  );
+}
+
+function narratorVoiceNotes(project: Project) {
+  const narrator = project.characters.find((item) => isVoiceoverSpeaker(project, item.name));
+  return (narrator?.voiceNotes || "").trim().replace(/[. ]+$/, "") || "a warm, close, even storyteller voice";
+}
+
+// Four seconds fit about ten spoken words.
+export function narratorVoiceSample(project: Project) {
+  const first = narrationLines(project)[0] || "";
+  const words = first.split(/\s+/).filter(Boolean);
+  return words.length > 10 ? `${words.slice(0, 10).join(" ").replace(/[,;:]+$/, "")}…` : first;
+}
+
+export function narratorVoicePrompt(project: Project) {
+  const look = project.style === "claymation" ? "Claymation" : "Pixar";
+  const language = spokenLanguage(project);
+  return [
+    `4 seconds, one continuous shot. ${look} style.`,
+    "An empty, softly lit backdrop with gentle light drifting across a plain textured wall. The frame holds no people, no characters, no faces and no mouths.",
+    `NARRATOR — off-screen voice-over, heard only, with no lipsync. Voice: ${narratorVoiceNotes(project)}. Spoken in ${language.speech}: {${narratorVoiceSample(project)}}`,
+    "Audio: the narrator's voice over a quiet room tone. No music, no score, no instruments.",
+  ].join("\n");
+}
+
 function spokenLineCue(project: Project, scene: Scene | undefined, speakerRaw: string, text: string) {
   const speaker = speakerLabel(project, speakerRaw);
   const line = text.replace(/^["']+|["']+$/g, "").trim();
@@ -786,7 +818,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
   });
   videos.forEach((item, index) => {
     const name = item.name.trim();
-    if (!name) return;
+    if (!name || item.kind === "narrator") return;
     const tag = `@Video${index + 1}`;
     replacements.push({
       pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
@@ -927,10 +959,14 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
   const people = new Map<string, string>();
   const refs: string[] = [];
   const swaps: TagSwap[] = [];
+  let narratorTag = "";
   videos.forEach((item, index) => {
     const tag = `@Video${index + 1}`;
     const key = item.name.trim().toLowerCase();
-    if (item.kind === "character" && key) people.set(key, tag);
+    if (item.kind === "narrator") {
+      narratorTag = tag;
+      refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
+    } else if (item.kind === "character" && key) people.set(key, tag);
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
   images.forEach((item, index) => {
@@ -961,7 +997,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       project.characters.filter((item) => item.name.trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase()).length === 1;
     swaps.push({ tag, names: firstIsUnique ? [full, first] : [full] });
   }
-  return { people, refs, swaps };
+  return { people, refs, swaps, narratorTag };
 }
 
 function applyTags(text: string, swaps: TagSwap[]) {
@@ -992,7 +1028,7 @@ function withoutQuotedDialogue(summary: string, scene?: Scene) {
     .trim();
 }
 
-function dialogueBlock(project: Project, scene: Scene | undefined, people: Map<string, string>) {
+function dialogueBlock(project: Project, scene: Scene | undefined, people: Map<string, string>, narratorTag = "") {
   const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
   let previousLabel = "";
   const parts: string[] = [];
@@ -1001,7 +1037,7 @@ function dialogueBlock(project: Project, scene: Scene | undefined, people: Map<s
     if (!entry.speaker || !text) continue;
     let label: string;
     if (isVoiceoverSpeaker(project, entry.speaker)) {
-      label = "Narrator voice-over (off-screen, mouths closed):";
+      label = `Narrator${narratorTag ? ` (${narratorTag} voice)` : ""} voice-over (off-screen, no lipsync, mouths closed):`;
     } else {
       const character = findSpeakerCharacter(project, entry.speaker);
       const name = character?.name || entry.speaker;
@@ -1040,7 +1076,7 @@ function stagingLines(scene: Scene | undefined, project: Project, camera: string
 
 export function compactVideoPrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
-  const { people, refs, swaps } = buildTags(project, options.images || [], options.videos || []);
+  const { people, refs, swaps, narratorTag } = buildTags(project, options.images || [], options.videos || []);
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
@@ -1085,7 +1121,9 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
     const who = tag ? `${tag} as ${label}` : label;
     return role ? `${who} (${role})` : who;
   });
-  if (narrated) cast.push("Narrator: off-screen voice-over only");
+  if (narrated) {
+    cast.push(narratorTag ? `Narrator (${narratorTag} voice): off-screen voice-over only, no lipsync` : "Narrator: off-screen voice-over only");
+  }
   const extras = [...new Set(scenes.flatMap((scene) => (scene?.extraNames || []).map((name) => englishExtraName(name)).filter(Boolean)))];
 
   const header = [
@@ -1112,7 +1150,7 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
       .join(" ");
     const text = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
-    const dialogue = dialogueBlock(project, scene, people);
+    const dialogue = dialogueBlock(project, scene, people, narratorTag);
     return [`SCENE ${i + 1} (${seconds[i]}s) — ${cameraTitle(camera)}:`, text, dialogue].filter(Boolean).join("\n");
   });
 
@@ -1170,7 +1208,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
   const images = options.images || [];
   const videos = options.videos || [];
-  const { people, swaps } = buildTags(project, images, videos);
+  const { people, swaps, narratorTag } = buildTags(project, images, videos);
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const { durations, total } = exactSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
@@ -1216,9 +1254,10 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     values.length === 1 ? `shot ${values[0]}` : `shots ${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
   const voiceBlocks = [...speakers.entries()].map(([name, entry]) => {
     if (entry.narrator) {
-      const narrator = project.characters.find((item) => isVoiceoverSpeaker(project, item.name));
-      const voice = (narrator?.voiceNotes || "").trim().replace(/[. ]+$/, "") || "a warm, close, even storyteller voice";
-      return `VOICE — NARRATOR (this description holds for every narrated word)\nThe narrator is never on screen and has no body in the film. Voice: ${voice}. Every mouth on screen stays closed while the narrator speaks. This exact voice, every line, every generation.`;
+      const source = narratorTag
+        ? ` The narrator's voice is ${narratorTag}: an off-screen voice-over reference, audio only. Use its voice; none of its images appear in the film.`
+        : "";
+      return `VOICE — NARRATOR (this description holds for every narrated word)\nThe narrator is never on screen and has no body in the film. Voice: ${narratorVoiceNotes(project)}.${source} Narration is voice-over only, with no lipsync: every mouth on screen stays closed while the narrator speaks. This exact voice, every line, every generation.`;
     }
     const tag = tagOf(name);
     const where = [
@@ -1237,6 +1276,8 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     if (item.kind === "character") {
       const outfit = characterRole(project, item.name);
       assets.push(`${tag} as character and voice reference — ${speakerLabel(project, item.name).toUpperCase()}${outfit ? ` (${outfit})` : ""}. Keep face geometry, hair, skin, outfit, footwear and voice identical in every frame this character appears.`);
+    } else if (item.kind === "narrator") {
+      assets.push(`${tag} as the NARRATOR voice reference — audio only. This is the narrator's voice: an off-screen voice-over with no lipsync. No one on screen is the narrator, and none of its images appear.`);
     } else {
       assets.push(`${tag} as the previous clip — match its characters, voices, light and grade.`);
     }
@@ -1316,7 +1357,9 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       const to = Math.min(end - 0.05, from + span);
       cursor = to + 0.2 * squeeze;
       const range = `(${secondsLabel(from)}–${secondsLabel(to)})`;
-      if (isVoiceoverSpeaker(project, line.speaker)) return `Narrator voice-over, off screen, every mouth on screen closed: {${text}} ${range}.`;
+      if (isVoiceoverSpeaker(project, line.speaker)) {
+        return `NARRATOR${narratorTag ? ` (${narratorTag})` : ""} voice-over, off screen, no lipsync, every mouth on screen closed: {${text}} ${range}.`;
+      }
       const name = findSpeakerCharacter(project, line.speaker)?.name || line.speaker.trim();
       const who = nameWithTag(name);
       return onScreen.includes(name.toLowerCase())
@@ -1351,7 +1394,9 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       "Each character is one body at a time and appears once per frame; a clothing change is still the same person.",
       "Screen direction holds across cuts: who is left, right, in front and behind stays until the action moves them. Props, background people and set pieces persist from shot to shot, and characters enter and leave on camera.",
       "Speakers look at the person they address, not the lens, unless the scene breaks the fourth wall. Each line is spoken inside its own shot's second-range, after its speaker is on screen.",
-      [...speakers.values()].some((entry) => entry.narrator) ? "Narrator lines stay off screen with every mouth closed." : "",
+      [...speakers.values()].some((entry) => entry.narrator)
+        ? `Narrator lines are off-screen voice-over${narratorTag ? ` in the ${narratorTag} voice` : ""}, with no lipsync and every mouth closed.`
+        : "",
       "Characters keep the same body scale against chairs, tables and doors across cuts. Light direction holds steady within each shot from its first frame to its last.",
     ]
       .filter(Boolean)
@@ -1452,7 +1497,7 @@ export function labeledReferencePrompt(options: {
   body = ensurePropTagsInScenes(body, options.images, options.project, options.sceneIndexes);
   body = ensureNamedLocations(body, options.images, options.project, options.sceneIndexes);
   body = ensureSceneNoBgm(body);
-  const priorClip = options.videos.length === 1 && options.videos[0]?.kind !== "character";
+  const priorClip = options.videos.length === 1 && options.videos[0]?.kind === "video";
   if (priorClip && !/@Video1\b/.test(body)) {
     body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
   }
