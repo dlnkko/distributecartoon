@@ -7,7 +7,7 @@ import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene,
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
-import { durableVideoSrc, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
+import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -194,7 +194,7 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
     }
     for (const item of project.archivedVideos || []) {
       const src = item.publicPath;
-      if (!src || (hideParts && partSrcs.has(src))) continue;
+      if (!src || isProviderContentUrl(src) || (hideParts && partSrcs.has(src))) continue;
       const dedupe = `${project.id}:${src}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);

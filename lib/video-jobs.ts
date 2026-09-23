@@ -63,6 +63,12 @@ export function durableVideoSrc(batch: { videoPublicPath?: string; videoRemoteUr
   return "";
 }
 
+// A dead or repeated store failure means the provider file is gone, so the part must be generated again.
+export function storeFailureShouldRegenerate(attempts: number, message: string) {
+  if (/\((?:401|403|404|410)\)/.test(message)) return true;
+  return attempts >= 1;
+}
+
 export function realKieVideoTaskId(taskId?: string) {
   const id = taskId?.trim();
   if (!id || id === "pending") return "";

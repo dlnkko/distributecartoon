@@ -4,7 +4,7 @@ import { continuityFlags, projectSeed } from "./continuity";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
-import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storyBatchNeedsSubmit } from "./video-jobs";
+import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
@@ -131,19 +131,31 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
       delete batch.kieVideoTaskId;
       delete batch.error;
     } catch (error) {
-      batch.error = error instanceof Error ? error.message : "Couldn't store this part.";
-      console.warn("part store failed", project.id, batch.index, batch.error);
+      const message = error instanceof Error ? error.message : "Couldn't store this part.";
+      console.warn("part store failed", project.id, batch.index, message);
+      const providerFile = isOpenRouterContent(batch.videoRemoteUrl) || isOpenRouterContent(batch.videoPublicPath);
+      if (providerFile && storeFailureShouldRegenerate(batch.attempts || 0, message)) {
+        delete batch.videoRemoteUrl;
+        if (isOpenRouterContent(batch.videoPublicPath)) delete batch.videoPublicPath;
+        delete batch.kieVideoTaskId;
+        schedulePartRetry(batch, message);
+      } else {
+        batch.error = message;
+        batch.attempts = (batch.attempts || 0) + 1;
+      }
     }
   } else if (stored) {
     delete batch.kieVideoTaskId;
   }
-  assignClipToCharacters(project, batch, {
-    id: `clip_${batch.index}`,
-    fileName: batch.videoFileName || `batch-${batch.index}.mp4`,
-    publicPath: batch.videoPublicPath || batch.videoRemoteUrl!,
-    remoteUrl: batch.videoRemoteUrl || remoteUrl,
-  });
-  ensureArchivedVideo(project, batch);
+  if (durableVideoSrc(batch)) {
+    assignClipToCharacters(project, batch, {
+      id: `clip_${batch.index}`,
+      fileName: batch.videoFileName || `batch-${batch.index}.mp4`,
+      publicPath: durableVideoSrc(batch),
+      remoteUrl: batch.videoRemoteUrl || remoteUrl,
+    });
+    ensureArchivedVideo(project, batch);
+  }
 }
 
 export async function recoverPendingVideos(project: Project, options?: { wait?: boolean }) {

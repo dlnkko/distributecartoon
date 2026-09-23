@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { durableVideoSrc, projectDeliveredSrc, projectIsGenerating, storyBatchNeedsSubmit } from "../lib/video-jobs";
+import { durableVideoSrc, projectDeliveredSrc, projectIsGenerating, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "../lib/video-jobs";
 import type { Project } from "../lib/types";
 
 function project(patch: Partial<Project>): Project {
@@ -46,6 +46,9 @@ assert.equal(storyBatchNeedsSubmit({ ...planned, kieVideoTaskId: "job_123" }), f
 assert.equal(storyBatchNeedsSubmit({ ...planned, videoPublicPath: "/v.mp4" }), false);
 assert.equal(durableVideoSrc({ videoPublicPath: "https://openrouter.ai/api/v1/videos/job/content" }), "");
 assert.equal(durableVideoSrc({ videoRemoteUrl: "https://fal.media/clip.mp4" }), "https://fal.media/clip.mp4");
+assert.equal(storeFailureShouldRegenerate(0, "Couldn't download https://openrouter.ai/x (404)"), true);
+assert.equal(storeFailureShouldRegenerate(0, "Fal upload of clip.mp4 timed out."), false);
+assert.equal(storeFailureShouldRegenerate(1, "Fal upload of clip.mp4 timed out."), true);
 const missingPart = project({
   keepGenerating: true,
   produceStartedAt: new Date().toISOString(),
