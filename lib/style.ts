@@ -626,9 +626,8 @@ function scenePropCues(project: Project, sceneIndex: number) {
   );
 }
 
-const YOUNG_MARK = /\b(tiny|baby|kitten|puppy|newborn|young|infant|toddler|chiquit|beb[eé])\b/i;
-const GROWN_MARK =
-  /\b(grown|older|adult|full[- ]grown|larger|grew|grows|years later|time has passed|now grown)\b/i;
+const YOUNG_MARK = /\b(baby|kitten|puppy|newborn|infant|toddler|chiquit|beb[eé])\b/i;
+const GROWN_MARK = /\b(grown|full[- ]grown|grew up|grows up|years later|time has passed|now grown)\b/i;
 
 function montageBeats(summary: string) {
   const raw = summary.trim();
@@ -925,7 +924,7 @@ type CompactPromptOptions = {
   videos?: PromptRef[];
 };
 
-type TagSwap = { names: string[]; tag: string };
+type TagSwap = { names: string[]; tag: string; person?: boolean; exact?: boolean };
 
 function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number) {
   const budget = maxSeconds && maxSeconds > 0 ? maxSeconds : 0;
@@ -980,7 +979,12 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     if (item.kind === "product") refs.push(`${tag} is ${productCueLabel(name, item.notes || "")}, same packaging`);
     else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
     else refs.push(`${tag} is ${name}`);
-    const aliases = item.kind === "product" ? [name, item.notes || "", "the attached product", "the product"] : [name];
+    const aliases =
+      item.kind === "product"
+        ? [name, item.notes || "", "the attached product", "the product"]
+        : item.kind === "location"
+          ? placeAliases(project, name)
+          : [name];
     swaps.push({
       tag,
       names: aliases
@@ -988,6 +992,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
         .filter((value) => value.length >= 3 && value.length <= 48 && !/^product\s*\d+$/i.test(value)),
     });
   });
+  const placeWords = project.scenes.map((scene) => scene.location || "").join(" ").toLowerCase();
   for (const [key, tag] of people) {
     const full = project.characters.find((item) => item.name.trim().toLowerCase() === key)?.name.trim() || key;
     const first = full.split(/\s+/)[0];
@@ -995,20 +1000,85 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       first.length >= 3 &&
       first !== full &&
       project.characters.filter((item) => item.name.trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase()).length === 1;
-    swaps.push({ tag, names: firstIsUnique ? [full, first] : [full] });
+    const names = firstIsUnique ? [full, first] : [full];
+    // A role named after a place word ("Gym" in "home gym") only matches when capitalized.
+    const exact = names.some((name) => new RegExp(`\\b${escapeRegExp(name.toLowerCase())}\\b`).test(placeWords));
+    swaps.push({ tag, names, person: true, exact });
   }
   return { people, refs, swaps, narratorTag };
 }
 
+function realismRules(project: Project, sceneIndexes: number[], narrated: boolean) {
+  const continues = Boolean(project.scenes.length && sceneIndexes[0] !== project.scenes[0]?.index);
+  return [
+    "RULES —",
+    "Real-world physics: gravity pulls down, weight rests on what supports it, and bodies and objects stay solid, never passing through each other or the set.",
+    "Each character is one body, once per frame, with the same face, outfit and scale in every shot.",
+    continues ? "This clip picks up straight from the previous part: same wardrobe, props, light and time of day." : "",
+    "Continuity: each shot starts where the last one ended, with the same positions, screen sides, props and light.",
+    "Objects are picked up on camera before use and stay in the same hand until put down.",
+    "People and props enter and leave on camera; nothing appears, vanishes or teleports.",
+    "Eyes follow the person being addressed.",
+    narrated ? "Only on-screen speakers lipsync; narration is off-screen voice-over." : "Only the speaking character lipsyncs.",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+// The setting line already names the place, so a sentence that only restates it is dropped.
+function withoutPlaceRestatement(text: string, images: PromptRef[]) {
+  const tags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
+  if (!tags.length) return text;
+  return text
+    .replace(/\b(?:a|an|the)\s+(@Image\d+)/gi, "$1")
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => {
+      const lead = tags.find((tag) => sentence.startsWith(tag));
+      if (!lead) return true;
+      return /@(?:Video|Image)\d+/.test(sentence.slice(lead.length));
+    })
+    .join(" ");
+}
+
+function settingLine(place: string, images: PromptRef[], fresh: boolean) {
+  if (!place) return "";
+  const index = images.findIndex((item) => item.kind === "location" && samePlace(item.name, place));
+  const tag = index >= 0 ? `@Image${index + 1}` : "";
+  if (fresh) return tag ? `Location: ${tag}, ${place}.` : `Location: ${place}.`;
+  return tag ? `Still in ${tag}.` : `Still in ${place}.`;
+}
+
+function placeCore(value: string) {
+  return cleanPlace(value).split(/,|\s+(?:matching|during|at|with)\s+/i)[0].trim();
+}
+
+function placeAliases(project: Project, name: string) {
+  const core = placeCore;
+  const matching = project.scenes.map((scene) => scene.location || "").filter((place) => place && samePlace(place, name));
+  return [...new Set([name, cleanPlace(name), core(name), ...matching.flatMap((place) => [cleanPlace(place), core(place)])])].filter(
+    (value) => value.length >= 4,
+  );
+}
+
 function applyTags(text: string, swaps: TagSwap[]) {
   const pairs = swaps
-    .flatMap((swap) => swap.names.map((name) => ({ name, tag: swap.tag })))
+    .flatMap((swap) => swap.names.map((name) => ({ name, tag: swap.tag, exact: Boolean(swap.exact) })))
     .sort((a, b) => b.name.length - a.name.length);
   let next = text;
-  for (const { name, tag } of pairs) {
-    next = replaceOutsideQuotes(next, new RegExp(`(?<![@\\w])(?:the\\s+)?${escapeRegExp(name)}\\b`, "gi"), () => tag);
+  for (const { name, tag, exact } of pairs) {
+    const pattern = exact
+      ? new RegExp(`(?<![@\\w])(?:[Tt]he\\s+)?${escapeRegExp(name)}\\b`, "g")
+      : new RegExp(`(?<![@\\w])(?:the\\s+)?${escapeRegExp(name)}\\b`, "gi");
+    next = replaceOutsideQuotes(next, pattern, () => tag);
   }
-  return next.replace(/@(Image|Video)(\d+)\s+(?:bottle|jar|tub|canister|flask|jug)\b/gi, "@$1$2");
+  for (const swap of swaps) {
+    if (!swap.person) continue;
+    // "Gym Buddy" or "Gummy Mascot" leave a stray title word after the tag.
+    next = next.replace(new RegExp(`${escapeRegExp(swap.tag)}\\s+(?!I\\b)[A-Z][a-z]{2,}\\b(?=[\\s,.;:!?'’]|$)`, "g"), swap.tag);
+  }
+  return next
+    .replace(/\b[Ss]ame\s+(@Image\d+)/g, "$1")
+    .replace(/@(Image|Video)(\d+)\s+(?:bottle|jar|tub|canister|flask|jug)\b/gi, "@$1$2");
 }
 
 function withoutQuotedDialogue(summary: string, scene?: Scene) {
@@ -1128,6 +1198,7 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
 
   const header = [
     `GLOBAL: ${look} style, ${aspectLabel(project.aspectRatio)}. ${setting}, consistent lighting and spatial orientation. Each character keeps the same face, outfit, and footwear in every shot. Audio: dialogue and natural ambient sound only; each scene's lines play inside that scene, after the speaker appears.`,
+    realismRules(project, sceneIndexes, narrated),
     cast.length ? `CHARACTERS: ${cast.join("; ")}.${extras.length ? ` Background extras: ${extras.join(", ")}.` : ""}` : "",
     refs.length ? `REFERENCES: ${refs.join("; ")}.` : "",
   ].filter(Boolean);
@@ -1144,12 +1215,13 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
     const place = cleanPlace(scene?.location || "");
     const moved = places.length > 1 && place && !samePlace(place, lastPlace || "");
     if (place) lastPlace = place;
-    const body = [moved ? `In ${place}.` : "", action, ...stagingLines(scene, project, camera), ...(shots.get(index)?.locks || [])]
+    const body = [action, ...stagingLines(scene, project, camera), ...(shots.get(index)?.locks || [])]
       .map((part) => part.trim())
       .filter(Boolean)
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
       .join(" ");
-    const text = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
+    const tagged = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
+    const text = `${moved ? settingLine(place, options.images || [], true) : ""} ${withoutPlaceRestatement(tagged, options.images || [])}`.trim();
     const dialogue = dialogueBlock(project, scene, people, narratorTag);
     return [`SCENE ${i + 1} (${seconds[i]}s) — ${cameraTitle(camera)}:`, text, dialogue].filter(Boolean).join("\n");
   });
@@ -1289,7 +1361,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       const outfit = characterRole(project, name);
       assets.push(`${tag} as character reference — ${speakerLabel(project, name).toUpperCase()}${outfit ? ` (${outfit})` : ""}. Keep face geometry, hair, skin, outfit and footwear identical in every frame this character appears.`);
     } else if (item.kind === "location") {
-      assets.push(`${tag} as the location — ${name}. Geography, layout and light direction are law.`);
+      assets.push(`${tag} as the location — ${placeCore(name) || name}. Geography and layout are law in every shot set here; each shot sets its own light.`);
     } else if (item.kind === "product") {
       assets.push(`${tag} as the product — ${productCueLabel(name, item.notes || "")}. Same packaging form, label, colours and branding every time it appears.`);
     } else if (item.kind === "logo") {
@@ -1336,12 +1408,13 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       index,
     );
     const shot = shots.get(index);
-    const body = [moved ? `In ${place}.` : "", action, ...stagingLines(scene, project, camera), ...(shot?.locks || [])]
+    const body = [action, ...stagingLines(scene, project, camera), ...(shot?.locks || [])]
       .map((part) => part.trim())
       .filter(Boolean)
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
       .join(" ");
-    const visual = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
+    const tagged = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project)).replace(/\bCUT to\s+/g, "Then ");
+    const visual = `${settingLine(place, images, Boolean(moved) || i === 0)} ${withoutPlaceRestatement(tagged, images)}`.trim();
 
     const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
     const lines = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
@@ -1390,14 +1463,11 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
           ? `The cut at ${cutList[0]} is the only cut.`
           : "The clip is one continuous shot.",
       identity,
-      "Real-world physics hold in every shot: gravity pulls down, weight rests on contact surfaces, hands keep contact with what they hold, bodies and objects stay solid and never pass through walls, doors, furniture, vehicles or each other, and motion always runs forward, never mirrored or reversed.",
-      "Each character is one body at a time and appears once per frame; a clothing change is still the same person.",
-      "Screen direction holds across cuts: who is left, right, in front and behind stays until the action moves them. Props, background people and set pieces persist from shot to shot, and characters enter and leave on camera.",
-      "Speakers look at the person they address, not the lens, unless the scene breaks the fourth wall. Each line is spoken inside its own shot's second-range, after its speaker is on screen.",
+      "Each line is spoken inside its own shot's second-range, after its speaker is on screen.",
       [...speakers.values()].some((entry) => entry.narrator)
         ? `Narrator lines are off-screen voice-over${narratorTag ? ` in the ${narratorTag} voice` : ""}, with no lipsync and every mouth closed.`
         : "",
-      "Characters keep the same body scale against chairs, tables and doors across cuts. Light direction holds steady within each shot from its first frame to its last.",
+      "Light direction holds steady within each shot.",
     ]
       .filter(Boolean)
       .join(" "),
@@ -1405,6 +1475,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
 
   return [
     header,
+    realismRules(project, sceneIndexes, [...speakers.values()].some((entry) => entry.narrator)),
     ...voiceBlocks,
     assets.length ? `ASSETS\n${assets.join("\n")}` : "",
     `SUMMARY\n${summary}`,

@@ -126,7 +126,8 @@ assert.match(brief, /@Image2 as the location — Coffee shop/);
 assert.match(brief, /18\.00s–24\.00s — SHOT 4 · SHOT 4 — hard cut at 18\.00s/);
 assert.match(brief, /BEN \(@Image1\) speaks on camera, lips forming every word: \{I forgot my keys\.\} \((?:19|20)\.\d\ds–/);
 assert.match(brief, /No music, no score, no instruments/);
-assert.match(brief, /Real-world physics hold/);
+assert.match(brief, /^RULES — Real-world physics/m);
+assert.match(brief, /Two-Shot\. Location: @Image2, Coffee shop\./);
 
 const narrated = structuredClone(project);
 narrated.scenes[1].dialogue = [{ speaker: "Narrator", line: "Some mornings start slower than others, and this was one of them." }];
@@ -145,6 +146,33 @@ const compactNarrated = labeledReferencePrompt({ images, videos: narratorVideos,
 assert.match(compactNarrated, /Narrator \(@Video2 voice\): off-screen voice-over only, no lipsync/);
 assert.match(compactNarrated, /Dialogue: Narrator \(@Video2 voice\) voice-over \(off-screen, no lipsync, mouths closed\)/);
 delete process.env.VIDEO_PROMPT_FORMAT;
+
+const gym = {
+  ...structuredClone(project),
+  characters: [character("Gym", "big man, tank top"), character("Gummy", "tiny orange gummy with a cape")],
+  scenes: [
+    scene(1, {
+      location: "Same home gym, warm golden light",
+      summary: "Same home gym, now washed in warm light. Gym Buddy leans on the rack. The tiny Gummy Mascot hops toward the larger Gym Buddy.",
+      characterNames: ["Gym", "Gummy"],
+      camera: "wide shot",
+    }),
+  ],
+} as Project;
+const gymPrompt = labeledReferencePrompt({
+  images: [{ url: "p", kind: "location" as const, name: "Same home gym, warm golden light" }],
+  videos: [
+    { url: "g", kind: "character" as const, name: "Gym" },
+    { url: "m", kind: "character" as const, name: "Gummy" },
+  ],
+  videoPrompt: "",
+  style: "pixar",
+  project: gym,
+  sceneIndexes: [1],
+  duration: 8,
+});
+assert.match(gymPrompt, /Location: @Image1, home gym, warm golden light\. @Video1 leans on the rack\. The tiny @Video2 hops toward the larger @Video1\./);
+assert.doesNotMatch(gymPrompt, /home @Video|@Video1 Buddy|@Video2 Mascot|CUT to/);
 
 console.log(withNarrator);
 console.log("continuity checks passed");
