@@ -1089,6 +1089,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     project,
     sceneIndexes: batch.sceneIndexes,
     videoPrompt: prompt,
+    duration: batch.duration,
   });
   batch.videoPrompt = labeled;
   batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
@@ -1267,6 +1268,7 @@ async function runGenerateBatchVideo(
       project,
       sceneIndexes: batch.sceneIndexes,
       videoPrompt: prompt,
+      duration: batch.duration,
     });
 
     onStatus("Generating your video…");

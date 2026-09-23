@@ -9,7 +9,7 @@ export type ContinuityShot = {
   revealFirst: boolean;
 };
 
-type PropState = { prop: string; holder?: string; spot?: string };
+type PropState = { prop: string; holder?: string; spot?: string; seen?: number };
 
 const PROPS: Array<[RegExp, string]> = [
   [/\bcoffee cups?\b/i, "coffee cup"],
@@ -51,9 +51,9 @@ const PROPS: Array<[RegExp, string]> = [
 ];
 
 const TAKE =
-  /\b(hold(?:s|ing)?|carr(?:y|ies|ying)|grab(?:s|bing)?|picks? up|picking up|takes?|taking|lifts?|lifting|clutch(?:es|ing)?|grips?|gripping|raises?|sips?|sipping|drinks? from|types? on|typing on|scrolls?|scrolling|reads?|reading|writes? in|writing in|waves?|waving|swings?|swinging|with (?:a|an|the|his|her|their) [\w -]{0,20} in (?:his|her|their) hands?)\b/i;
+  /\b(pulls? out|pulling out|hold(?:s|ing)?|carr(?:y|ies|ying)|grab(?:s|bing)?|picks? up|picking up|takes?|taking|lifts?|lifting|clutch(?:es|ing)?|grips?|gripping|raises?|sips?|sipping|drinks? from|types? on|typing on|scrolls?|scrolling|reads?|reading|writes? in|writing in|waves?|waving|swings?|swinging|with (?:a|an|the|his|her|their) [\w -]{0,20} in (?:his|her|their) hands?)\b/i;
 const RELEASE =
-  /\b(puts? (?:it |them )?down|putting (?:it |them )?down|sets? (?:it |them )?down|setting (?:it |them )?down|places?|placing|drops?|dropping|leaves? (?:it|them|the)|throws?|throwing|toss(?:es|ing)?|puts? (?:it |them )?away|pockets?|slams? (?:it |the \w+ )?(?:down|on)|hands? (?:it|them|the)|handing|gives? (?:it|them|the)|giving|passes? (?:it|them|the))\b/i;
+  /\b(lowers? (?:the|her|his|their)|puts? (?:it |them )?down|putting (?:it |them )?down|sets? (?:it |them )?down|setting (?:it |them )?down|places?|placing|drops?|dropping|leaves? (?:it|them|the)|throws?|throwing|toss(?:es|ing)?|puts? (?:it |them )?away|pockets?|slams? (?:it |the \w+ )?(?:down|on)|hands? (?:it|them|the)|handing|gives? (?:it|them|the)|giving|passes? (?:it|them|the))\b/i;
 const HANDOFF = /\b(?:hands?|handing|gives?|giving|passes?|passing|tosses?)\b[^.]*?\bto ([A-Z][\p{L}'-]+)/u;
 const SPOT = /\b(?:on|onto|at) (?:the|a) (table|desk|counter|floor|bench|shelf|bed|sofa|couch|bar|chair|nightstand|windowsill)\b/i;
 const EXIT =
@@ -65,7 +65,7 @@ const REVEAL =
 const REACTION =
   /\b(reacts?|reaction|listens?|stares?|staring|watches|watching|glances?|glancing|looks? (?:at|over at|up at|toward|towards)|turns? to|eyes widen|jaw drops|gasps?)\b/i;
 const OUTFIT =
-  /\b(shoes?|sneakers?|trainers?|boots?|sandals?|heels?|loafers?|slippers?|flip-?flops?|barefoot|socks?|jacket|shirt|t-shirt|tee|hoodie|sweater|cardigan|dress|skirt|pants|trousers|jeans|shorts|overalls|coat|blazer|vest|suit|uniform|scarf|hat|cap|beanie|glasses|apron|tie|bow tie|gloves?|belt|backpack|collar|bandana)\b/i;
+  /\b(shoes?|sneakers?|trainers?|boots?|sandals?|heels?|loafers?|slippers?|flip-?flops?|barefoot|socks?|jacket|shirt|t-shirt|tee|tank top|crop top|top|blouse|polo|hoodie|sweater|sweatshirt|cardigan|dress|skirt|pants|trousers|jeans|shorts|leggings|sweatpants|joggers|tracksuit|overalls|coat|blazer|vest|suit|uniform|scrubs|scarf|hat|cap|beanie|headband|glasses|sunglasses|apron|tie|bow tie|gloves?|belt|backpack|collar|bandana|necklace|earrings)\b/i;
 
 function sentences(text: string) {
   return text
@@ -106,7 +106,51 @@ function listNames(names: string[]) {
 }
 
 function sceneText(scene: Scene) {
-  return `${scene.title || ""}. ${scene.summary || ""}`;
+  return `${scene.title || ""}. ${scene.summary || ""}`.replace(/"[^"]*"|“[^”]*”/g, "");
+}
+
+type Gender = "f" | "m" | "";
+
+const FEMALE = /\b(woman|women|girl|female|lady|mother|mom|mum|daughter|sister|wife|grandma|grandmother|queen|princess|she|her)\b/i;
+const MALE = /\b(man|men|boy|guy|male|gentleman|father|dad|son|brother|husband|grandpa|grandfather|king|prince|he|his|him)\b/i;
+
+function genderOf(project: Project, name: string): Gender {
+  const blob = `${name} ${findCharacter(project, name)?.description || ""}`;
+  const female = FEMALE.test(blob);
+  const male = MALE.test(blob);
+  return female === male ? "" : female ? "f" : "m";
+}
+
+function pronounGender(sentence: string): Gender {
+  const first = sentence.replace(/"[^"]*"/g, "").match(/\b(she|her|hers|herself|he|him|his|himself)\b/i)?.[1]?.toLowerCase();
+  if (!first) return "";
+  return first.startsWith("h") && first !== "her" && first !== "hers" && first !== "herself" ? "m" : "f";
+}
+
+function makeResolver(project: Project) {
+  const recent: string[] = [];
+  return (sentence: string, cast: string[], fallback?: string) => {
+    const hits = cast
+      .map((name) => ({ name, at: nameAt(sentence, name) }))
+      .filter((item) => item.at >= 0)
+      .sort((a, b) => a.at - b.at);
+    for (const hit of [...hits].reverse()) {
+      const at = recent.findIndex((name) => name.toLowerCase() === hit.name.toLowerCase());
+      if (at >= 0) recent.splice(at, 1);
+      recent.unshift(hit.name);
+    }
+    const wanted = pronounGender(sentence);
+    const firstPronoun = sentence.search(/\b(he|she|his|her|him)\b/i);
+    const pronounLeads = wanted && firstPronoun >= 0 && (!hits.length || firstPronoun < hits[0].at);
+    if (pronounLeads) {
+      const match = recent.find((name) => genderOf(project, name) === wanted);
+      if (match) return match;
+    }
+    if (hits.length) return hits[0].name;
+    if (wanted) return recent.find((name) => genderOf(project, name) === wanted) || fallback;
+    if (/\b(they|their)\b/i.test(sentence)) return fallback;
+    return undefined;
+  };
 }
 
 function subjectOf(sentence: string, cast: string[], fallback?: string) {
@@ -129,13 +173,37 @@ function propsIn(sentence: string) {
   );
 }
 
-function exitedNames(scene: Scene, cast: string[]) {
+function lastNameAt(text: string, name: string) {
+  const first = name.trim().split(/\s+/)[0] || "";
+  if (first.length < 2) return -1;
+  const hits = [...text.matchAll(new RegExp(`\\b${escapeRegExp(first)}\\b`, "gi"))];
+  return hits.length ? hits[hits.length - 1].index ?? -1 : -1;
+}
+
+function exitedNames(project: Project, scene: Scene, cast: string[]) {
   const out = new Set<string>();
+  const resolve = makeResolver(project);
   let last: string | undefined;
   for (const line of sentences(sceneText(scene))) {
-    const who = subjectOf(line, cast, last);
+    const who = resolve(line, cast, last);
     if (who) last = who;
-    if (who && EXIT.test(line)) out.add(who);
+    const exit = line.match(EXIT);
+    if (!exit || typeof exit.index !== "number") continue;
+    const before = line.slice(0, exit.index);
+    const named = cast
+      .map((name) => ({ name, at: lastNameAt(before, name) }))
+      .filter((item) => item.at >= 0)
+      .sort((a, b) => b.at - a.at)[0];
+    const pronoun = [...before.matchAll(/\b(she|her|he|him|his)\b/gi)].pop();
+    if (pronoun && typeof pronoun.index === "number" && (!named || pronoun.index > named.at)) {
+      const gender = /^(she|her)$/i.test(pronoun[1]) ? "f" : "m";
+      const pool = [...cast.filter((name) => nameAt(line, name) >= 0), ...(last ? [last] : [])];
+      const match = pool.find((name) => genderOf(project, name) === gender);
+      if (match) out.add(match);
+      continue;
+    }
+    if (named) out.add(named.name);
+    else if (who) out.add(who);
   }
   return out;
 }
@@ -162,20 +230,18 @@ function findCharacter(project: Project, name: string) {
   return project.characters.find((item) => item.name.trim().toLowerCase() === needle);
 }
 
-export function identityLocks(project: Project, sceneIndexes: number[]) {
-  const scenes = sceneIndexes
-    .map((index) => project.scenes.find((scene) => scene.index === index))
-    .filter((scene): scene is Scene => Boolean(scene));
-  const leads = [...new Set(scenes.flatMap((scene) => onScreenLeads(scene, project)))];
-  if (!leads.length) return "";
-  const looks = leads
-    .map((name) => {
-      const outfit = wardrobeNote(findCharacter(project, name));
-      return outfit ? `${name} keeps ${outfit}` : "";
-    })
-    .filter(Boolean);
-  const named = looks.length ? ` ${looks.join("; ")}.` : "";
-  return `Identity lock for every cut and focal length:${named} ${listNames(leads)} keep the same face, hair, outfit, colors, and footwear as the reference in close-ups, wides, and full shots. No outfit, shoe, or hairstyle change unless the scene says so. Lighting and color temperature stay constant within the same place and time.`;
+export function characterRole(project: Project, name: string) {
+  const character = findCharacter(project, name);
+  const first = (character?.description || "")
+    .replace(/\b(claymation|pixar|stop-motion)\s+(style\s+)?/gi, "")
+    .split(/[.;]/)[0]
+    .split(/,|\bwith\b|\bwearing\b/i)[0]
+    .trim()
+    .split(/\s+/)
+    .slice(0, 6)
+    .join(" ");
+  const outfit = wardrobeNote(character);
+  return [first, outfit].filter(Boolean).join(", ");
 }
 
 export function continuityPass(project: Project) {
@@ -187,6 +253,7 @@ export function continuityPass(project: Project) {
   const sides = new Map<string, { left: string; right: string }>();
   const present = new Set<string>();
   const gone = new Set<string>();
+  const resolve = makeResolver(project);
   let previous: Scene | undefined;
 
   for (const scene of ordered) {
@@ -199,7 +266,7 @@ export function continuityPass(project: Project) {
     const text = sceneText(scene);
     const lines = sentences(text);
     const prevCast = previous ? onScreenLeads(previous, project) : [];
-    const prevExited = previous ? exitedNames(previous, allCast) : new Set<string>();
+    const prevExited = previous ? exitedNames(project, previous, allCast) : new Set<string>();
     if (!continuous) held.forEach((state, prop) => !castKeys.has((state.holder || "").toLowerCase()) && held.delete(prop));
 
     if (!continuous) placed.clear();
@@ -208,7 +275,7 @@ export function continuityPass(project: Project) {
     const touched = new Set<string>();
     let last: string | undefined;
     for (const line of lines) {
-      const who = subjectOf(line, allCast, last);
+      const who = resolve(line, allCast, last);
       if (who) last = who;
       for (const prop of propsIn(line)) {
         touched.add(prop);
@@ -217,7 +284,7 @@ export function continuityPass(project: Project) {
         if (RELEASE.test(line)) {
           held.delete(prop);
           if (handoff && allCast.some((name) => name.toLowerCase() === handoff.toLowerCase())) {
-            held.set(prop, { prop, holder: handoff });
+            held.set(prop, { prop, holder: handoff, seen: scene.index });
           } else if (spot) {
             placed.set(prop, { prop, spot });
           }
@@ -226,31 +293,33 @@ export function continuityPass(project: Project) {
         if (TAKE.test(line) && who) {
           const before = held.get(prop);
           const onSurface = placed.get(prop);
-          const pickedUp = /\b(grab|picks? up|picking up|takes?|taking|lifts?)\b/i.test(line);
+          const pickedUp = /\b(grabs?|grabbing|picks? up|picking up|takes?|taking|lifts?|lifting|pulls? out|pulling out)\b/i.test(line);
           if (!before && !onSurface && !pickedUp && previous) {
             flags.push(`Scene ${scene.index}: ${who}'s ${prop} appears without being picked up.`);
-            locks.push(`${who} already has the ${prop} in hand from the first frame; it does not pop in.`);
+            locks.push(`${who} has the ${prop} in hand from the first frame.`);
           }
           if (before && before.holder && before.holder.toLowerCase() !== who.toLowerCase() && !pickedUp) {
             flags.push(`Scene ${scene.index}: ${prop} jumps from ${before.holder} to ${who} without a handoff.`);
           }
           placed.delete(prop);
-          held.set(prop, { prop, holder: who });
+          held.set(prop, { prop, holder: who, seen: scene.index });
           continue;
         }
+        const holding = held.get(prop);
+        if (holding) holding.seen = scene.index;
         if (spot && !held.has(prop)) placed.set(prop, { prop, spot });
       }
     }
 
     for (const state of held.values()) {
-      if (touched.has(state.prop) || !state.holder) continue;
+      if (touched.has(state.prop) || !state.holder || state.seen !== previous?.index) continue;
       if (!castKeys.has(state.holder.toLowerCase())) continue;
-      locks.push(`${state.holder} still holds the ${state.prop} in the same hand as the previous shot.`);
+      locks.push(`${state.holder} holds the ${state.prop} in the same hand.`);
     }
     if (continuous) {
       for (const state of placed.values()) {
         if (touched.has(state.prop) || !state.spot) continue;
-        locks.push(`The ${state.prop} stays on the ${state.spot} where it was left.`);
+        locks.push(`The ${state.prop} sits on the ${state.spot}.`);
       }
     }
 
@@ -259,14 +328,14 @@ export function continuityPass(project: Project) {
       const now = extrasOf(scene).map((name) => name.toLowerCase());
       const kept = extrasOf(previous).filter((name) => !now.includes(name.toLowerCase()) && !EXIT.test(sceneText(previous!)));
       if (kept.length) {
-        locks.push(`The ${listNames(kept)} from the previous shot ${kept.length > 1 ? "stay" : "stays"} in the background at the same ${kept.length > 1 ? "spots" : "spot"}.`);
+        locks.push(`The ${listNames(kept)} ${kept.length > 1 ? "remain" : "remains"} in the background.`);
         flags.push(`Scene ${scene.index}: kept background ${listNames(kept)} from scene ${previous.index}.`);
       }
       const fresh = extrasOf(scene).filter(
         (name) => !extrasOf(previous!).some((other) => other.toLowerCase() === name.toLowerCase()),
       );
       if (fresh.length && !ENTER.test(text)) {
-        locks.push(`The ${listNames(fresh)} ${fresh.length > 1 ? "were" : "was"} already in this place; no one pops in.`);
+        locks.push(`The ${listNames(fresh)} ${fresh.length > 1 ? "are" : "is"} already in place from the first frame.`);
       }
     }
 
@@ -280,29 +349,30 @@ export function continuityPass(project: Project) {
         (name) => prevCast.some((other) => other.toLowerCase() === name.toLowerCase()) && !prevExited.has(name),
       );
       if (stayed.length) {
-        locks.push(`${listNames(stayed)} ${stayed.length > 1 ? "start" : "starts"} exactly where the previous shot left ${stayed.length > 1 ? "them" : "off"}, same pose direction. No teleporting.`);
+        locks.push(`${listNames(stayed)} ${stayed.length > 1 ? "continue from their last positions" : "continues from the last position"}.`);
       }
       const returned = cast.filter((name) => gone.has(name.toLowerCase()) && !ENTER.test(text));
       for (const name of returned) {
         flags.push(`Scene ${scene.index}: ${name} left earlier but is back without entering.`);
-        locks.push(`${name} walks back in on camera before acting.`);
+        locks.push(`${name} walks back in on camera first.`);
       }
       const arrived = cast.filter((name) => !present.has(name.toLowerCase()) && !gone.has(name.toLowerCase()));
       if (arrived.length && !ENTER.test(text) && present.size) {
-        locks.push(`${listNames(arrived)} ${arrived.length > 1 ? "were" : "was"} already in this place off-camera or ${arrived.length > 1 ? "enter" : "enters"} on camera. No pop-in.`);
+        locks.push(`${listNames(arrived)} ${arrived.length > 1 ? "are" : "is"} already in the room from the first frame.`);
       }
     }
     for (const name of cast) {
       present.add(name.toLowerCase());
       gone.delete(name.toLowerCase());
     }
-    for (const name of exitedNames(scene, allCast)) {
+    for (const name of exitedNames(project, scene, allCast)) {
       present.delete(name.toLowerCase());
       gone.add(name.toLowerCase());
     }
 
     // Screen direction: first two-shot in a place sets left/right; later angles keep it.
     const key = place.toLowerCase();
+    const looked = new Set<string>();
     let side = [...sides.entries()].find(([name]) => name && place && samePlace(name, place))?.[1];
     if (!side && cast.length >= 2 && place) {
       side = { left: cast[0], right: cast[1] };
@@ -312,14 +382,15 @@ export function continuityPass(project: Project) {
       const hasLeft = castKeys.has(side.left.toLowerCase());
       const hasRight = castKeys.has(side.right.toLowerCase());
       if (hasLeft && hasRight) {
-        locks.push(`180-degree rule: ${side.left} stays frame-left and ${side.right} frame-right from every angle. They never swap sides.`);
+        locks.push(`${side.left} on frame-left, ${side.right} on frame-right.`);
       } else if (hasLeft || hasRight) {
         const here = hasLeft ? side.left : side.right;
         const there = hasLeft ? side.right : side.left;
         const dir = hasLeft ? "frame-right" : "frame-left";
         const talking = (scene.dialogue || []).some((line) => nameAt(line.speaker || "", there) >= 0);
         if (!EXIT.test(text) && (REACTION.test(text) || talking)) {
-          locks.push(`${here} looks ${dir}, toward off-screen ${there}'s real position in the room.`);
+          locks.push(`${here} looks ${dir} toward ${there}.`);
+          looked.add(here.toLowerCase());
         }
       }
     }
@@ -328,9 +399,12 @@ export function continuityPass(project: Project) {
       for (const line of lines) {
         const who = subjectOf(line, cast, actor || (cast.length === 1 ? cast[0] : undefined));
         if (who) actor = who;
-        if (!who || !REACTION.test(line)) continue;
+        if (!who || !REACTION.test(line) || looked.has(who.toLowerCase())) continue;
         const target = allCast.find((name) => name.toLowerCase() !== who.toLowerCase() && nameAt(line, name) > nameAt(line, who));
-        if (target) locks.push(`${who}'s eyes and head point at ${target}, matching where ${target} stands.`);
+        if (target) {
+          locks.push(`${who} looks straight at ${target}.`);
+          looked.add(who.toLowerCase());
+        }
       }
     }
 
@@ -339,11 +413,7 @@ export function continuityPass(project: Project) {
     const onScreenSpeakers = speakers.filter((name) => castKeys.has(name.toLowerCase()));
     const revealFirst = REVEAL.test(text) && onScreenSpeakers.length > 0;
     if (revealFirst) {
-      locks.push(`${listNames(onScreenSpeakers)} ${onScreenSpeakers.length > 1 ? "speak" : "speaks"} only after the reveal, once visible on screen. No line before that.`);
-    }
-    const hiddenSpeakers = speakers.filter((name) => !castKeys.has(name.toLowerCase()));
-    if (hiddenSpeakers.length && onScreenSpeakers.length) {
-      locks.push("Voice-over lines play over the matching visual beat, not over another character's mouth.");
+      locks.push(`${listNames(onScreenSpeakers)} ${onScreenSpeakers.length > 1 ? "speak" : "speaks"} after appearing on screen.`);
     }
 
     shots.set(scene.index, { sceneIndex: scene.index, locks: [...new Set(locks)], flags, revealFirst });

@@ -1,4 +1,4 @@
-import { continuityPass, identityLocks } from "./continuity";
+import { characterRole, continuityPass } from "./continuity";
 import { samePlace } from "./places";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
 import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
@@ -309,7 +309,7 @@ function pickSingleSubjectCamera(used: string[]) {
 }
 
 function safeCinematicCamera(scene?: Scene, fallback = "wide shot, eye level", used: string[] = [], project?: Project) {
-  let camera = cinematicCamera(scene, fallback, used);
+  const camera = cinematicCamera(scene, fallback, used);
   const names = sceneOnScreenNames(scene, project);
   if (/over the shoulder|two-shot/i.test(camera) && names.length < 2) {
     return pickSingleSubjectCamera(used);
@@ -543,100 +543,13 @@ function ensureVisibleAction(summary: string) {
     !/\b(hand|picks? it|brings? it to|lifts? it to|puts? it (?:in|into) (?:his|her|their)?\s*mouth|chews)\b/i.test(text)
   ) {
     text +=
-      " Show the complete action on camera: a hand takes it from the pack, lifts it to the mouth, and the character chews. Do not cut to it already inside the mouth.";
+      " On camera, a hand takes it from the pack, lifts it to the mouth, and the character chews.";
   }
   return text;
 }
 
 function alreadyHas(text: string, lock: string) {
   return text.toLowerCase().includes(lock.slice(0, 28).toLowerCase());
-}
-
-function withNoClone(action: string, camera: string, scene?: Scene, project?: Project) {
-  let next = action.trim();
-  const names = sceneOnScreenNames(scene, project);
-  if (/over the shoulder/i.test(camera) && names.length >= 2) {
-    const lock = `Over-the-shoulder: camera behind ${names[0]}, only ${names[0]}'s shoulder and the back of the head in the foreground, looking at ${names[1]}. ${names[1]} is the only face in frame. Never show ${names[0]}'s face. Never duplicate anyone.`;
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-  return next;
-}
-
-function withCraftLocks(action: string, scene?: Scene, project?: Project) {
-  let next = action.trim();
-  const names = sceneOnScreenNames(scene, project);
-  const blob = `${next} ${scene?.title || ""} ${scene?.location || ""} ${(scene?.dialogue || []).map((line) => `${line.speaker} ${line.line}`).join(" ")}`;
-
-  if (
-    names.length &&
-    /\b(glow|glowing|neon|headlight|lantern|backlit|backlight|lens flare|emissive|halo|shining eyes|glowing eyes|light source)\b/i.test(
-      blob,
-    )
-  ) {
-    const lock = `${names[0]} in the foreground occludes any glow or lights behind. No shine through body or hair.`;
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-
-  const spoken = (scene?.dialogue || []).filter(
-    (line) => line.speaker && line.line && !(project && isVoiceoverSpeaker(project, line.speaker)),
-  );
-  if (names.length >= 2 && spoken.length && !/\b(fourth wall|to camera|into the (?:camera|lens)|looks? (?:at|into) (?:the )?(?:camera|lens))\b/i.test(blob)) {
-    const speakerRaw = spoken.find((line) => names.some((name) => name.toLowerCase() === line.speaker.trim().toLowerCase()));
-    const speaker = speakerRaw
-      ? names.find((name) => name.toLowerCase() === speakerRaw.speaker.trim().toLowerCase())
-      : undefined;
-    const other = speaker ? names.find((name) => name.toLowerCase() !== speaker.toLowerCase()) : undefined;
-    if (speaker && other) {
-      const lock = `${speaker} looks at ${other}, not the camera.`;
-      if (!alreadyHas(next, lock)) next += ` ${lock}`;
-    }
-  }
-
-  if (/\b(chas(?:e|es|ing)|pursu(?:e|es|ing)|hunts?|lunges? at|runs? after|goes? after|stalk(?:s|ing)?)\b/i.test(blob) && names.length) {
-    const lock =
-      names.length >= 2
-        ? `The pursuer moves toward ${names[names.length - 1]}'s position in the scene.`
-        : `The pursuer moves toward the character's position in the scene.`;
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-
-  if (
-    names.length &&
-    /\b(chair|table|desk|sofa|couch|doorway|jumps? (?:down|off)|hops? (?:down|off)|gets? (?:down|off)|climbs? (?:down|off)|sits?|stands? up)\b/i.test(
-      blob,
-    )
-  ) {
-    const lock = `${names[0]} stays the same size versus the nearby chair, table, and door.`;
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-
-  if (
-    /\b(door handle|doorknob|handle|fork|knife|spoon|utensil|chopsticks|cup|glass|mug|grabs?|grips?|holds? the|opens? the door|closes? the door)\b/i.test(
-      blob,
-    )
-  ) {
-    const lock = "Hands keep real contact on the object they hold; it does not float, slide, or clip.";
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-
-  return next;
-}
-
-function withSpatialContinuity(action: string, scene?: Scene, previous?: Scene) {
-  let next = action.trim();
-  if (!scene || !previous) return next;
-  const here = (scene.location || "").trim();
-  const before = (previous.location || "").trim();
-  if (here && before && samePlace(here, before)) {
-    const lock = "Same place as the previous shot. Keep who is in front, behind, left, and right until this action moves them.";
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-    return next;
-  }
-  if (here && before) {
-    const lock = "Time has moved forward into this new place. Do not leave people standing in the previous place.";
-    if (!alreadyHas(next, lock)) next += ` ${lock}`;
-  }
-  return next;
 }
 
 function ensurePhysicalLogic(summary: string, context = "") {
@@ -647,7 +560,7 @@ function ensurePhysicalLogic(summary: string, context = "") {
 
   if (/\b(treadmill|running machine|caminadora)\b/.test(blob)) {
     locks.push(
-      "Face the console and run the correct way: the belt slides backward under the feet. Never moonwalk, never run backward on the belt, never fall off the back.",
+      "Facing the console, running forward while the belt slides backward under the feet.",
     );
   }
   if (/\b(bike|bicycle|cycle|spin bike|stationary bike)\b/.test(blob)) {
@@ -660,7 +573,7 @@ function ensurePhysicalLogic(summary: string, context = "") {
     locks.push("Stand facing the travel direction. Steps move under the feet the same way a real escalator does.");
   }
   if (/\b(stairs|staircase)\b/.test(blob) && /\b(walk|walks|running|run|climb|climbs|go up|goes up|go down|goes down)\b/.test(blob)) {
-    locks.push("Feet plant on each step in the travel direction. Do not float or walk through the stairs.");
+    locks.push("Feet plant on each step in the travel direction.");
   }
   if (/\b(pour|pours|pouring|spill|spills)\b/.test(blob)) {
     locks.push("Liquid leaves the opening and falls downward with gravity.");
@@ -679,22 +592,6 @@ function scenePropCues(project: Project, sceneIndex: number) {
   return promptReadyReferences(project, [sceneIndex], true).filter(
     (item) => item.kind === "product" || item.kind === "logo" || item.kind === "location",
   );
-}
-
-function sceneCastLine(scene?: Scene, project?: Project) {
-  if (!scene) return "";
-  const principals = sceneOnScreenNames(scene, project);
-  const extras = [...new Set((scene.extraNames || []).map((name) => name.trim()).filter(Boolean))]
-    .filter((name) => name && !principals.some((lead) => lead.toLowerCase() === name.toLowerCase()))
-    .map((name) => name.replace(/^(the|a|an)\s+/i, "").trim())
-    .filter(Boolean);
-  const ordered = extras.length
-    ? [...extras.map((name, index) => (index === 0 ? `the ${name}` : name)), ...principals]
-    : principals;
-  if (!ordered.length) return "";
-  if (ordered.length === 1) return `Only ${ordered[0]} participates in this scene.`;
-  if (ordered.length === 2) return `Only ${ordered[0]} and ${ordered[1]} participate in this scene.`;
-  return `Only ${ordered.slice(0, -1).join(", ")} and ${ordered[ordered.length - 1]} participate in this scene.`;
 }
 
 const YOUNG_MARK = /\b(tiny|baby|kitten|puppy|newborn|young|infant|toddler|chiquit|beb[eé])\b/i;
@@ -988,69 +885,242 @@ function ensureSceneNoBgm(text: string) {
   return prefix ? `${prefix} ${joined}` : joined;
 }
 
-export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
-  const usedCameras: string[] = [];
-  const shots = continuityPass(project);
-  const chosen = sceneIndexes.map((index) => sceneByIndex(project, index)).filter((scene): scene is Scene => Boolean(scene));
+type CompactPromptOptions = {
+  project: Project;
+  sceneIndexes: number[];
+  maxSeconds?: number;
+  images?: PromptRef[];
+  videos?: PromptRef[];
+};
+
+type TagSwap = { names: string[]; tag: string };
+
+function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number) {
   const budget = maxSeconds && maxSeconds > 0 ? maxSeconds : 0;
-  const raw = chosen.map((scene) => Math.max(2, scene.estimatedSeconds || 4));
-  const rawSum = raw.reduce((sum, value) => sum + value, 0);
-  const fitted =
-    budget > 0 && rawSum > budget
-      ? raw.map((value) => Math.max(2, Math.round((value / rawSum) * budget)))
-      : raw.map((value) => Math.round(value));
-  const timed = sceneIndexes
-    .map((index, i) => {
-      const scene = sceneByIndex(project, index);
-      const fallback = CAMERA_VARIETY[i % CAMERA_VARIETY.length];
-      const camera = safeCinematicCamera(scene, fallback, usedCameras, project);
-      usedCameras.push(camera);
-      const summary = rewriteProductContainers(scene?.summary || scene?.title || "", project);
-      const montage = expandMontageAction(summary);
-      const space = `${scene?.title || ""} ${scene?.location || ""}`;
-      const previous = project.scenes
-        .filter((item) => item.index < index)
-        .sort((a, b) => b.index - a.index)[0];
-      const shot = shots.get(index);
-      const tracked = withSpatialContinuity(
-        withCraftLocks(
-        withNoClone(
-          withOnScreenProps(
-            montage || ensurePhysicalLogic(ensureVisibleAction(summary), space),
-            project,
-            index,
-          ),
-          camera,
-          scene,
-          project,
-        ),
-        scene,
-        project,
-      ),
-        scene,
-        previous,
-      );
-      const visual = (shot?.locks || []).reduce(
-        (text, lock) => (alreadyHas(text, lock) ? text : `${text.replace(/[. ]+$/, "")}. ${lock}`),
-        tracked,
-      );
-      const dialogue = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
-      const lines = dialogue
-        .map((line) => spokenLineCue(project, scene, line.speaker, line.line))
-        .filter(Boolean)
-        .join(" ");
-      const narratorLock = dialogue.some((line) => isVoiceoverSpeaker(project, line.speaker))
-        ? "Narrator lines stay off-screen. Mouths stay closed."
-        : "";
-      const seconds = fitted[i] || Math.max(2, Math.round(scene?.estimatedSeconds || 4));
-      const who = sceneCastLine(scene, project);
-      const body = (i === 0 && lines && !shot?.revealFirst ? [who, lines, narratorLock, visual] : [who, visual, lines, narratorLock])
-        .filter(Boolean)
-        .join(" ");
-      return `SCENE ${i + 1} (${seconds}s). ${camera}. ${body} ${sceneAudioClose()}`.replace(/\s+/g, " ").trim();
-    })
-    .join(" CUT. ");
-  return `${videoStyleLead(project.style, project.aspectRatio)} ${identityLocks(project, sceneIndexes)} ${attributeDialogueInPrompt(timed, project, sceneIndexes)} ${videoCloseLead()}`.replace(/\s{2,}/g, " ").trim();
+  const raw = scenes.map((scene) => Math.max(2, scene?.estimatedSeconds || 4));
+  const sum = raw.reduce((total, value) => total + value, 0);
+  return budget > 0 && sum > budget
+    ? raw.map((value) => Math.max(2, Math.round((value / sum) * budget)))
+    : raw.map((value) => Math.round(value));
+}
+
+function cleanPlace(value: string) {
+  return value.trim().replace(/^(?:still\s+)?(?:in\s+)?(?:the\s+)?same\s+/i, "").replace(/[.\s]+$/, "");
+}
+
+function aspectLabel(aspect?: string) {
+  if (aspect === "9:16") return "9:16 vertical";
+  if (aspect === "1:1") return "1:1 square";
+  return "16:9 horizontal";
+}
+
+function cameraTitle(camera: string) {
+  return camera
+    .replace(/\beye level\b/i, "eye-level")
+    .split(/,\s*/)
+    .filter(Boolean)
+    .join(" ")
+    .replace(/(^|[\s-])([a-z])/g, (_, prefix: string, letter: string) => `${prefix}${letter.toUpperCase()}`);
+}
+
+function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
+  const people = new Map<string, string>();
+  const refs: string[] = [];
+  const swaps: TagSwap[] = [];
+  videos.forEach((item, index) => {
+    const tag = `@Video${index + 1}`;
+    const key = item.name.trim().toLowerCase();
+    if (item.kind === "character" && key) people.set(key, tag);
+    else refs.push(`${tag} is the previous clip; match its voices and look`);
+  });
+  images.forEach((item, index) => {
+    const tag = `@Image${index + 1}`;
+    const name = item.name.trim();
+    if (!name) return;
+    if (item.kind === "character") {
+      if (!people.has(name.toLowerCase())) people.set(name.toLowerCase(), tag);
+      return;
+    }
+    if (item.kind === "product") refs.push(`${tag} is ${productCueLabel(name, item.notes || "")}, same packaging`);
+    else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
+    else refs.push(`${tag} is ${name}`);
+    const aliases = item.kind === "product" ? [name, item.notes || "", "the attached product", "the product"] : [name];
+    swaps.push({
+      tag,
+      names: aliases
+        .map((value) => value.trim())
+        .filter((value) => value.length >= 3 && value.length <= 48 && !/^product\s*\d+$/i.test(value)),
+    });
+  });
+  for (const [key, tag] of people) {
+    const full = project.characters.find((item) => item.name.trim().toLowerCase() === key)?.name.trim() || key;
+    const first = full.split(/\s+/)[0];
+    const firstIsUnique =
+      first.length >= 3 &&
+      first !== full &&
+      project.characters.filter((item) => item.name.trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase()).length === 1;
+    swaps.push({ tag, names: firstIsUnique ? [full, first] : [full] });
+  }
+  return { people, refs, swaps };
+}
+
+function applyTags(text: string, swaps: TagSwap[]) {
+  const pairs = swaps
+    .flatMap((swap) => swap.names.map((name) => ({ name, tag: swap.tag })))
+    .sort((a, b) => b.name.length - a.name.length);
+  let next = text;
+  for (const { name, tag } of pairs) {
+    next = replaceOutsideQuotes(next, new RegExp(`(?<![@\\w])(?:the\\s+)?${escapeRegExp(name)}\\b`, "gi"), () => tag);
+  }
+  return next.replace(/@(Image|Video)(\d+)\s+(?:bottle|jar|tub|canister|flask|jug)\b/gi, "@$1$2");
+}
+
+function withoutQuotedDialogue(summary: string, scene?: Scene) {
+  let next = summary;
+  for (const line of scene?.dialogue || []) {
+    const text = (line.line || "").replace(/^["']+|["']+$/g, "").trim();
+    if (!text) continue;
+    const quote = `["“]${escapeRegExp(text)}["”]`;
+    next = next
+      .replace(new RegExp(`\\b(?:says|asks|whispers|shouts|yells|replies|mutters|exclaims|lipsyncs)[:,]?\\s*${quote}`, "gi"), "speaks.")
+      .replace(new RegExp(quote, "g"), "");
+  }
+  return next
+    .replace(/\s+([.,!?])/g, "$1")
+    .replace(/\.[.,]+/g, (match) => (match.includes(",") ? "," : "."))
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function dialogueBlock(project: Project, scene: Scene | undefined, people: Map<string, string>) {
+  const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
+  let previousLabel = "";
+  const parts: string[] = [];
+  for (const entry of scene?.dialogue || []) {
+    const text = (entry.line || "").replace(/^["']+|["']+$/g, "").trim();
+    if (!entry.speaker || !text) continue;
+    let label: string;
+    if (isVoiceoverSpeaker(project, entry.speaker)) {
+      label = "Narrator voice-over (off-screen, mouths closed):";
+    } else {
+      const character = findSpeakerCharacter(project, entry.speaker);
+      const name = character?.name || entry.speaker;
+      const who = people.get(name.trim().toLowerCase()) || speakerLabel(project, entry.speaker);
+      label = onScreen.includes(name.trim().toLowerCase()) ? `${who} lipsyncs:` : `${who} (off-screen voice):`;
+    }
+    parts.push(label === previousLabel ? `"${text}"` : `${label} "${text}"`);
+    previousLabel = label;
+  }
+  return parts.length ? `Dialogue: ${parts.join(" / ")}` : "";
+}
+
+function stagingLines(scene: Scene | undefined, project: Project, camera: string) {
+  const names = sceneOnScreenNames(scene, project);
+  const lines: string[] = [];
+  if (/over the shoulder/i.test(camera) && names.length >= 2) {
+    lines.push(`Camera over ${names[0]}'s shoulder, facing ${names[1]}.`);
+  }
+  const blob = `${scene?.summary || ""} ${scene?.title || ""}`;
+  if (names.length >= 2 && !/\b(fourth wall|to camera|into the (?:camera|lens)|looks? (?:at|into) (?:the )?(?:camera|lens))\b/i.test(blob)) {
+    const spoken = (scene?.dialogue || []).find(
+      (line) => line.speaker && !isVoiceoverSpeaker(project, line.speaker) && names.some((name) => name.toLowerCase() === line.speaker.trim().toLowerCase()),
+    );
+    const speaker = spoken ? names.find((name) => name.toLowerCase() === spoken.speaker.trim().toLowerCase()) : undefined;
+    const others = speaker ? names.filter((name) => name.toLowerCase() !== speaker.toLowerCase()) : [];
+    if (speaker && others.length) {
+      const listeners = others.length === 1 ? others[0] : `${others.slice(0, -1).join(", ")} and ${others[others.length - 1]}`;
+      lines.push(`${speaker} looks at ${listeners} while speaking.`);
+    }
+  }
+  if (names.length >= 2 && /\b(chas(?:e|es|ing)|pursu(?:e|es|ing)|hunts?|lunges? at|runs? after|goes? after)\b/i.test(blob)) {
+    lines.push(`The chase heads toward ${names[names.length - 1]}.`);
+  }
+  return lines;
+}
+
+export function compactVideoPrompt(options: CompactPromptOptions) {
+  const { project, sceneIndexes } = options;
+  const { people, refs, swaps } = buildTags(project, options.images || [], options.videos || []);
+  const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
+  const seconds = fittedSeconds(scenes, options.maxSeconds);
+  const shots = continuityPass(project);
+  const look = project.style === "claymation" ? "Claymation" : "Pixar";
+
+  const places: string[] = [];
+  for (const scene of scenes) {
+    const place = cleanPlace(scene?.location || "");
+    if (place && !places.some((item) => samePlace(item, place))) places.push(place);
+  }
+  const placeTag = (place: string) => {
+    const index = (options.images || []).findIndex((item) => item.kind === "location" && samePlace(item.name, place));
+    return index >= 0 ? `${place} (@Image${index + 1})` : place;
+  };
+  const setting =
+    places.length === 1
+      ? `Setting: ${placeTag(places[0])}`
+      : places.length
+        ? `Settings: ${places.map(placeTag).join(", then ")}`
+        : "One continuous setting";
+
+  const leads: string[] = [];
+  let narrated = false;
+  for (const scene of scenes) {
+    for (const name of sceneOnScreenNames(scene, project)) {
+      if (!leads.some((item) => item.toLowerCase() === name.toLowerCase())) leads.push(name);
+    }
+    for (const line of scene?.dialogue || []) {
+      if (!line.speaker) continue;
+      if (isVoiceoverSpeaker(project, line.speaker)) {
+        narrated = true;
+        continue;
+      }
+      const name = findSpeakerCharacter(project, line.speaker)?.name || line.speaker.trim();
+      if (!leads.some((item) => item.toLowerCase() === name.toLowerCase())) leads.push(name);
+    }
+  }
+  const cast = leads.map((name) => {
+    const tag = people.get(name.toLowerCase());
+    const role = characterRole(project, name);
+    const label = speakerLabel(project, name);
+    const who = tag ? `${tag} as ${label}` : label;
+    return role ? `${who} (${role})` : who;
+  });
+  if (narrated) cast.push("Narrator: off-screen voice-over only");
+  const extras = [...new Set(scenes.flatMap((scene) => (scene?.extraNames || []).map((name) => englishExtraName(name)).filter(Boolean)))];
+
+  const header = [
+    `GLOBAL: ${look} style, ${aspectLabel(project.aspectRatio)}. ${setting}, consistent lighting and spatial orientation. Each character keeps the same face, outfit, and footwear in every shot. Audio: dialogue and natural ambient sound only; each scene's lines play inside that scene, after the speaker appears.`,
+    cast.length ? `CHARACTERS: ${cast.join("; ")}.${extras.length ? ` Background extras: ${extras.join(", ")}.` : ""}` : "",
+    refs.length ? `REFERENCES: ${refs.join("; ")}.` : "",
+  ].filter(Boolean);
+
+  const usedCameras: string[] = [];
+  let lastPlace = "";
+  const blocks = sceneIndexes.map((index, i) => {
+    const scene = scenes[i];
+    const camera = safeCinematicCamera(scene, CAMERA_VARIETY[i % CAMERA_VARIETY.length], usedCameras, project);
+    usedCameras.push(camera);
+    const summary = withoutQuotedDialogue(rewriteProductContainers(scene?.summary || scene?.title || "", project), scene);
+    const space = `${scene?.title || ""} ${scene?.location || ""}`;
+    const action = withOnScreenProps(expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space), project, index);
+    const place = cleanPlace(scene?.location || "");
+    const moved = places.length > 1 && place && !samePlace(place, lastPlace || "");
+    if (place) lastPlace = place;
+    const body = [moved ? `In ${place}.` : "", action, ...stagingLines(scene, project, camera), ...(shots.get(index)?.locks || [])]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
+      .join(" ");
+    const text = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
+    const dialogue = dialogueBlock(project, scene, people);
+    return [`SCENE ${i + 1} (${seconds[i]}s) — ${cameraTitle(camera)}:`, text, dialogue].filter(Boolean).join("\n");
+  });
+
+  return [header.join("\n"), ...blocks].join("\n\n").replace(/[ \t]{2,}/g, " ").trim();
+}
+
+export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
+  return compactVideoPrompt({ project, sceneIndexes, maxSeconds });
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
@@ -1100,7 +1170,17 @@ export function labeledReferencePrompt(options: {
   style: VisualStyle;
   project?: Project;
   sceneIndexes?: number[];
+  duration?: number;
 }) {
+  if (options.project && options.sceneIndexes?.length) {
+    return compactVideoPrompt({
+      project: options.project,
+      sceneIndexes: options.sceneIndexes,
+      maxSeconds: options.duration,
+      images: options.images,
+      videos: options.videos,
+    });
+  }
   let body = stripSceneStyleLocks(stripVideoStyleLead(stripIdentityDump(options.videoPrompt.trim())));
   body = body.replace(/^SCENE\s+/i, "SCENE ");
   if (options.project && options.sceneIndexes?.length && !/\b(?:says|lipsyncs|voiceover|no lipsync):\s*"/i.test(body)) {
