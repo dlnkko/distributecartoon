@@ -62,6 +62,7 @@ export type Character = {
   anchorVideoRemoteUrl?: string;
   anchorVideoTaskId?: string;
   anchorAttempts?: number;
+  anchorRetryAt?: string;
   anchorSourceUrl?: string;
   latestVideoFileName?: string;
   latestVideoPublicPath?: string;
@@ -124,10 +125,16 @@ export type Batch = {
   videoRemoteUrl?: string;
   kieVideoTaskId?: string;
   attempts?: number;
+  nextRetryAt?: string;
   continuityFlags?: string[];
   submittedAt?: string;
   readyAt?: string;
   storedAt?: string;
+};
+
+export type PendingTask = {
+  kind: "plan" | "cast";
+  startedAt: string;
 };
 
 export type NarratorVoice = {
@@ -185,6 +192,8 @@ export type Project = {
   keepGenerating?: boolean;
   platesTried?: boolean;
   narratorVoice?: NarratorVoice;
+  pendingTask?: PendingTask;
+  taskError?: string;
   produceError?: string;
   pendingQuestions: string[];
   messages: ChatMessage[];

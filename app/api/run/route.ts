@@ -4,13 +4,14 @@ import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
 import { resetInFlightBatches, startProduce } from "@/lib/pipeline";
 import { driveProduce } from "@/lib/produce";
-import { getProject } from "@/lib/store";
+import { getProject, saveProject } from "@/lib/store";
+import { activeTask } from "@/lib/tasks";
 import type { AgentMode, Project, StudioEvent } from "@/lib/types";
 import { projectDeliveredSrc } from "@/lib/video-jobs";
 
 export const runtime = "nodejs";
-// Vercel Hobby caps functions at 300s. Longer videos keep going through /api/worker.
-export const maxDuration = 300;
+// Pro allows 800s. The worker keeps going after this request ends.
+export const maxDuration = 800;
 
 const produceLocks = new Map<string, Promise<void>>();
 
@@ -152,50 +153,49 @@ export async function POST(request: Request) {
     return streamEvents(work, bus);
   }
 
-  const encoder = new TextEncoder();
-  const stream = new ReadableStream({
-    async start(controller) {
-      const send = (event: StudioEvent) => {
-        try {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify(event)}\n\n`));
-        } catch {
-          // El cliente ya cortó la conexión.
-        }
-      };
-      try {
-        send({ type: "project", project });
-        await runAgent({
-          project,
-          mode: "plan",
-          abortSignal: request.signal,
-          onEvent: (event) => {
-            if (event.type === "status" && event.text) send({ type: "status", text: event.text });
-            if (event.type === "project" && event.project) send({ type: "project", project: event.project });
-          },
-        });
-        send({ type: "done" });
-      } catch (error) {
-        await resetInFlightBatches(project);
-        send({
-          type: "error",
-          text: isAbortError(error) || request.signal.aborted ? "Stopped." : error instanceof Error ? error.message : String(error),
-        });
-        send({ type: "done" });
-      } finally {
-        try {
-          controller.close();
-        } catch {
-          // ya cerrado
-        }
-      }
-    },
-  });
+  const running = activeTask(project);
+  if (running?.kind === "plan") {
+    const bus = eventBus();
+    const work = Promise.resolve().then(() => {
+      bus.send({ type: "project", project });
+      bus.send({ type: "done" });
+    });
+    return streamEvents(work, bus);
+  }
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
-  });
+  project.pendingTask = { kind: "plan", startedAt: new Date().toISOString() };
+  delete project.taskError;
+  await saveProject(project);
+  const bus = eventBus();
+  const work = runPlan(project, bus.send);
+  try {
+    after(work);
+  } catch {
+    // Local dev finishes the plan on this request.
+  }
+  return streamEvents(work, bus);
+}
+
+// The plan keeps running when the tab reloads; the client picks it up from pendingTask.
+async function runPlan(project: Project, send: (event: StudioEvent) => void) {
+  try {
+    send({ type: "project", project });
+    await runAgent({
+      project,
+      mode: "plan",
+      onEvent: (event) => {
+        if (event.type === "status" && event.text) send({ type: "status", text: event.text });
+        if (event.type === "project" && event.project) send({ type: "project", project: event.project });
+      },
+    });
+  } catch (error) {
+    await resetInFlightBatches(project).catch(() => undefined);
+    project.taskError = isAbortError(error) ? "Stopped." : error instanceof Error ? error.message : String(error);
+    send({ type: "error", text: project.taskError });
+  } finally {
+    delete project.pendingTask;
+    await saveProject(project).catch((error) => console.error("plan save failed", project.id, error));
+    send({ type: "project", project });
+    send({ type: "done" });
+  }
 }

@@ -3,7 +3,7 @@ import { driveProduce } from "@/lib/produce";
 import { activeProjectIds, workerTokenMatches } from "@/lib/worker-db";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 export async function POST(request: Request) {
   if (!workerTokenMatches(request.headers.get("x-worker-token"))) {

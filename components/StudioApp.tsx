@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
+import { activeTask } from "@/lib/tasks";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
-import { projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart } from "@/lib/video-jobs";
+import { durableVideoSrc, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -85,6 +86,46 @@ const STEPS: Array<{ id: WorkflowStep; label: string }> = [
   { id: "produce", label: "Generate" },
 ];
 
+function stepIndex(step?: string) {
+  return STEPS.findIndex((item) => item.id === (step || "script"));
+}
+
+function stepReachable(project: Project, step: WorkflowStep) {
+  if (step === "script") return true;
+  if (step === "setup") return Boolean(project.scriptText.trim());
+  if (step === "review") return project.scenes.length > 0;
+  if (step === "cast") return project.scenes.length > 0 && missingCastLooks(project).length === 0;
+  return Boolean(projectDeliveredSrc(project));
+}
+
+function studioUrl(projectId?: string, step?: string) {
+  if (!projectId) return window.location.pathname;
+  const params = new URLSearchParams({ p: projectId });
+  if (step) params.set("step", step);
+  return `${window.location.pathname}?${params.toString()}`;
+}
+
+function draftKey(projectId: string) {
+  return `script-draft:${projectId}`;
+}
+
+function readDraft(projectId: string) {
+  try {
+    return window.localStorage.getItem(draftKey(projectId)) || "";
+  } catch {
+    return "";
+  }
+}
+
+function writeDraft(projectId: string, text: string) {
+  try {
+    if (text.trim()) window.localStorage.setItem(draftKey(projectId), text);
+    else window.localStorage.removeItem(draftKey(projectId));
+  } catch {
+    // Private mode or a full quota only loses the unsaved draft.
+  }
+}
+
 function timeAgo(iso: string) {
   const delta = Date.now() - new Date(iso || 0).getTime();
   const mins = Math.max(1, Number.isFinite(delta) ? Math.round(delta / 60000) : 1);
@@ -108,9 +149,9 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
   const videos: HistoryVideo[] = [];
   const seen = new Set<string>();
   for (const project of projects) {
-    const joined = projectDeliveredSrc(project);
-    const ready = project.batches.filter((batch) => batchVideoSrc(batch));
-    const hideParts = projectIsMultipart(project);
+    const joined = projectJoinedSrc(project) || (projectIsMultipart(project) ? "" : projectDeliveredSrc(project));
+    const ready = project.batches.filter((batch) => durableVideoSrc(batch) || batchVideoSrc(batch));
+    const hideParts = Boolean(projectJoinedSrc(project));
     const partSrcs = new Set(ready.map((batch) => batchVideoSrc(batch)).filter(Boolean));
     if (joined) {
       const dedupe = `${project.id}:${joined}`;
@@ -127,6 +168,27 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
           parts: 1,
           aspectRatio: project.aspectRatio,
           createdAt: videoMadeAt(project, joined),
+        });
+      }
+    }
+    if (!projectJoinedSrc(project)) {
+      for (const batch of project.batches) {
+        const src = durableVideoSrc(batch);
+        if (!src) continue;
+        const dedupe = `${project.id}:${src}`;
+        if (seen.has(dedupe)) continue;
+        seen.add(dedupe);
+        videos.push({
+          key: `${project.id}-part-${batch.index}`,
+          projectId: project.id,
+          title: project.batches.length > 1 ? `${project.title} · part ${batch.index}` : project.title,
+          src,
+          poster: batch.framePublicPath,
+          duration: batch.duration,
+          index: batch.index,
+          parts: Math.max(1, project.batches.length),
+          aspectRatio: project.aspectRatio,
+          createdAt: batch.storedAt || batch.readyAt || project.createdAt || "",
         });
       }
     }
@@ -298,6 +360,9 @@ export function StudioApp() {
   const [notifyHint, setNotifyHint] = useState("");
   const [pane, setPane] = useState<"library" | "studio">("library");
   const [generatingIds, setGeneratingIds] = useState<string[]>([]);
+  const busyRef = useRef(false);
+  const poppingRef = useRef(false);
+  const urlReadyRef = useRef(false);
 
   function markGenerating(projectId: string, active: boolean) {
     setGeneratingIds((current) => {
@@ -307,6 +372,8 @@ export function StudioApp() {
   }
 
   projectsRef.current = projects;
+  const working = busy || Boolean(activeTask(project));
+  busyRef.current = working;
 
   useEffect(() => {
     void boot();
@@ -328,7 +395,12 @@ export function StudioApp() {
         const latest = currentId ? list.find((item) => item.id === currentId) : undefined;
         if (!latest) return;
         const hadVideo = Boolean(projectDeliveredSrc(projectRef.current));
+        const hadTask = Boolean(activeTask(projectRef.current));
         remember(latest);
+        if (hadTask && !activeTask(latest)) {
+          if (latest.scenes.length) setScenesDraft(latest.scenes.map(cloneScene));
+          setStatus(latest.taskError || "");
+        }
         const hasVideo = Boolean(projectDeliveredSrc(latest));
         if (!hadVideo && hasVideo && notifyReadyRef.current) {
           void showReadyNotification(latest.title || "New video");
@@ -354,13 +426,14 @@ export function StudioApp() {
       if (
         busy ||
         generatingIds.length ||
+        activeTask(projectRef.current) ||
         projectAwaitingVideo(projectRef.current) ||
         projectIsGenerating(projectRef.current) ||
         projectsRef.current.some((item) => projectIsGenerating(item))
       ) {
         void syncProjects();
       }
-    }, 8000);
+    }, activeTask(projectRef.current) ? 4000 : 8000);
 
     return () => {
       cancelled = true;
@@ -370,7 +443,7 @@ export function StudioApp() {
       window.removeEventListener("focus", onResume);
       window.removeEventListener("online", onResume);
     };
-  }, [project?.id, busy, generatingIds.length]);
+  }, [project?.id, busy, generatingIds.length, Boolean(activeTask(project))]);
 
   useEffect(() => {
     const el = textareaRef.current;
@@ -381,9 +454,15 @@ export function StudioApp() {
 
   useEffect(() => {
     if (!project) return;
-    setScriptDraft(isFileScript(project.scriptName) ? "" : project.scriptText || "");
+    setScriptDraft(readDraft(project.id) || (isFileScript(project.scriptName) ? "" : project.scriptText || ""));
     setScenesDraft(project.scenes.map(cloneScene));
   }, [project?.id]);
+
+  useEffect(() => {
+    const current = projectRef.current;
+    if (!current || (current.workflowStep || "script") !== "script") return;
+    writeDraft(current.id, scriptDraft === current.scriptText ? "" : scriptDraft);
+  }, [scriptDraft]);
 
   function remember(next: Project) {
     projectRef.current = next;
@@ -417,6 +496,13 @@ export function StudioApp() {
     const [projectsRes, meRes] = await Promise.all([fetch("/api/projects"), fetch("/api/me")]);
     if (meRes.ok) setProfile((await meRes.json()) as Profile);
     const list = (await projectsRes.json()) as Project[];
+    const wanted = new URLSearchParams(window.location.search).get("p");
+    const restored = wanted ? list.find((item) => item.id === wanted) : undefined;
+    if (restored) {
+      setProjects(list);
+      void selectProject(restored);
+      return;
+    }
     if (list[0]) {
       projectRef.current = list[0];
       setProjects(list);
@@ -598,6 +684,22 @@ export function StudioApp() {
     }
   }
 
+  async function goToStep(target: WorkflowStep, fromHistory = false) {
+    const current = projectRef.current;
+    if (!current) return;
+    const from = stepIndex(current.workflowStep);
+    const to = stepIndex(target);
+    const backward = to >= 0 && to < from;
+    const forward = to > from && STEPS.slice(from + 1, to + 1).every((item) => stepReachable(current, item.id));
+    const generatingNow = !projectDeliveredSrc(current) && projectIsGenerating(current);
+    if (busyRef.current || generatingNow || !(backward || (fromHistory && forward))) {
+      if (fromHistory) window.history.replaceState(null, "", studioUrl(current.id, current.workflowStep || "script"));
+      return;
+    }
+    setStatus("");
+    await patchProject({ workflowStep: target });
+  }
+
   async function onUploadScript(file: File) {
     if (!project) return;
     setBusy(true);
@@ -679,6 +781,7 @@ export function StudioApp() {
     });
     const json = (await saved.json()) as { project?: Project; error?: string };
     if (json.project) {
+      writeDraft(json.project.id, "");
       remember(json.project);
     } else {
       setStatus(json.error || "Couldn't save that script.");
@@ -876,11 +979,50 @@ export function StudioApp() {
     if (generatingIds.includes(current.id) || projectIsGenerating(current)) setPane("library");
   }, [generatingIds, project?.id, project?.workflowStep, project?.joinedVideoPublicPath, project?.batches]);
 
+  useEffect(() => {
+    if (!project) return;
+    const target = pane === "studio" ? studioUrl(project.id, project.workflowStep || "script") : studioUrl();
+    const here = `${window.location.pathname}${window.location.search}`;
+    const replace = poppingRef.current || !urlReadyRef.current;
+    poppingRef.current = false;
+    urlReadyRef.current = true;
+    if (target === here) return;
+    if (replace) window.history.replaceState(null, "", target);
+    else window.history.pushState(null, "", target);
+  }, [pane, project?.id, project?.workflowStep]);
+
+  useEffect(() => {
+    function onPopState() {
+      const params = new URLSearchParams(window.location.search);
+      const id = params.get("p");
+      poppingRef.current = true;
+      window.setTimeout(() => {
+        poppingRef.current = false;
+      }, 2000);
+      const found = id ? projectsRef.current.find((item) => item.id === id) : undefined;
+      if (!found) {
+        setPane("library");
+        return;
+      }
+      if (projectRef.current?.id !== found.id) {
+        void selectProject(found);
+        return;
+      }
+      setPane("studio");
+      const wanted = params.get("step") as WorkflowStep | null;
+      if (wanted && wanted !== (projectRef.current.workflowStep || "script")) void goToStep(wanted, true);
+    }
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
   if (!project) {
     return <div className="grid h-screen place-items-center text-[var(--muted)]">Loading…</div>;
   }
 
   const step = project.workflowStep || "script";
+  const task = activeTask(project);
+  const taskLabel = task ? (task.kind === "plan" ? "Building your scenes… you can refresh, it keeps going." : "Casting characters… you can refresh, it keeps going.") : "";
   const charactersSlots = slotsOf(project, "character");
   const products = slotsOf(project, "product");
   const locations = slotsOf(project, "location");
@@ -1000,7 +1142,11 @@ export function StudioApp() {
             Your videos
           </button>
         </header>
-            <StepBar current={step} />
+            <StepBar
+              current={step}
+              locked={working || (!projectDeliveredSrc(project) && projectIsGenerating(project))}
+              onJump={(target) => void goToStep(target)}
+            />
             <div className="scroll-thin mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
           {step === "script" ? (
             <ScriptStep
@@ -1008,7 +1154,7 @@ export function StudioApp() {
               scriptName={project.scriptName}
               fileAttached={isFileScript(project.scriptName)}
               value={scriptDraft}
-              busy={busy}
+              busy={working}
               textareaRef={textareaRef}
               onChange={setScriptDraft}
               onPickFile={() => fileRef.current?.click()}
@@ -1024,7 +1170,7 @@ export function StudioApp() {
               products={products}
               locations={locations}
               logos={logos}
-              busy={busy}
+              busy={working}
               onBack={() => void patchProject({ workflowStep: "script" })}
               onStyle={changeStyle}
               onAspect={changeAspect}
@@ -1038,7 +1184,7 @@ export function StudioApp() {
           {step === "review" ? (
             <ReviewStep
               scenes={scenesDraft}
-              busy={busy}
+              busy={working}
               hasVideo={Boolean(projectDeliveredSrc(project))}
               onChange={setScenesDraft}
               onBack={() =>
@@ -1053,7 +1199,7 @@ export function StudioApp() {
           {step === "cast" ? (
             <CastStep
               characters={project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character))}
-              busy={busy}
+              busy={working}
               onBack={() => void patchProject({ workflowStep: "review" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
               onContinue={() => void continueFromCast()}
@@ -1063,7 +1209,7 @@ export function StudioApp() {
           {step === "produce" ? (
             <ProduceStep
               project={project}
-              busy={busy}
+              busy={working}
               status={status}
               notifyReady={notifyReady}
               notifyHint={notifyHint}
@@ -1073,7 +1219,8 @@ export function StudioApp() {
             />
           ) : null}
 
-          {!busy && status && step !== "produce" ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
+          {taskLabel ? <p className="mt-4 text-sm text-[var(--muted)]">{taskLabel}</p> : null}
+          {!working && status && step !== "produce" ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
         </div>
           </>
         )}
@@ -1183,15 +1330,15 @@ function cloneScene(scene: Scene): Scene {
   return { ...scene, dialogue: scene.dialogue.map((line) => ({ ...line })), characterNames: [...scene.characterNames], extraNames: [...scene.extraNames] };
 }
 
-function StepBar({ current }: { current: WorkflowStep }) {
+function StepBar({ current, locked, onJump }: { current: WorkflowStep; locked?: boolean; onJump?: (step: WorkflowStep) => void }) {
   const index = STEPS.findIndex((item) => item.id === current);
   return (
     <ol className="mx-auto mb-3 flex w-full max-w-4xl items-center gap-1.5 px-3 md:px-6">
       {STEPS.map((item, i) => {
         const active = i === index;
         const done = i < index;
-        return (
-          <li key={item.id} className="flex min-w-0 flex-1 items-center gap-1.5">
+        const content = (
+          <>
             <span
               className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium ${
                 active ? "bg-[var(--ink)] text-white" : done ? "bg-[var(--accent)] text-white" : "bg-stone-200 text-stone-500"
@@ -1200,6 +1347,23 @@ function StepBar({ current }: { current: WorkflowStep }) {
               {i + 1}
             </span>
             <span className={`hidden truncate text-[11px] font-medium sm:inline ${active ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>{item.label}</span>
+          </>
+        );
+        return (
+          <li key={item.id} className="flex min-w-0 flex-1 items-center gap-1.5">
+            {done && onJump ? (
+              <button
+                type="button"
+                disabled={locked}
+                onClick={() => onJump(item.id)}
+                title={`Back to ${item.label}`}
+                className="flex min-w-0 items-center gap-1.5 rounded-full hover:opacity-75 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {content}
+              </button>
+            ) : (
+              content
+            )}
             {i < STEPS.length - 1 ? <span className="hidden h-px flex-1 bg-stone-200 sm:block" /> : null}
           </li>
         );

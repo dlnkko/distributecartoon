@@ -4,7 +4,7 @@ import { continuityFlags, projectSeed } from "./continuity";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
-import { batchAwaitingVideo, projectDeliveredSrc, realKieVideoTaskId, storyBatchNeedsSubmit } from "./video-jobs";
+import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storyBatchNeedsSubmit } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
@@ -113,24 +113,28 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
   }
   batch.status = "done";
   project.workflowStep = "produce";
-  if (!batch.videoPublicPath && batch.videoRemoteUrl) {
+  const stored = Boolean(durableVideoSrc(batch));
+  if (!stored && (batch.videoRemoteUrl || batch.videoPublicPath)) {
     try {
+      const source = batch.videoRemoteUrl || batch.videoPublicPath || remoteUrl;
       const people = uniqueNames(batch.characterNames).map((name) => slugify(name)).join("_") || "scene";
       const fileStem = `batch-${String(batch.index).padStart(2, "0")}-${people}`;
-      const saved = await persistVideo(project, batch.videoRemoteUrl, [project.id, "batches", fileStem]);
+      const saved = await persistVideo(project, source, [project.id, "batches", fileStem]);
       batch.videoFileName = saved.fileName;
       batch.videoPublicPath = saved.publicPath;
-      if (isOpenRouterContent(batch.videoRemoteUrl) && isHttpUrl(saved.publicPath)) {
+      if (isHttpUrl(saved.publicPath) && !isOpenRouterContent(saved.publicPath)) {
         batch.videoRemoteUrl = saved.publicPath;
         project.lastVideoRemoteUrl = saved.publicPath;
       }
       project.lastVideoFileName = saved.fileName;
       project.lastVideoPublicPath = saved.publicPath;
       delete batch.kieVideoTaskId;
-    } catch {
-      // The OpenRouter file is already recorded. The player can stream it until storage succeeds.
+      delete batch.error;
+    } catch (error) {
+      batch.error = error instanceof Error ? error.message : "Couldn't store this part.";
+      console.warn("part store failed", project.id, batch.index, batch.error);
     }
-  } else if (batch.videoPublicPath) {
+  } else if (stored) {
     delete batch.kieVideoTaskId;
   }
   assignClipToCharacters(project, batch, {
@@ -370,7 +374,15 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
       await saveSoon(project);
     }
     if ((character.anchorAttempts || 0) >= MAX_JOB_ATTEMPTS) {
-      return { ready: false, failed: `Couldn't record ${character.name}'s intro. Try generating again.` };
+      const retryAt = Date.parse(character.anchorRetryAt || "");
+      if (!Number.isFinite(retryAt)) {
+        character.anchorRetryAt = new Date(Date.now() + 2 * 60 * 1000).toISOString();
+        await saveSoon(project);
+        continue;
+      }
+      if (Date.now() < retryAt) continue;
+      character.anchorAttempts = 0;
+      delete character.anchorRetryAt;
     }
     const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath);
     if (!portrait) return { ready: false, failed: `${character.name} has no look yet.` };
@@ -464,9 +476,41 @@ async function narratorVoiceRef(project: Project, sceneIndexes: number[], abortS
   return url ? { url, kind: "narrator", name: "Narrator" } : undefined;
 }
 
+const PART_RETRY_MS = 2 * 60 * 1000;
+const PENDING_STALE_MS = 3 * 60 * 1000;
+
+function schedulePartRetry(batch: Batch, message: string) {
+  batch.attempts = (batch.attempts || 0) + 1;
+  batch.error = message;
+  batch.status = "generating_video";
+  batch.nextRetryAt = new Date(Date.now() + PART_RETRY_MS).toISOString();
+}
+
+// One heavy step per pass: store a finished part, or submit the next missing one.
+// A provider failure retries that part. It does not cancel the parts already saved.
 async function stepStoryParts(project: Project): Promise<StepResult> {
-  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
-    if (batch.videoPublicPath || batch.videoRemoteUrl) continue;
+  const batches = [...project.batches].sort((a, b) => a.index - b.index);
+  let heavy = false;
+  for (const batch of batches) {
+    if (durableVideoSrc(batch)) continue;
+    if (batch.videoRemoteUrl || batch.videoPublicPath) {
+      if (heavy) return { ready: false };
+      heavy = true;
+      await attachGeneratedVideo(project, batch, batch.videoRemoteUrl || batch.videoPublicPath || "");
+      if (durableVideoSrc(batch)) {
+        batch.storedAt = nowIso();
+        console.info("part stored", project.id, batch.index);
+      }
+      await saveSoon(project);
+      continue;
+    }
+    if (batch.kieVideoTaskId === "pending") {
+      const age = Date.now() - new Date(batch.submittedAt || 0).getTime();
+      if (batch.submittedAt && age < PENDING_STALE_MS) continue;
+      delete batch.kieVideoTaskId;
+      delete batch.submittedAt;
+      await saveSoon(project);
+    }
     const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
     if (taskId) {
       const peek = await peekKieTask(taskId);
@@ -477,37 +521,42 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
         batch.readyAt = nowIso();
         delete batch.kieVideoTaskId;
         delete batch.error;
+        delete batch.nextRetryAt;
         await saveSoon(project);
+        if (heavy) return { ready: false };
+        heavy = true;
         await attachGeneratedVideo(project, batch, peek.url);
-        batch.storedAt = nowIso();
-        console.info("part ready", project.id, batch.index, {
-          submittedAt: batch.submittedAt,
-          readyAt: batch.readyAt,
-          storedAt: batch.storedAt,
-        });
+        if (durableVideoSrc(batch)) {
+          batch.storedAt = nowIso();
+          console.info("part ready", project.id, batch.index, {
+            submittedAt: batch.submittedAt,
+            readyAt: batch.readyAt,
+            storedAt: batch.storedAt,
+          });
+        }
         await saveSoon(project);
         continue;
       }
       delete batch.kieVideoTaskId;
-      batch.error = peek.error;
+      schedulePartRetry(batch, peek.error || `Couldn't generate part ${batch.index}.`);
+      console.warn("part failed, will retry", project.id, batch.index, batch.error);
       await saveSoon(project);
     }
-    if ((batch.attempts || 0) >= MAX_JOB_ATTEMPTS) {
-      return { ready: false, failed: batch.error || `Couldn't generate part ${batch.index}. Try generating again.` };
-    }
-    batch.attempts = (batch.attempts || 0) + 1;
+    if (batch.nextRetryAt && Date.now() < new Date(batch.nextRetryAt).getTime()) continue;
+    if (heavy) return { ready: false };
+    heavy = true;
     try {
       await submitStoryBatch(project, batch, () => undefined);
     } catch (error) {
       if (!realKieVideoTaskId(batch.kieVideoTaskId)) {
         delete batch.kieVideoTaskId;
-        batch.status = "generating_video";
-        batch.error = error instanceof Error ? error.message : "Couldn't start this part.";
+        schedulePartRetry(batch, error instanceof Error ? error.message : "Couldn't start this part.");
+        console.warn("part submit failed, will retry", project.id, batch.index, batch.error);
       }
       await saveSoon(project);
     }
   }
-  return { ready: project.batches.every((batch) => Boolean(batch.videoPublicPath || batch.videoRemoteUrl)) };
+  return { ready: batches.every((batch) => Boolean(durableVideoSrc(batch))) && !heavy };
 }
 
 function finishProduce(project: Project) {
@@ -553,6 +602,7 @@ export async function startProduce(project: Project) {
     if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
     delete batch.kieVideoTaskId;
     delete batch.error;
+    delete batch.nextRetryAt;
     batch.attempts = 0;
     batch.status = "generating_video";
   }
@@ -597,7 +647,14 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
     return "failed";
   }
   if (!story.ready) return "waiting";
-  if (project.batches.length > 1) await joinReadyParts(project, onStatus);
+  if (project.batches.length > 1) {
+    try {
+      await joinReadyParts(project, onStatus);
+    } catch (error) {
+      console.warn("join failed", project.id, error instanceof Error ? error.message : error);
+      return "waiting";
+    }
+  }
   if (!projectDeliveredSrc(project)) return "waiting";
   finishProduce(project);
   await saveSoon(project);
@@ -1180,7 +1237,9 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   if (batch.continuityFlags.length) console.info("continuity", project.id, batch.index, batch.continuityFlags);
   batch.status = "generating_video";
   batch.kieVideoTaskId = "pending";
+  batch.submittedAt = nowIso();
   delete batch.error;
+  delete batch.nextRetryAt;
   await saveSoon(project);
   const taskId = await submitSeedance25ReferenceVideo({
     prompt: labeled,
@@ -1204,9 +1263,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
 }
 
 function readyParts(project: Project) {
-  return [...project.batches]
-    .filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl)
-    .sort((a, b) => a.index - b.index);
+  return [...project.batches].filter((batch) => durableVideoSrc(batch)).sort((a, b) => a.index - b.index);
 }
 
 async function joinReadyParts(project: Project, onStatus: StatusFn) {
@@ -1218,11 +1275,7 @@ async function joinReadyParts(project: Project, onStatus: StatusFn) {
   onStatus("Generating your video…");
   const buffers = [];
   for (const batch of parts) {
-    const src =
-      batch.videoPublicPath && !isOpenRouterContent(batch.videoPublicPath)
-        ? batch.videoPublicPath
-        : batch.videoRemoteUrl || batch.videoPublicPath || "";
-    buffers.push(await readPublicFile(src));
+    buffers.push(await readPublicFile(durableVideoSrc(batch)));
   }
   const joined = await concatVideoBuffers(buffers);
   const saved = await storeGeneratedFile({

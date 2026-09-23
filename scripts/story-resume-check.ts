@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { projectIsGenerating, storyBatchNeedsSubmit } from "../lib/video-jobs";
+import { durableVideoSrc, projectDeliveredSrc, projectIsGenerating, storyBatchNeedsSubmit } from "../lib/video-jobs";
 import type { Project } from "../lib/types";
 
 function project(patch: Partial<Project>): Project {
@@ -44,6 +44,19 @@ assert.equal(storyBatchNeedsSubmit({ ...planned, videoPublicPath: undefined, vid
 assert.equal(storyBatchNeedsSubmit({ ...planned, kieVideoTaskId: "pending" }), true);
 assert.equal(storyBatchNeedsSubmit({ ...planned, kieVideoTaskId: "job_123" }), false);
 assert.equal(storyBatchNeedsSubmit({ ...planned, videoPublicPath: "/v.mp4" }), false);
+assert.equal(durableVideoSrc({ videoPublicPath: "https://openrouter.ai/api/v1/videos/job/content" }), "");
+assert.equal(durableVideoSrc({ videoRemoteUrl: "https://fal.media/clip.mp4" }), "https://fal.media/clip.mp4");
+const missingPart = project({
+  keepGenerating: true,
+  produceStartedAt: new Date().toISOString(),
+  batches: [
+    { ...planned, index: 1, videoPublicPath: "https://fal.media/part-1.mp4", status: "done" },
+    { ...planned, id: "batch_2", index: 2, status: "generating_video" },
+  ],
+});
+assert.equal(projectDeliveredSrc(missingPart), "", "a missing part does not count as the finished film");
+assert.equal(durableVideoSrc(missingPart.batches[0]), "https://fal.media/part-1.mp4");
+assert.equal(projectIsGenerating(missingPart), true, "the worker keeps going until every part is stored");
 
 const live = project({
   keepGenerating: true,

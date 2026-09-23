@@ -5,9 +5,9 @@ import { claimProject, saveClaimedProject, workerEnabled } from "./worker-db";
 import type { Project } from "./types";
 
 const STEP_GAP_MS = 10_000;
-// Vercel Hobby kills a function 300s after the request starts, including after() work.
-// The lease ends at that same moment, so a killed run never blocks the next one for long.
-const FUNCTION_LIFE_MS = 290_000;
+// Pro plan functions can run 800s. The lease ends with the function, so a killed run
+// never blocks the next worker pass for long.
+const FUNCTION_LIFE_MS = 760_000;
 
 type DriveOptions = {
   onStatus?: (text: string) => void;

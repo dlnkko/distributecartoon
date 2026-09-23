@@ -52,6 +52,17 @@ export function projectIsGenerating(
   return Boolean(project.produceStartedAt) && Number.isFinite(started) && started >= 0 && started < 2 * 60 * 60 * 1000;
 }
 
+export function isProviderContentUrl(value?: string) {
+  return Boolean(value && /openrouter\.ai\/api\/v1\/videos\//i.test(value));
+}
+
+// A part counts as saved only when the file lives outside the provider URL, which expires.
+export function durableVideoSrc(batch: { videoPublicPath?: string; videoRemoteUrl?: string }) {
+  if (batch.videoPublicPath && !isProviderContentUrl(batch.videoPublicPath)) return batch.videoPublicPath;
+  if (batch.videoRemoteUrl && !isProviderContentUrl(batch.videoRemoteUrl)) return batch.videoRemoteUrl;
+  return "";
+}
+
 export function realKieVideoTaskId(taskId?: string) {
   const id = taskId?.trim();
   if (!id || id === "pending") return "";
