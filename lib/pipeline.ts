@@ -3,11 +3,12 @@ import { concatVideoBuffers } from "./concat";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
-import { batchAwaitingVideo, produceShouldResumeStory, projectDeliveredSrc, realKieVideoTaskId, storyBatchNeedsSubmit } from "./video-jobs";
+import { batchAwaitingVideo, projectDeliveredSrc, realKieVideoTaskId, storyBatchNeedsSubmit } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
+import { uploadFalBuffer } from "./fal";
 import { packScenesIntoParts, scaleEstimatedSeconds, sceneHasStory, shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, LocationPlate, Project, ReferenceAsset } from "./types";
 
@@ -46,9 +47,22 @@ function isHttpUrl(value?: string) {
   return Boolean(value && /^https?:\/\//i.test(value));
 }
 
+function isOpenRouterContent(value?: string) {
+  return Boolean(value && /openrouter\.ai\/api\/v1\/videos\//i.test(value));
+}
+
+// OpenRouter content URLs need our API key, so Seedance cannot read them as references.
+async function publicVideoUrl(url: string) {
+  if (!isOpenRouterContent(url)) return url;
+  const buffer = await readPublicFile(url);
+  return uploadFalBuffer(buffer, "clip.mp4", "video/mp4");
+}
+
 async function resolveUploadUrl(remoteUrl?: string, publicPath?: string, abortSignal?: AbortSignal) {
-  if (isHttpUrl(remoteUrl)) return remoteUrl;
-  if (isHttpUrl(publicPath)) return publicPath;
+  if (isHttpUrl(remoteUrl) && !isOpenRouterContent(remoteUrl)) return remoteUrl;
+  if (isHttpUrl(publicPath) && !isOpenRouterContent(publicPath)) return publicPath;
+  if (isOpenRouterContent(remoteUrl)) return publicVideoUrl(remoteUrl!);
+  if (isOpenRouterContent(publicPath)) return publicVideoUrl(publicPath!);
   if (publicPath) {
     try {
       return await uploadKieFile(publicPath, abortSignal);
@@ -105,6 +119,10 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
       const saved = await persistVideo(project, batch.videoRemoteUrl, [project.id, "batches", fileStem]);
       batch.videoFileName = saved.fileName;
       batch.videoPublicPath = saved.publicPath;
+      if (isOpenRouterContent(batch.videoRemoteUrl) && isHttpUrl(saved.publicPath)) {
+        batch.videoRemoteUrl = saved.publicPath;
+        project.lastVideoRemoteUrl = saved.publicPath;
+      }
       project.lastVideoFileName = saved.fileName;
       project.lastVideoPublicPath = saved.publicPath;
       delete batch.kieVideoTaskId;
@@ -124,6 +142,8 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
 }
 
 export async function recoverPendingVideos(project: Project, options?: { wait?: boolean }) {
+  // A live generation is owned by the produce worker. Saving it here would overwrite its job ids.
+  if (project.keepGenerating) return project;
   let changed = false;
   for (const batch of project.batches) {
     if (batch.videoPublicPath) {
@@ -198,13 +218,10 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
       }
     }
   }
-  if (await resumeLongformAnchors(project)) changed = true;
-  if (await resumeUnsentStoryJobs(project)) changed = true;
   const parts = project.batches.filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl);
   if (parts.length > 1 && parts.length === project.batches.length) {
     try {
-      await joinReadyParts(project, () => undefined);
-      changed = true;
+      if (await joinReadyParts(project, () => undefined)) changed = true;
     } catch {
       // The parts stay available until the next join attempt.
     }
@@ -243,13 +260,18 @@ export function leadCharacters(project: Project) {
 const ANCHOR_SECONDS = 4;
 const MAX_ANCHOR_VIDEOS = 7;
 const projectSaves = new Map<string, Promise<unknown>>();
+const projectSavers = new Map<string, (project: Project) => Promise<unknown>>();
 
-function saveSoon(project: Project) {
+// The produce worker saves through its lease instead of the signed-in user's session.
+export function setProjectSaver(projectId: string, saver?: (project: Project) => Promise<unknown>) {
+  if (saver) projectSavers.set(projectId, saver);
+  else projectSavers.delete(projectId);
+}
+
+export function saveSoon(project: Project) {
+  const write = () => (projectSavers.get(project.id) || saveProject)(project);
   const previous = projectSaves.get(project.id) || Promise.resolve();
-  const next = previous.then(
-    () => saveProject(project),
-    () => saveProject(project),
-  );
+  const next = previous.then(write, write);
   projectSaves.set(project.id, next);
   return next;
 }
@@ -294,10 +316,11 @@ async function rememberAnchor(project: Project, character: Character, remoteUrl:
   try {
     saved = await persistVideo(project, remoteUrl, [project.id, "anchors", `${character.slug}-intro`]);
   } catch {
-    saved = { fileName: `${character.slug}-intro.mp4`, publicPath: remoteUrl };
+    saved = { fileName: `${character.slug}-intro.mp4`, publicPath: await publicVideoUrl(remoteUrl) };
   }
-  character.anchorVideoPublicPath = saved.publicPath || remoteUrl;
-  character.anchorVideoRemoteUrl = remoteUrl;
+  const publicUrl = saved.publicPath || remoteUrl;
+  character.anchorVideoPublicPath = publicUrl;
+  character.anchorVideoRemoteUrl = isOpenRouterContent(remoteUrl) && isHttpUrl(publicUrl) ? publicUrl : remoteUrl;
   character.anchorSourceUrl = anchorSourceUrl(character);
   delete character.anchorVideoTaskId;
   await saveSoon(project);
@@ -316,39 +339,184 @@ function characterHasDialogue(project: Project, character: Character) {
   );
 }
 
-async function ensureCharacterAnchors(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
-  const pending = leadCharacters(project).filter(
-    (character) => characterHasDialogue(project, character) && hasUsableLook(character) && !hasFreshAnchor(character),
-  );
-  await Promise.all(
-    pending.map(async (character) => {
-      const source = anchorSourceUrl(character);
-      if (character.anchorSourceUrl && character.anchorSourceUrl !== source) delete character.anchorVideoTaskId;
-      const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
-      if (!portrait) return;
-      onStatus("Generating your video…");
-      try {
-        const remoteUrl = await generateSeedance25ReferenceVideo({
-          prompt: characterAnchorPrompt(character.name, project.style),
-          duration: ANCHOR_SECONDS,
-          aspectRatio: normalizeAspectRatio(project.aspectRatio),
-          referenceImageUrls: [portrait],
-          generateAudio: true,
-          resolution: "480p",
-          existingTaskId: realKieVideoTaskId(character.anchorVideoTaskId) || undefined,
-          onTaskCreated: async (taskId) => {
-            character.anchorVideoTaskId = taskId;
-            character.anchorSourceUrl = source;
-            await saveSoon(project);
-          },
-        });
-        await rememberAnchor(project, character, remoteUrl);
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        onStatus(`Couldn't record ${character.name}.`);
+const MAX_JOB_ATTEMPTS = 3;
+const PRODUCE_LIMIT_MS = 3 * 60 * 60 * 1000;
+
+type StepResult = { ready: boolean; failed?: string };
+
+function speakingLeads(project: Project) {
+  return leadCharacters(project).filter((character) => characterHasDialogue(project, character) && hasUsableLook(character));
+}
+
+// One non-blocking pass: start missing intros and collect finished ones.
+async function stepCharacterIntros(project: Project): Promise<StepResult> {
+  for (const character of speakingLeads(project)) {
+    if (hasFreshAnchor(character)) continue;
+    const source = anchorSourceUrl(character);
+    if (character.anchorSourceUrl && character.anchorSourceUrl !== source) {
+      delete character.anchorVideoTaskId;
+      character.anchorAttempts = 0;
+    }
+    const taskId = realKieVideoTaskId(character.anchorVideoTaskId);
+    if (taskId) {
+      const peek = await peekKieTask(taskId);
+      if (peek.status === "pending") continue;
+      if (peek.status === "success") {
+        await rememberAnchor(project, character, peek.url);
+        continue;
       }
-    }),
-  );
+      delete character.anchorVideoTaskId;
+      await saveSoon(project);
+    }
+    if ((character.anchorAttempts || 0) >= MAX_JOB_ATTEMPTS) {
+      return { ready: false, failed: `Couldn't record ${character.name}'s intro. Try generating again.` };
+    }
+    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath);
+    if (!portrait) return { ready: false, failed: `${character.name} has no look yet.` };
+    character.anchorAttempts = (character.anchorAttempts || 0) + 1;
+    try {
+      await submitSeedance25ReferenceVideo({
+        prompt: characterAnchorPrompt(character.name, project.style),
+        duration: ANCHOR_SECONDS,
+        aspectRatio: normalizeAspectRatio(project.aspectRatio),
+        referenceImageUrls: [portrait],
+        generateAudio: true,
+        resolution: "480p",
+        onTaskCreated: async (id) => {
+          character.anchorVideoTaskId = id;
+          character.anchorSourceUrl = source;
+          await saveSoon(project);
+        },
+      });
+    } catch {
+      await saveSoon(project);
+    }
+  }
+  return { ready: speakingLeads(project).every((character) => hasFreshAnchor(character)) };
+}
+
+async function stepStoryParts(project: Project): Promise<StepResult> {
+  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
+    if (batch.videoPublicPath || batch.videoRemoteUrl) continue;
+    const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
+    if (taskId) {
+      const peek = await peekKieTask(taskId);
+      if (peek.status === "pending") continue;
+      if (peek.status === "success") {
+        batch.videoRemoteUrl = peek.url;
+        await saveSoon(project);
+        await attachGeneratedVideo(project, batch, peek.url);
+        await saveSoon(project);
+        continue;
+      }
+      delete batch.kieVideoTaskId;
+      batch.error = peek.error;
+      await saveSoon(project);
+    }
+    if ((batch.attempts || 0) >= MAX_JOB_ATTEMPTS) {
+      return { ready: false, failed: batch.error || `Couldn't generate part ${batch.index}. Try generating again.` };
+    }
+    batch.attempts = (batch.attempts || 0) + 1;
+    try {
+      await submitStoryBatch(project, batch, () => undefined);
+    } catch (error) {
+      if (!realKieVideoTaskId(batch.kieVideoTaskId)) {
+        delete batch.kieVideoTaskId;
+        batch.status = "generating_video";
+        batch.error = error instanceof Error ? error.message : "Couldn't start this part.";
+      }
+      await saveSoon(project);
+    }
+  }
+  return { ready: project.batches.every((batch) => Boolean(batch.videoPublicPath || batch.videoRemoteUrl)) };
+}
+
+function finishProduce(project: Project) {
+  project.keepGenerating = false;
+  delete project.produceError;
+  project.workflowStep = "produce";
+  const src = projectDeliveredSrc(project);
+  if (src && !project.messages.some((message) => message.attachments?.some((item) => item.src === src))) {
+    project.messages.push({
+      id: createId("msg"),
+      role: "assistant",
+      content: "Video ready.",
+      createdAt: nowIso(),
+      attachments: [{ kind: "video", src, poster: project.batches[0]?.framePublicPath, label: "Video ready" }],
+    });
+  }
+}
+
+function failProduce(project: Project, message: string) {
+  project.keepGenerating = false;
+  project.produceError = message;
+  for (const batch of project.batches) {
+    if (batch.videoPublicPath || batch.videoRemoteUrl) continue;
+    if (!realKieVideoTaskId(batch.kieVideoTaskId)) delete batch.kieVideoTaskId;
+    batch.status = "error";
+    batch.error = message;
+  }
+}
+
+export type ProduceState = "waiting" | "done" | "failed";
+
+// Prepares a new generation. Only projects started here are ever advanced by the worker.
+export async function startProduce(project: Project) {
+  planSeedanceBatches(project);
+  project.keepGenerating = true;
+  project.produceStartedAt = nowIso();
+  project.platesTried = false;
+  project.workflowStep = "produce";
+  delete project.produceError;
+  for (const character of project.characters) character.anchorAttempts = 0;
+  for (const batch of project.batches) {
+    if (batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)) continue;
+    delete batch.kieVideoTaskId;
+    delete batch.error;
+    batch.attempts = 0;
+    batch.status = "generating_video";
+  }
+  await saveSoon(project);
+  return project;
+}
+
+// Intros must finish before any story part is sent, because the story uses them as references.
+export async function advanceProduce(project: Project, onStatus: StatusFn): Promise<ProduceState> {
+  if (projectDeliveredSrc(project)) {
+    if (project.keepGenerating) finishProduce(project);
+    return "done";
+  }
+  if (!project.keepGenerating) return "failed";
+  const age = Date.now() - new Date(project.produceStartedAt || 0).getTime();
+  if (!Number.isFinite(age) || age > PRODUCE_LIMIT_MS) {
+    failProduce(project, "This video took too long. Try generating again.");
+    return "failed";
+  }
+  onStatus("Generating your video…");
+  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+    const intros = await stepCharacterIntros(project);
+    if (intros.failed) {
+      failProduce(project, intros.failed);
+      return "failed";
+    }
+    if (!project.platesTried) {
+      await ensureLocationPlates(project, onStatus);
+      project.platesTried = true;
+      await saveSoon(project);
+    }
+    if (!intros.ready) return "waiting";
+  }
+  const story = await stepStoryParts(project);
+  if (story.failed) {
+    failProduce(project, story.failed);
+    return "failed";
+  }
+  if (!story.ready) return "waiting";
+  if (project.batches.length > 1) await joinReadyParts(project, onStatus);
+  if (!projectDeliveredSrc(project)) return "waiting";
+  finishProduce(project);
+  await saveSoon(project);
+  return "done";
 }
 
 async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
@@ -356,7 +524,7 @@ async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortS
   const missing = storyPlaces(project).filter(
     (place) => !project.locationPlates!.some((plate) => samePlace(plate.name, place.name) && isHttpUrl(plate.remoteUrl)),
   );
-  for (const place of missing) {
+  await Promise.all(missing.map(async (place) => {
     onStatus("Generating your video…");
     try {
       const photo = place.photo
@@ -386,34 +554,7 @@ async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortS
       if (isAbortError(error)) throw error;
       onStatus(`Couldn't build ${place.name}. The story will still generate.`);
     }
-  }
-}
-
-export async function ensureLongformAnchors(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
-  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return project;
-  throwIfAborted(abortSignal);
-  await ensureCharacterAnchors(project, onStatus, abortSignal);
-  await ensureLocationPlates(project, onStatus, abortSignal);
-  return project;
-}
-
-async function resumeLongformAnchors(project: Project) {
-  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return false;
-  let changed = false;
-  for (const character of leadCharacters(project)) {
-    if (!characterHasDialogue(project, character)) continue;
-    const taskId = realKieVideoTaskId(character.anchorVideoTaskId);
-    if (!taskId || hasFreshAnchor(character)) continue;
-    const peek = await peekKieTask(taskId);
-    if (peek.status === "success") {
-      await rememberAnchor(project, character, peek.url);
-      changed = true;
-    } else if (peek.status === "fail") {
-      delete character.anchorVideoTaskId;
-      changed = true;
-    }
-  }
-  return changed;
+  }));
 }
 
 type LookResult = {
@@ -968,104 +1109,6 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   return true;
 }
 
-function storyIntrosReady(project: Project) {
-  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) return true;
-  return leadCharacters(project)
-    .filter((character) => characterHasDialogue(project, character) && hasUsableLook(character))
-    .every((character) => hasFreshAnchor(character));
-}
-
-async function resumeUnsentStoryJobs(project: Project) {
-  if (!produceShouldResumeStory(project) || !storyIntrosReady(project)) return false;
-  let changed = false;
-  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
-    if (!storyBatchNeedsSubmit(batch) || batch.error?.startsWith("resume:")) continue;
-    try {
-      if (await submitStoryBatch(project, batch, () => undefined)) changed = true;
-    } catch (error) {
-      if (!realKieVideoTaskId(batch.kieVideoTaskId)) {
-        batch.status = "error";
-        batch.error = `resume: ${error instanceof Error ? error.message : "Couldn't start this part."}`;
-        delete batch.kieVideoTaskId;
-      }
-      changed = true;
-      await saveSoon(project);
-    }
-  }
-  return changed;
-}
-
-async function submitMissingStoryJobs(
-  project: Project,
-  onStatus: StatusFn,
-  abortSignal?: AbortSignal,
-  options?: { force?: boolean },
-) {
-  if (projectDeliveredSrc(project) || !project.scenes.length) return false;
-  if (!options?.force) return false;
-  throwIfAborted(abortSignal);
-  planSeedanceBatches(project);
-  let submitted = false;
-  for (const batch of [...project.batches].sort((a, b) => a.index - b.index)) {
-    if (!storyBatchNeedsSubmit(batch)) continue;
-    try {
-      if (await submitStoryBatch(project, batch, onStatus, abortSignal)) submitted = true;
-    } catch (error) {
-      if (isAbortError(error)) throw error;
-      if (!realKieVideoTaskId(batch.kieVideoTaskId)) {
-        batch.status = "error";
-        batch.error = error instanceof Error ? error.message : "Couldn't start this part.";
-        delete batch.kieVideoTaskId;
-      }
-      await saveSoon(project);
-    }
-  }
-  return submitted;
-}
-
-export async function generatePlannedVideos(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
-  throwIfAborted(abortSignal);
-  project.keepGenerating = true;
-  project.produceStartedAt = nowIso();
-  planSeedanceBatches(project);
-  for (const batch of project.batches) {
-    if (!batch.videoPublicPath && !batch.videoRemoteUrl && !realKieVideoTaskId(batch.kieVideoTaskId)) {
-      batch.status = "generating_video";
-    }
-  }
-  await saveSoon(project);
-  const longform = !shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
-  if (longform) {
-    void ensureLocationPlates(project, onStatus, abortSignal).catch(() => undefined);
-    await ensureCharacterAnchors(project, onStatus, abortSignal);
-    const missing = leadCharacters(project).filter(
-      (character) => characterHasDialogue(project, character) && hasUsableLook(character) && !hasFreshAnchor(character),
-    );
-    if (missing.length) {
-      throw new Error(
-        `Couldn't finish the intro for ${missing.map((character) => character.name).join(", ")}. The story was not sent.`,
-      );
-    }
-  }
-  await submitMissingStoryJobs(project, onStatus, abortSignal, { force: true });
-
-  const settled = await Promise.allSettled(
-    project.batches.map(async (batch) => {
-      if (batch.videoPublicPath || batch.videoRemoteUrl) return;
-      const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
-      if (!taskId) return;
-      onStatus("Generating your video…");
-      const remoteUrl = await waitForTask(taskId, undefined, "video");
-      await attachGeneratedVideo(project, batch, remoteUrl);
-      await saveSoon(project);
-    }),
-  );
-  await saveSoon(project);
-  const failed = settled.find((result) => result.status === "rejected");
-  if (!failed) await joinReadyParts(project, onStatus);
-  if (failed && failed.status === "rejected") throw failed.reason;
-}
-
 function readyParts(project: Project) {
   return [...project.batches]
     .filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl)
@@ -1074,14 +1117,18 @@ function readyParts(project: Project) {
 
 async function joinReadyParts(project: Project, onStatus: StatusFn) {
   const parts = readyParts(project);
-  if (parts.length < 2 || parts.length !== project.batches.length) return;
+  if (parts.length < 2 || parts.length !== project.batches.length) return false;
   const key = parts.map((batch) => `${batch.index}:${batch.videoRemoteUrl || batch.videoPublicPath}`).join("|");
   const existing = project.joinedVideoPublicPath || project.joinedVideoRemoteUrl;
-  if (project.joinedSource === key && existing) return;
+  if (existing) return false;
   onStatus("Generating your video…");
   const buffers = [];
   for (const batch of parts) {
-    buffers.push(await readPublicFile(batch.videoRemoteUrl || batch.videoPublicPath || ""));
+    const src =
+      batch.videoPublicPath && !isOpenRouterContent(batch.videoPublicPath)
+        ? batch.videoPublicPath
+        : batch.videoRemoteUrl || batch.videoPublicPath || "";
+    buffers.push(await readPublicFile(src));
   }
   const joined = await concatVideoBuffers(buffers);
   const saved = await storeGeneratedFile({
@@ -1112,6 +1159,7 @@ async function joinReadyParts(project: Project, onStatus: StatusFn) {
     createdAt: nowIso(),
   });
   await saveSoon(project);
+  return true;
 }
 
 export async function generateBatchVideo(

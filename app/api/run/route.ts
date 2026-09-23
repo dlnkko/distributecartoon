@@ -2,13 +2,15 @@ import { after } from "next/server";
 import { isAbortError } from "@/lib/abort";
 import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
-import { recoverPendingVideos, resetInFlightBatches } from "@/lib/pipeline";
-import { getProject, saveProject } from "@/lib/store";
+import { resetInFlightBatches, startProduce } from "@/lib/pipeline";
+import { driveProduce } from "@/lib/produce";
+import { getProject } from "@/lib/store";
 import type { AgentMode, Project, StudioEvent } from "@/lib/types";
+import { projectDeliveredSrc } from "@/lib/video-jobs";
 
 export const runtime = "nodejs";
-// Intros finish before the story is sent. Fluid compute allows 800s (~13 min).
-export const maxDuration = 800;
+// Vercel Hobby caps functions at 300s. Longer videos keep going through /api/worker.
+export const maxDuration = 300;
 
 const produceLocks = new Map<string, Promise<void>>();
 
@@ -77,34 +79,20 @@ function streamEvents(work: Promise<void>, bus: ReturnType<typeof eventBus>) {
   );
 }
 
-async function finishProduce(project: Project, send: (event: StudioEvent) => void) {
+async function runProduce(project: Project, send: (event: StudioEvent) => void) {
   try {
     send({ type: "project", project });
-    await runAgent({
-      project,
-      mode: "produce",
-      abortSignal: undefined,
-      onEvent: (event) => {
-        if (event.type === "status" && event.text) send({ type: "status", text: event.text });
-        if (event.type === "project" && event.project) send({ type: "project", project: event.project });
-      },
+    const driven = await driveProduce(project.id, 240_000, {
+      onStatus: (text) => send({ type: "status", text }),
+      onProject: (next) => send({ type: "project", project: next }),
     });
-    const latest = (await getProject(project.id)) || project;
-    await recoverPendingVideos(latest);
+    const latest = driven || (await getProject(project.id)) || project;
     send({ type: "project", project: latest });
-    send({ type: "done" });
+    if (latest.produceError) send({ type: "error", text: latest.produceError });
   } catch (error) {
-    const latest = (await getProject(project.id)) || project;
-    await recoverPendingVideos(latest).catch(() => undefined);
-    send({ type: "project", project: latest });
-    if (!isAbortError(error)) {
-      send({
-        type: "error",
-        text: error instanceof Error ? error.message : String(error),
-      });
-    }
-    send({ type: "done" });
+    console.error("produce request failed", project.id, error);
   }
+  send({ type: "done" });
 }
 
 export async function POST(request: Request) {
@@ -125,9 +113,17 @@ export async function POST(request: Request) {
   }
 
   if (body.mode === "produce") {
-    project.workflowStep = "produce";
-    await recoverPendingVideos(project);
-    await saveProject(project);
+    if (!project.keepGenerating || projectDeliveredSrc(project)) {
+      if (projectDeliveredSrc(project)) {
+        const bus = eventBus();
+        const work = Promise.resolve().then(() => {
+          bus.send({ type: "project", project });
+          bus.send({ type: "done" });
+        });
+        return streamEvents(work, bus);
+      }
+      await startProduce(project);
+    }
 
     const existing = produceLocks.get(project.id);
     if (existing) {
@@ -143,7 +139,7 @@ export async function POST(request: Request) {
     }
 
     const bus = eventBus();
-    const work = finishProduce(project, bus.send);
+    const work = runProduce(project, bus.send);
     produceLocks.set(project.id, work);
     void work.finally(() => {
       if (produceLocks.get(project.id) === work) produceLocks.delete(project.id);

@@ -1,7 +1,8 @@
 import OpenAI from "openai";
 import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
-import { generateBatchVideo, generatePlannedVideos, planSeedanceBatches, summarizeLibrary } from "./pipeline";
+import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
+import { driveProduce } from "./produce";
 import { englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { estimateSceneSeconds, parseDurationFromText, sceneHasStory, shouldGenerateOneShot } from "./timing";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
@@ -714,39 +715,9 @@ export async function runAgent(options: {
 
   if (mode === "produce") {
     const onStatus = (text: string) => options.onEvent({ type: "status", text });
-    await generatePlannedVideos(options.project, onStatus, options.abortSignal);
-    options.onEvent({ type: "project", project: options.project });
-    const joined = options.project.joinedVideoPublicPath || options.project.joinedVideoRemoteUrl;
-    const ready = joined
-      ? [{ src: joined, poster: options.project.batches[0]?.framePublicPath, label: "Video ready" }]
-      : options.project.batches
-          .filter((batch) => batch.videoPublicPath || batch.videoRemoteUrl)
-          .map((batch) => ({
-            src: batch.videoPublicPath || batch.videoRemoteUrl || "",
-            poster: batch.framePublicPath,
-            label: "Video ready",
-          }));
-    const unseen = ready.filter(
-      (item) => item.src && !options.project.messages.some((message) => message.attachments?.some((attachment) => attachment.src === item.src)),
-    );
-    if (unseen.length) {
-      options.project.messages.push({
-        id: createId("msg"),
-        role: "assistant",
-        content: "Video ready.",
-        createdAt: new Date().toISOString(),
-        attachments: unseen.map((item) => ({
-          kind: "video" as const,
-          src: item.src,
-          poster: item.poster,
-          label: item.label,
-        })),
-      });
-      await saveProject(options.project);
-    }
-    options.project.workflowStep = "produce";
-    await saveProject(options.project);
-    options.onEvent({ type: "project", project: options.project });
+    await startProduce(options.project);
+    const driven = await driveProduce(options.project.id, 240_000, { onStatus });
+    options.onEvent({ type: "project", project: driven || options.project });
     return;
   }
 

@@ -45,10 +45,11 @@ export function projectIsGenerating(
     "batches" | "joinedVideoPublicPath" | "joinedVideoRemoteUrl" | "produceStartedAt" | "keepGenerating"
   > | null,
 ) {
-  if (!project || projectDeliveredSrc(project) || !projectAwaitingVideo(project)) return false;
+  if (!project || projectDeliveredSrc(project)) return false;
+  if (project.keepGenerating) return true;
+  if (!projectAwaitingVideo(project)) return false;
   const started = Date.now() - new Date(project.produceStartedAt || 0).getTime();
-  const windowMs = project.keepGenerating ? 24 * 60 * 60 * 1000 : 2 * 60 * 60 * 1000;
-  return Boolean(project.produceStartedAt) && Number.isFinite(started) && started >= 0 && started < windowMs;
+  return Boolean(project.produceStartedAt) && Number.isFinite(started) && started >= 0 && started < 2 * 60 * 60 * 1000;
 }
 
 export function realKieVideoTaskId(taskId?: string) {
@@ -57,29 +58,9 @@ export function realKieVideoTaskId(taskId?: string) {
   return id;
 }
 
-// The produce function may run for 800s while it records character intros.
-// Resuming sooner would send the story before those videos exist.
-const STORY_RESUME_AFTER_MS = 14 * 60 * 1000;
-const STORY_RESUME_BEFORE_MS = 24 * 60 * 60 * 1000;
-
 export function storyBatchNeedsSubmit(
   batch: Pick<Batch, "videoPublicPath" | "videoRemoteUrl" | "kieVideoTaskId">,
 ) {
   if (batch.videoPublicPath || batch.videoRemoteUrl) return false;
   return !realKieVideoTaskId(batch.kieVideoTaskId);
-}
-
-export function produceShouldResumeStory(
-  project?: Pick<
-    Project,
-    "produceStartedAt" | "batches" | "joinedVideoPublicPath" | "joinedVideoRemoteUrl" | "keepGenerating"
-  > | null,
-  now = Date.now(),
-) {
-  if (!project?.keepGenerating || !project.produceStartedAt || !project.batches.length || projectDeliveredSrc(project)) {
-    return false;
-  }
-  const age = now - new Date(project.produceStartedAt).getTime();
-  if (!Number.isFinite(age) || age < STORY_RESUME_AFTER_MS || age >= STORY_RESUME_BEFORE_MS) return false;
-  return project.batches.some((batch) => storyBatchNeedsSubmit(batch));
 }

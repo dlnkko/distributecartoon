@@ -1,10 +1,20 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
 import { getAuthUser, loadOwnedProject } from "@/lib/auth";
 import { normalizeAspectRatio, clampTotalDuration, createId } from "@/lib/ids";
 import { recoverPendingVideos } from "@/lib/pipeline";
+import { driveProduce } from "@/lib/produce";
+import type { Project } from "@/lib/types";
+
+// Polling while the tab is open also moves a generation forward. The lease keeps
+// this from racing the cron worker.
+function nudgeGenerations(projects: Project[]) {
+  const live = projects.filter((project) => project.keepGenerating);
+  if (!live.length) return;
+  after(Promise.allSettled(live.map((project) => driveProduce(project.id, 45_000))));
+}
 import { createProject, deleteProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
 import type { AspectRatio, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 
@@ -16,6 +26,7 @@ export async function GET(request: Request) {
   if (id) {
     const loaded = await loadOwnedProject(id);
     if ("response" in loaded) return loaded.response;
+    nudgeGenerations([loaded.project]);
     try {
       return NextResponse.json(await recoverPendingVideos(loaded.project));
     } catch {
@@ -23,12 +34,13 @@ export async function GET(request: Request) {
     }
   }
   const list = await listProjects(user.id);
+  nudgeGenerations(list);
   await Promise.all(
     list.map(async (project) => {
       try {
         await recoverPendingVideos(project);
       } catch {
-        // Keep the last saved project if Kie is unreachable.
+        // Keep the last saved project if OpenRouter is unreachable.
       }
     }),
   );

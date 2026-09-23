@@ -1,8 +1,6 @@
 import assert from "node:assert/strict";
-import { produceShouldResumeStory, storyBatchNeedsSubmit } from "../lib/video-jobs";
+import { projectIsGenerating, storyBatchNeedsSubmit } from "../lib/video-jobs";
 import type { Project } from "../lib/types";
-
-const now = Date.parse("2026-09-22T22:00:00.000Z");
 
 function project(patch: Partial<Project>): Project {
   return {
@@ -47,70 +45,31 @@ assert.equal(storyBatchNeedsSubmit({ ...planned, kieVideoTaskId: "pending" }), t
 assert.equal(storyBatchNeedsSubmit({ ...planned, kieVideoTaskId: "job_123" }), false);
 assert.equal(storyBatchNeedsSubmit({ ...planned, videoPublicPath: "/v.mp4" }), false);
 
-const stuck = project({
+const live = project({
   keepGenerating: true,
-  produceStartedAt: "2026-09-22T21:45:00.000Z",
-  batches: [planned],
+  produceStartedAt: "2026-09-20T10:00:00.000Z",
+  batches: [{ ...planned, status: "generating_video" }],
 });
-assert.equal(produceShouldResumeStory(stuck, now), true, "a produce stuck past the server wait should send the story");
-
+assert.equal(projectIsGenerating(live), true, "a live generation shows until the worker finishes it");
 assert.equal(
-  produceShouldResumeStory({ ...stuck, produceStartedAt: "2026-09-22T21:50:00.000Z" }, now),
-  false,
-  "a produce still inside the 13 minute server wait must keep recording intros",
-);
-
-assert.equal(
-  produceShouldResumeStory({ ...stuck, produceStartedAt: "2026-09-22T21:58:00.000Z" }, now),
-  false,
-  "a produce that just started must not be submitted twice",
-);
-
-assert.equal(
-  produceShouldResumeStory(
-    { ...stuck, batches: [{ ...planned, kieVideoTaskId: "job_123", status: "generating_video" }] },
-    now,
-  ),
-  false,
-  "a story job already on OpenRouter is left alone",
-);
-
-assert.equal(
-  produceShouldResumeStory({ ...stuck, batches: [{ ...planned, videoPublicPath: "/done.mp4", status: "done" }] }, now),
-  false,
-  "a finished video is not generated again",
-);
-
-assert.equal(
-  produceShouldResumeStory(
-    {
-      ...stuck,
-      batches: [
-        { ...planned, videoPublicPath: "/a.mp4", status: "done" },
-        { ...planned, id: "batch_2", index: 2 },
-      ],
-      joinedVideoPublicPath: "/full.mp4",
-    },
-    now,
-  ),
-  false,
-  "a delivered film is not generated again",
-);
-
-assert.equal(produceShouldResumeStory(project({ batches: [planned] }), now), false);
-assert.equal(
-  produceShouldResumeStory({ ...stuck, keepGenerating: false }, now),
-  false,
-  "a video from before this generation is not sent again",
-);
-assert.equal(
-  produceShouldResumeStory({ ...stuck, produceStartedAt: "2026-09-22T18:00:00.000Z" }, now),
+  projectIsGenerating({ ...live, batches: [{ ...planned, status: "planned" }] }),
   true,
-  "coming back later the same day still finishes this video",
+  "intros still recording count as generating",
 );
 assert.equal(
-  produceShouldResumeStory({ ...stuck, produceStartedAt: "2026-09-21T20:00:00.000Z" }, now),
+  projectIsGenerating({ ...live, batches: [{ ...planned, videoPublicPath: "/v.mp4", status: "done" }] }),
   false,
+  "a delivered video is not generating",
+);
+assert.equal(
+  projectIsGenerating({ ...live, keepGenerating: false, batches: [{ ...planned, status: "error" }] }),
+  false,
+  "a failed generation stops showing as generating",
+);
+assert.equal(
+  projectIsGenerating(project({ produceStartedAt: "2026-09-20T10:00:00.000Z", batches: [planned] })),
+  false,
+  "old videos from before the worker are never picked up",
 );
 
-console.log("story resume checks passed");
+console.log("produce state checks passed");

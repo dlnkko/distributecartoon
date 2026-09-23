@@ -104,14 +104,25 @@ export async function storeGeneratedFile(options: {
   contentType?: string;
 }): Promise<StoredFile> {
   const saved = writeGeneratedBuffer(options.buffer, options.relativeParts);
-  const hosted = await publishGeneratedBuffer(
-    options.project,
-    options.buffer,
-    options.relativeParts,
-    options.contentType,
-  );
+  let hosted: string | undefined;
+  try {
+    hosted = await publishGeneratedBuffer(
+      options.project,
+      options.buffer,
+      options.relativeParts,
+      options.contentType,
+    );
+  } catch {
+    hosted = undefined;
+  }
   if (hosted) return { ...saved, publicPath: hosted };
-  if (options.project.ownerId) throw new Error("Couldn't store that image.");
+  if (options.project.ownerId) {
+    // The background worker has no user session for Supabase Storage, so Fal hosts the file instead.
+    const { uploadFalBuffer } = await import("./fal");
+    const name = options.relativeParts.at(-1) || "asset.bin";
+    const url = await uploadFalBuffer(options.buffer, name, options.contentType || mimeFromName(name));
+    return { ...saved, publicPath: url };
+  }
   return saved;
 }
 
@@ -141,7 +152,7 @@ export async function downloadToPublic(remoteUrl: string, relativeParts: string[
 
 export async function readPublicFile(publicPath: string) {
   if (/^https?:\/\//i.test(publicPath)) {
-    const response = await fetch(publicPath);
+    const response = await fetch(publicPath, { headers: downloadHeaders(publicPath) });
     if (!response.ok) throw new Error(`Couldn't read ${publicPath}`);
     return Buffer.from(await response.arrayBuffer());
   }

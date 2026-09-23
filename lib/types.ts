@@ -61,6 +61,7 @@ export type Character = {
   anchorVideoPublicPath?: string;
   anchorVideoRemoteUrl?: string;
   anchorVideoTaskId?: string;
+  anchorAttempts?: number;
   anchorSourceUrl?: string;
   latestVideoFileName?: string;
   latestVideoPublicPath?: string;
@@ -122,6 +123,7 @@ export type Batch = {
   videoPublicPath?: string;
   videoRemoteUrl?: string;
   kieVideoTaskId?: string;
+  attempts?: number;
 };
 
 export type ArchivedVideo = {
@@ -169,6 +171,8 @@ export type Project = {
   joinedSource?: string;
   produceStartedAt?: string;
   keepGenerating?: boolean;
+  platesTried?: boolean;
+  produceError?: string;
   pendingQuestions: string[];
   messages: ChatMessage[];
   createdAt: string;

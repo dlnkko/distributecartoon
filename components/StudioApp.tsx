@@ -1959,7 +1959,9 @@ function ProduceStep({
         ) : null}
       </div>
       {working && notifyHint ? <p className="text-right text-xs text-[var(--muted)]">{notifyHint}</p> : null}
-      {!working && status ? <p className="text-sm text-[var(--danger)]">{status}</p> : null}
+      {!working && (status || project.produceError) ? (
+        <p className="text-sm text-[var(--danger)]">{status || project.produceError}</p>
+      ) : null}
 
       <div>
         <VideoStage
