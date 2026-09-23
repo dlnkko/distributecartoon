@@ -88,6 +88,7 @@ const noDoor = structuredClone(project);
 noDoor.scenes[3].summary = "Ben sips a drink next to Ana.";
 assert.match(continuityPass(noDoor).get(4)!.locks.join(" "), /Ben walks back in on camera/);
 
+process.env.VIDEO_PROMPT_FORMAT = "compact";
 const images = [
   { url: "a", kind: "character" as const, name: "Ben" },
   { url: "b", kind: "location" as const, name: "Coffee shop" },
@@ -115,6 +116,17 @@ assert.equal((lastScene.match(/I forgot my keys/g) || []).length, 1);
 assert.equal(projectSeed(project), projectSeed(project));
 assert.match(packedScenePrompt(project, [1], "", 6), /CHARACTERS: Ana/);
 
-console.log(prompt);
-console.log("WORDS", prompt.split(/\s+/).length);
+delete process.env.VIDEO_PROMPT_FORMAT;
+const brief = labeledReferencePrompt({ images, videos, videoPrompt: "", style: "pixar", project, sceneIndexes: [1, 2, 3, 4], duration: 24 });
+assert.match(brief, /^24 seconds, 16:9, 24fps\. One generation, 4 shots: hard cuts at 6\.00s, 12\.00s and 18\.00s/);
+assert.match(brief, /LANGUAGE: ENGLISH/);
+assert.match(brief, /VOICE — BEN/);
+assert.match(brief, /@Video1 as character and voice reference — ANA/);
+assert.match(brief, /@Image2 as the location — Coffee shop/);
+assert.match(brief, /18\.00s–24\.00s — SHOT 4 · SHOT 4 — hard cut at 18\.00s/);
+assert.match(brief, /BEN \(@Image1\) speaks on camera, lips forming every word: \{I forgot my keys\.\} \((?:19|20)\.\d\ds–/);
+assert.match(brief, /No music, no score, no instruments/);
+assert.match(brief, /Real-world physics hold/);
+
+console.log(brief);
 console.log("continuity checks passed");

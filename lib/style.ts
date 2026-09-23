@@ -1119,8 +1119,267 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
   return [header.join("\n"), ...blocks].join("\n\n").replace(/[ \t]{2,}/g, " ").trim();
 }
 
+function exactSeconds(scenes: Array<Scene | undefined>, total?: number) {
+  const raw = scenes.map((scene) => Math.max(1.5, scene?.estimatedSeconds || 4));
+  const sum = raw.reduce((acc, value) => acc + value, 0);
+  const target = total && total > 0 ? total : sum;
+  const scaled = raw.map((value) => Math.round((value / sum) * target * 10) / 10);
+  const drift = Math.round((target - scaled.reduce((acc, value) => acc + value, 0)) * 10) / 10;
+  if (scaled.length) scaled[scaled.length - 1] = Math.round((scaled[scaled.length - 1] + drift) * 10) / 10;
+  return { durations: scaled, total: target };
+}
+
+function secondsLabel(value: number) {
+  return `${value.toFixed(2)}s`;
+}
+
+function spokenLanguage(project: Project) {
+  const lines = project.scenes.flatMap((scene) => scene.dialogue.map((line) => line.line)).join(" ");
+  if (!lines.trim()) return { label: "ENGLISH", speech: "American English" };
+  const spanish =
+    /[ñ¿¡áéíóú]/i.test(lines) ||
+    (lines.match(/\b(que|el|la|los|las|de|y|es|no|por|para|con|pero|como|está|estoy|yo|tú|qué)\b/gi) || []).length >
+      (lines.match(/\b(the|and|is|you|to|of|it|that|what|this|are|not|with|but)\b/gi) || []).length;
+  return spanish ? { label: "SPANISH", speech: "natural Latin American Spanish" } : { label: "ENGLISH", speech: "American English" };
+}
+
+function wordsIn(text: string) {
+  return text.split(/\s+/).filter(Boolean).length;
+}
+
+function shotTitle(scene: Scene | undefined, index: number) {
+  const title = (scene?.title || "").replace(/[."]+$/g, "").trim();
+  return (title || `Shot ${index + 1}`).toUpperCase();
+}
+
+function voiceDescription(project: Project, name: string) {
+  const character = findSpeakerCharacter(project, name);
+  const notes = (character?.voiceNotes || "").trim();
+  if (notes) return notes.replace(/[. ]+$/, "");
+  const who = (character?.description || "")
+    .replace(/\b(claymation|pixar|stop-motion)\s+(style\s+)?/gi, "")
+    .split(/[.;,]|\bwith\b|\bwearing\b/i)[0]
+    .trim()
+    .split(/\s+/)
+    .slice(0, 6)
+    .join(" ");
+  return who ? `natural and clear, the voice of a ${who.replace(/^(?:a|an|the)\s+/i, "")}` : "natural and clear";
+}
+
+export function directorBriefPrompt(options: CompactPromptOptions) {
+  const { project, sceneIndexes } = options;
+  const images = options.images || [];
+  const videos = options.videos || [];
+  const { people, swaps } = buildTags(project, images, videos);
+  const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
+  const { durations, total } = exactSeconds(scenes, options.maxSeconds);
+  const shots = continuityPass(project);
+  const look = project.style === "claymation" ? "Claymation" : "Pixar";
+  const language = spokenLanguage(project);
+  const tagOf = (name: string) => people.get(name.trim().toLowerCase());
+  const nameWithTag = (name: string) => {
+    const tag = tagOf(name);
+    const label = speakerLabel(project, name);
+    return tag ? `${label.toUpperCase()} (${tag})` : label.toUpperCase();
+  };
+
+  const starts: number[] = [];
+  durations.reduce((acc, value) => {
+    starts.push(acc);
+    return Math.round((acc + value) * 100) / 100;
+  }, 0);
+  const cuts = starts.slice(1);
+  const cutList = cuts.map(secondsLabel);
+  const cutSentence =
+    cuts.length > 1
+      ? `One generation, ${scenes.length} shots: hard cuts at ${cutList.slice(0, -1).join(", ")} and ${cutList[cutList.length - 1]} — this is the complete cut list.`
+      : cuts.length
+        ? `One generation, 2 shots: a single hard cut at ${cutList[0]} — this is the complete cut list.`
+        : "One generation, one continuous shot with no cuts.";
+  const aspect = project.aspectRatio === "9:16" ? "9:16" : "16:9";
+  const header = `${Math.round(total)} seconds, ${aspect}, 24fps. ${cutSentence} LANGUAGE: ${language.label}. Every spoken word is ${language.speech}, spoken by native speakers.`;
+
+  const speakers = new Map<string, { onCamera: number[]; offCamera: number[]; narrator: boolean }>();
+  scenes.forEach((scene, i) => {
+    const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
+    for (const line of scene?.dialogue || []) {
+      if (!line.speaker || !line.line) continue;
+      const narrator = isVoiceoverSpeaker(project, line.speaker);
+      const name = narrator ? "Narrator" : findSpeakerCharacter(project, line.speaker)?.name || line.speaker.trim();
+      const entry = speakers.get(name) || { onCamera: [], offCamera: [], narrator };
+      const list = !narrator && onScreen.includes(name.toLowerCase()) ? entry.onCamera : entry.offCamera;
+      if (!list.includes(i + 1)) list.push(i + 1);
+      speakers.set(name, entry);
+    }
+  });
+  const shotList = (values: number[]) =>
+    values.length === 1 ? `shot ${values[0]}` : `shots ${values.slice(0, -1).join(", ")} and ${values[values.length - 1]}`;
+  const voiceBlocks = [...speakers.entries()].map(([name, entry]) => {
+    if (entry.narrator) {
+      const narrator = project.characters.find((item) => isVoiceoverSpeaker(project, item.name));
+      const voice = (narrator?.voiceNotes || "").trim().replace(/[. ]+$/, "") || "a warm, close, even storyteller voice";
+      return `VOICE — NARRATOR (this description holds for every narrated word)\nThe narrator is never on screen and has no body in the film. Voice: ${voice}. Every mouth on screen stays closed while the narrator speaks. This exact voice, every line, every generation.`;
+    }
+    const tag = tagOf(name);
+    const where = [
+      entry.onCamera.length ? `in ${shotList(entry.onCamera)} ${speakerLabel(project, name)} speaks on camera, lips forming every word` : "",
+      entry.offCamera.length ? `in ${shotList(entry.offCamera)} the voice is heard off screen` : "",
+    ]
+      .filter(Boolean)
+      .join("; ");
+    const source = tag?.startsWith("@Video") ? `, the same voice heard in ${tag}` : "";
+    return `VOICE — ${speakerLabel(project, name).toUpperCase()} (this description holds for every word, off screen and on)\nThe speaker is ${speakerLabel(project, name)}${tag ? `, shown in ${tag}` : ""}. ${where.charAt(0).toUpperCase()}${where.slice(1)}, and it is audibly the same person. Voice: ${voiceDescription(project, name)}${source}. An even, natural pace, about three words per second; a small inhale before each sentence and a settled landing at its end. This exact voice, every line, every generation.`;
+  });
+
+  const assets: string[] = [];
+  videos.forEach((item, index) => {
+    const tag = `@Video${index + 1}`;
+    if (item.kind === "character") {
+      const outfit = characterRole(project, item.name);
+      assets.push(`${tag} as character and voice reference — ${speakerLabel(project, item.name).toUpperCase()}${outfit ? ` (${outfit})` : ""}. Keep face geometry, hair, skin, outfit, footwear and voice identical in every frame this character appears.`);
+    } else {
+      assets.push(`${tag} as the previous clip — match its characters, voices, light and grade.`);
+    }
+  });
+  images.forEach((item, index) => {
+    const tag = `@Image${index + 1}`;
+    const name = item.name.trim();
+    if (item.kind === "character") {
+      const outfit = characterRole(project, name);
+      assets.push(`${tag} as character reference — ${speakerLabel(project, name).toUpperCase()}${outfit ? ` (${outfit})` : ""}. Keep face geometry, hair, skin, outfit and footwear identical in every frame this character appears.`);
+    } else if (item.kind === "location") {
+      assets.push(`${tag} as the location — ${name}. Geography, layout and light direction are law.`);
+    } else if (item.kind === "product") {
+      assets.push(`${tag} as the product — ${productCueLabel(name, item.notes || "")}. Same packaging form, label, colours and branding every time it appears.`);
+    } else if (item.kind === "logo") {
+      assets.push(`${tag} as the logo — ${name}. Same mark and colours wherever it appears, placed as a physical object in the world.`);
+    } else if (name) {
+      assets.push(`${tag} as ${name}.`);
+    }
+  });
+  const extras = [...new Set(scenes.flatMap((scene) => (scene?.extraNames || []).map((name) => englishExtraName(name)).filter(Boolean)))];
+  if (extras.length) assets.push(`Background people: ${extras.join(", ")} — present only in the shots that name them.`);
+
+  const beats = scenes
+    .map((scene) => {
+      const title = (scene?.title || "").trim();
+      if (title) return title.replace(/[.]+$/, "");
+      return (scene?.summary || "").split(/(?<=[.!?])\s+/)[0].split(/\s+/).slice(0, 16).join(" ").replace(/[.]+$/, "");
+    })
+    .filter(Boolean);
+  const summary = `A ${look.toLowerCase()} short${project.title ? `, "${project.title}"` : ""}: ${applyTags(beats.join(" — then "), swaps)}.`;
+
+  const lens =
+    project.style === "claymation"
+      ? "Stop-motion claymation throughout: hand-sculpted clay with visible fingerprints and tool marks, miniature sets with real-scale textures, soft practical lighting, the slight frame-to-frame shimmer of handmade animation, shallow miniature depth of field. Each shot keeps its location's palette and light."
+      : "Pixar-style 3D animation throughout: soft global illumination, subsurface skin, rounded appealing shapes, expressive eyes, clean readable silhouettes; filmic depth of field with soft round bokeh; gentle motion blur at a 180° shutter. Each shot keeps its location's palette and light.";
+
+  const usedCameras: string[] = [];
+  let lastPlace = "";
+  const places: string[] = [];
+  const timing = scenes.map((scene, i) => {
+    const index = sceneIndexes[i];
+    const start = starts[i];
+    const end = Math.round((start + durations[i]) * 100) / 100;
+    const camera = safeCinematicCamera(scene, CAMERA_VARIETY[i % CAMERA_VARIETY.length], usedCameras, project);
+    usedCameras.push(camera);
+    const place = cleanPlace(scene?.location || "");
+    if (place && !places.some((item) => samePlace(item, place))) places.push(place);
+    const moved = place && !samePlace(place, lastPlace || "");
+    if (place) lastPlace = place;
+    const summaryText = withoutQuotedDialogue(rewriteProductContainers(scene?.summary || scene?.title || "", project), scene);
+    const space = `${scene?.title || ""} ${scene?.location || ""}`;
+    const action = withOnScreenProps(
+      expandMontageAction(summaryText) || ensurePhysicalLogic(ensureVisibleAction(summaryText), space),
+      project,
+      index,
+    );
+    const shot = shots.get(index);
+    const body = [moved ? `In ${place}.` : "", action, ...stagingLines(scene, project, camera), ...(shot?.locks || [])]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
+      .join(" ");
+    const visual = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
+
+    const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
+    const lines = (scene?.dialogue || []).filter((line) => line.speaker && line.line);
+    const window = end - start;
+    let cursor = start + (shot?.revealFirst ? window * 0.35 : Math.min(0.3, window * 0.1));
+    const needed = lines.reduce((acc, line) => acc + Math.max(1, wordsIn(line.line) / 2.8) + 0.2, 0);
+    const room = Math.max(0.5, end - 0.1 - cursor);
+    const squeeze = needed > room ? room / needed : 1;
+    const spoken = lines.map((line) => {
+      const text = line.line.replace(/^["']+|["']+$/g, "").trim();
+      const span = Math.max(1, wordsIn(text) / 2.8) * squeeze;
+      const from = cursor;
+      const to = Math.min(end - 0.05, from + span);
+      cursor = to + 0.2 * squeeze;
+      const range = `(${secondsLabel(from)}–${secondsLabel(to)})`;
+      if (isVoiceoverSpeaker(project, line.speaker)) return `Narrator voice-over, off screen, every mouth on screen closed: {${text}} ${range}.`;
+      const name = findSpeakerCharacter(project, line.speaker)?.name || line.speaker.trim();
+      const who = nameWithTag(name);
+      return onScreen.includes(name.toLowerCase())
+        ? `${who} speaks on camera, lips forming every word: {${text}} ${range}.`
+        : `${who}'s voice, heard off screen: {${text}} ${range}.`;
+    });
+
+    const heading = `${secondsLabel(start)}–${secondsLabel(end)} — SHOT ${i + 1} · ${shotTitle(scene, i)}${i ? ` — hard cut at ${secondsLabel(start)}` : ""}`;
+    return [heading, `${cameraTitle(camera)}. ${visual}`, ...spoken].join("\n");
+  });
+
+  const audio = `AUDIO MASTER — the entire ${Math.round(total)} seconds\nProduction audio only: the natural ambience of ${places.length ? places.join(", then ") : "each location"}, footsteps, cloth and prop sounds that match the action. Every spoken line lands inside its stated second-range per the VOICE blocks; every silence has an ambient bed. No music, no score, no instruments anywhere in the clip.`;
+
+  const identity = [...new Set(scenes.flatMap((scene) => sceneOnScreenNames(scene, project)))]
+    .map((name) => {
+      const tag = tagOf(name);
+      return tag ? `${speakerLabel(project, name)}'s face, hair, outfit and footwear match ${tag} in every frame they appear.` : "";
+    })
+    .filter(Boolean)
+    .join(" ");
+  const constraints = [
+    `CONSTRAINTS — hold for the entire ${Math.round(total)} seconds`,
+    [
+      `${look} style throughout.`,
+      cuts.length > 1
+        ? `The cuts at ${cutList.join(", ")} are the complete cut list.`
+        : cuts.length
+          ? `The cut at ${cutList[0]} is the only cut.`
+          : "The clip is one continuous shot.",
+      identity,
+      "Real-world physics hold in every shot: gravity pulls down, weight rests on contact surfaces, hands keep contact with what they hold, bodies and objects stay solid and never pass through walls, doors, furniture, vehicles or each other, and motion always runs forward, never mirrored or reversed.",
+      "Each character is one body at a time and appears once per frame; a clothing change is still the same person.",
+      "Screen direction holds across cuts: who is left, right, in front and behind stays until the action moves them. Props, background people and set pieces persist from shot to shot, and characters enter and leave on camera.",
+      "Speakers look at the person they address, not the lens, unless the scene breaks the fourth wall. Each line is spoken inside its own shot's second-range, after its speaker is on screen.",
+      [...speakers.values()].some((entry) => entry.narrator) ? "Narrator lines stay off screen with every mouth closed." : "",
+      "Characters keep the same body scale against chairs, tables and doors across cuts. Light direction holds steady within each shot from its first frame to its last.",
+    ]
+      .filter(Boolean)
+      .join(" "),
+  ].join("\n");
+
+  return [
+    header,
+    ...voiceBlocks,
+    assets.length ? `ASSETS\n${assets.join("\n")}` : "",
+    `SUMMARY\n${summary}`,
+    `LENS AND GRADE\n${lens}`,
+    `TIMING\n${timing.join("\n")}`,
+    audio,
+    constraints,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .replace(/[ \t]{2,}/g, " ")
+    .trim();
+}
+
+function videoPromptFor(options: CompactPromptOptions) {
+  return process.env.VIDEO_PROMPT_FORMAT === "compact" ? compactVideoPrompt(options) : directorBriefPrompt(options);
+}
+
 export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
-  return compactVideoPrompt({ project, sceneIndexes, maxSeconds });
+  return videoPromptFor({ project, sceneIndexes, maxSeconds });
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
@@ -1173,7 +1432,7 @@ export function labeledReferencePrompt(options: {
   duration?: number;
 }) {
   if (options.project && options.sceneIndexes?.length) {
-    return compactVideoPrompt({
+    return videoPromptFor({
       project: options.project,
       sceneIndexes: options.sceneIndexes,
       maxSeconds: options.duration,

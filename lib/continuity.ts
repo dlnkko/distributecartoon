@@ -411,7 +411,9 @@ export function continuityPass(project: Project) {
     // Audio: a line never starts before its speaker is visible.
     const speakers = [...new Set((scene.dialogue || []).map((line) => line.speaker?.trim()).filter((name): name is string => Boolean(name)))];
     const onScreenSpeakers = speakers.filter((name) => castKeys.has(name.toLowerCase()));
-    const revealFirst = REVEAL.test(text) && onScreenSpeakers.length > 0;
+    const revealFirst = lines.some(
+      (line) => REVEAL.test(line) && onScreenSpeakers.some((name) => nameAt(line, name) >= 0),
+    );
     if (revealFirst) {
       locks.push(`${listNames(onScreenSpeakers)} ${onScreenSpeakers.length > 1 ? "speak" : "speaks"} after appearing on screen.`);
     }
