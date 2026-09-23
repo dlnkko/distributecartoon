@@ -88,7 +88,6 @@ const noDoor = structuredClone(project);
 noDoor.scenes[3].summary = "Ben sips a drink next to Ana.";
 assert.match(continuityPass(noDoor).get(4)!.locks.join(" "), /Ben walks back in on camera/);
 
-process.env.VIDEO_PROMPT_FORMAT = "compact";
 const images = [
   { url: "a", kind: "character" as const, name: "Ben" },
   { url: "b", kind: "location" as const, name: "Coffee shop" },
@@ -103,49 +102,32 @@ const prompt = labeledReferencePrompt({
   sceneIndexes: [1, 2, 3, 4],
   duration: 24,
 });
-assert.match(prompt, /^GLOBAL: Pixar style, 16:9 horizontal\./);
-assert.match(prompt, /CHARACTERS: @Video1 as Ana \(young woman, green hoodie, blue jeans, white sneakers\); @Image1 as Ben/);
-assert.match(prompt, /REFERENCES: @Image2 is Coffee shop\./);
-assert.match(prompt, /SCENE 1 \(6s\) — Two-Shot:/);
+assert.match(prompt, /^Obey real-world physics:/);
+assert.match(prompt, /Continuity holds:/);
+assert.match(prompt, /Places, products and logos are @Image references from @Image1 on\. Products are always in Pixar style\./);
+assert.match(prompt, /Pixar style throughout the whole video\. SCENE 1 \(6s\)\./);
+assert.match(prompt, /Only @Video1 and @Image1 participate in this scene\./);
+assert.match(prompt, /@Image1 says: "You look tired\."/);
+assert.match(prompt, /at the table, as seen in @Image2/);
+assert.doesNotMatch(prompt, /Coffee shop|green hoodie|CHARACTERS:|REFERENCES:|Location:/);
 assert.doesNotMatch(prompt, /keys in hand/);
-assert.match(prompt, /Dialogue: @Image1 lipsyncs: "You look tired\."/);
-assert.doesNotMatch(prompt, /keep the same exact character|Obey real-world physics|\[NO BGM\]|No pop-in|No teleporting|never swap/i);
 const lastScene = prompt.slice(prompt.indexOf("SCENE 4"));
-assert.ok(lastScene.indexOf("revealed") < lastScene.indexOf("Dialogue:"));
+assert.ok(lastScene.indexOf('says: "I forgot my keys."') < lastScene.indexOf("revealed"));
 assert.equal((lastScene.match(/I forgot my keys/g) || []).length, 1);
+assert.match(prompt, /No background music\. Speak from 0s\. No repeated lines\.$/);
 assert.equal(projectSeed(project), projectSeed(project));
-assert.match(packedScenePrompt(project, [1], "", 6), /CHARACTERS: Ana/);
-
-delete process.env.VIDEO_PROMPT_FORMAT;
-const brief = labeledReferencePrompt({ images, videos, videoPrompt: "", style: "pixar", project, sceneIndexes: [1, 2, 3, 4], duration: 24 });
-assert.match(brief, /^24 seconds, 16:9, 24fps\. One generation, 4 shots: hard cuts at 6\.00s, 12\.00s and 18\.00s/);
-assert.match(brief, /LANGUAGE: ENGLISH/);
-assert.match(brief, /VOICE — BEN/);
-assert.match(brief, /@Video1 as character and voice reference — ANA/);
-assert.match(brief, /@Image2 as the location — Coffee shop/);
-assert.match(brief, /18\.00s–24\.00s — SHOT 4 · SHOT 4 — hard cut at 18\.00s/);
-assert.match(brief, /BEN \(@Image1\) speaks on camera, lips forming every word: \{I forgot my keys\.\} \((?:19|20)\.\d\ds–/);
-assert.match(brief, /No music, no score, no instruments/);
-assert.match(brief, /^RULES — Real-world physics/m);
-assert.match(brief, /Two-Shot\. Location: @Image2, Coffee shop\./);
+assert.match(packedScenePrompt(project, [1], "", 6), /SCENE 1 \(6s\)\..*Ana/);
 
 const narrated = structuredClone(project);
 narrated.scenes[1].dialogue = [{ speaker: "Narrator", line: "Some mornings start slower than others, and this was one of them." }];
 const narratorVideos = [...videos, { url: "n", kind: "narrator" as const, name: "Narrator" }];
 const withNarrator = labeledReferencePrompt({ images, videos: narratorVideos, videoPrompt: "", style: "pixar", project: narrated, sceneIndexes: [1, 2, 3, 4], duration: 24 });
-assert.match(withNarrator, /@Video2 as the NARRATOR voice reference — audio only/);
-assert.match(withNarrator, /The narrator's voice is @Video2: an off-screen voice-over reference/);
-assert.match(withNarrator, /NARRATOR \(@Video2\) voice-over, off screen, no lipsync/);
-assert.doesNotMatch(withNarrator, /@Video2 speaks on camera/);
+assert.match(withNarrator, /Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed/);
+assert.match(withNarrator, /Off-screen narrator voice-over, no lipsync, voice as heard in @Video2: "Some mornings start slower than others, and this was one of them\."/);
+assert.doesNotMatch(withNarrator, /@Video2 speaks|@Video2 says/);
 assert.match(narratorVoicePrompt(narrated), /no faces and no mouths[\s\S]*off-screen voice-over, heard only, with no lipsync/);
 assert.match(narratorVoicePrompt(narrated), /\{Some mornings start slower than others, and this was one…\}/);
 assert.deepEqual(narrationLines(narrated, [1]), []);
-
-process.env.VIDEO_PROMPT_FORMAT = "compact";
-const compactNarrated = labeledReferencePrompt({ images, videos: narratorVideos, videoPrompt: "", style: "pixar", project: narrated, sceneIndexes: [1, 2], duration: 12 });
-assert.match(compactNarrated, /Narrator \(@Video2 voice\): off-screen voice-over only, no lipsync/);
-assert.match(compactNarrated, /Dialogue: Narrator \(@Video2 voice\) voice-over \(off-screen, no lipsync, mouths closed\)/);
-delete process.env.VIDEO_PROMPT_FORMAT;
 
 const gym = {
   ...structuredClone(project),
@@ -171,8 +153,35 @@ const gymPrompt = labeledReferencePrompt({
   sceneIndexes: [1],
   duration: 8,
 });
-assert.match(gymPrompt, /Location: @Image1, home gym, warm golden light\. @Video1 leans on the rack\. The tiny @Video2 hops toward the larger @Video1\./);
-assert.doesNotMatch(gymPrompt, /home @Video|@Video1 Buddy|@Video2 Mascot|CUT to/);
+assert.match(gymPrompt, /@Video1 leans on the rack, as seen in @Image1\. The tiny @Video2 hops toward the larger @Video1\./);
+assert.doesNotMatch(gymPrompt, /home gym|warm golden|@Video1 Buddy|@Video2 Mascot|CUT to|Location:/);
+
+const productProject = {
+  ...structuredClone(project),
+  style: "claymation" as const,
+  scenes: [
+    scene(1, {
+      summary: "Ana holds the creatine gummies at the counter.",
+      characterNames: ["Ana"],
+      camera: "close-up",
+    }),
+  ],
+} as Project;
+const productPrompt = labeledReferencePrompt({
+  images: [
+    { url: "prod", kind: "product" as const, name: "creatine gummies" },
+    { url: "shop", kind: "location" as const, name: "Coffee shop" },
+  ],
+  videos: [{ url: "ana", kind: "character" as const, name: "Ana" }],
+  videoPrompt: "",
+  style: "claymation",
+  project: productProject,
+  sceneIndexes: [1],
+  duration: 6,
+});
+assert.match(productPrompt, /as seen in @Image1, in Claymation style/);
+assert.match(productPrompt, /at the counter, as seen in @Image2/);
+assert.doesNotMatch(productPrompt, /Coffee shop|same packaging/);
 
 console.log(withNarrator);
 console.log("continuity checks passed");

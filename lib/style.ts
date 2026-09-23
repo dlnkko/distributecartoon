@@ -1490,8 +1490,188 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     .trim();
 }
 
+function assetTags(swaps: TagSwap[]) {
+  return [...new Set(swaps.filter((swap) => !swap.person).map((swap) => swap.tag))];
+}
+
+function dropPlaceOnlySentences(text: string, locationTags: string[]) {
+  if (!locationTags.length) return text;
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => {
+      const tags = sentence.match(/@(?:Image|Video)\d+/g) || [];
+      return !(tags.length && tags.every((tag) => locationTags.includes(tag)));
+    })
+    .join(" ");
+}
+
+function imageKind(images: PromptRef[], tag: string) {
+  const index = Number(tag.replace("@Image", "")) - 1;
+  return images[index]?.kind || "";
+}
+
+function seenPhrase(tag: string, kind: string, look: string) {
+  if (kind === "product") return `as seen in ${tag}, in ${look} style`;
+  return `as seen in ${tag}`;
+}
+
+const PLACE_SPOT =
+  /\b((?:in|on|at|by|near|behind|beside|under|inside|next to|in front of)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:driver'?s seat|passenger seat|front seat|back seat|counter|bar|window|doorway|table|rack|bench|sofa|couch|desk|stage|corner|wheel|windshield|entrance|stairs|treadmill|seat))/i;
+
+function markAsSeen(text: string, tags: string[], images: PromptRef[], look: string) {
+  let next = text;
+  for (const tag of tags) {
+    const phrase = seenPhrase(tag, imageKind(images, tag), look);
+    next = next.replace(new RegExp(`\\b(?:a|an|the|at|in|inside|within|same)\\s+${escapeRegExp(tag)}\\b`, "gi"), phrase);
+    next = next.replace(new RegExp(`(?<!as seen in )${escapeRegExp(tag)}\\b`, "g"), phrase);
+  }
+  return next
+    .replace(/(?:\s*,?\s*as seen in @Image\d+(?:, in (?:Pixar|Claymation) style)?){2,}/gi, (match) => {
+      const unique = [...new Set(match.match(/@Image\d+/g) || [])];
+      return unique.map((tag) => `, ${seenPhrase(tag, imageKind(images, tag), look)}`).join("");
+    })
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+}
+
+function attachPlaceSpot(text: string, tag: string) {
+  if (new RegExp(`as seen in ${escapeRegExp(tag)}\\b`, "i").test(text)) return { text, attached: true };
+  const match = text.match(PLACE_SPOT);
+  if (!match || match.index === undefined) return { text, attached: false };
+  const spot = match[1];
+  const after = text.slice(match.index + spot.length);
+  const tail = /^[.!?]/.test(after) ? "" : ",";
+  return { text: `${text.slice(0, match.index)}${spot}, as seen in ${tag}${tail}${after}`, attached: true };
+}
+
+function ensureAsSeen(text: string, tags: string[], images: PromptRef[], look: string) {
+  let next = text;
+  const missing: string[] = [];
+  for (const tag of tags) {
+    if (imageKind(images, tag) === "location") {
+      const spot = attachPlaceSpot(next, tag);
+      next = spot.text;
+      if (spot.attached) continue;
+    }
+    if (new RegExp(`as seen in ${escapeRegExp(tag)}\\b`, "i").test(next)) continue;
+    missing.push(tag);
+  }
+  if (!missing.length) return next;
+  const sentence = missing.map((tag) => seenPhrase(tag, imageKind(images, tag), look)).join(" and ");
+  const body = next.replace(/[. ]+$/, "");
+  const line = sentence.charAt(0).toUpperCase() + sentence.slice(1);
+  return body ? `${body}. ${line}.` : `${line}.`;
+}
+
+function sceneAssetTags(project: Project, scene: Scene | undefined, images: PromptRef[]) {
+  if (!scene) return [];
+  const place = scene.location || "";
+  const cues = scenePropCues(project, scene.index);
+  const tags: string[] = [];
+  images.forEach((item, index) => {
+    const tag = `@Image${index + 1}`;
+    if (item.kind === "location" && place && samePlace(item.name, place)) tags.push(tag);
+    else if (
+      (item.kind === "product" || item.kind === "logo") &&
+      cues.some((cue) => cue.kind === item.kind && cue.label.trim().toLowerCase() === item.name.trim().toLowerCase())
+    ) {
+      tags.push(tag);
+    }
+  });
+  return tags;
+}
+
+function participateLine(names: string[], people: Map<string, string>, project: Project) {
+  const tags = names.map((name) => people.get(name.toLowerCase()) || speakerLabel(project, name)).filter(Boolean);
+  if (!tags.length) return "";
+  if (tags.length === 1) return `Only ${tags[0]} participates in this scene.`;
+  const list = tags.length === 2 ? `${tags[0]} and ${tags[1]}` : `${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]}`;
+  return `Only ${list} participate in this scene.`;
+}
+
+function sceneSays(project: Project, scene: Scene | undefined, people: Map<string, string>, narratorTag: string) {
+  const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
+  const parts: string[] = [];
+  for (const entry of scene?.dialogue || []) {
+    const text = (entry.line || "").replace(/^["']+|["']+$/g, "").trim();
+    if (!entry.speaker || !text) continue;
+    if (isVoiceoverSpeaker(project, entry.speaker)) {
+      const voice = narratorTag ? `, voice as heard in ${narratorTag}` : "";
+      parts.push(`Off-screen narrator voice-over, no lipsync${voice}: "${text}"`);
+      continue;
+    }
+    const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
+    const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
+    parts.push(onScreen.includes(name.toLowerCase()) ? `${who} says: "${text}"` : `${who} off-screen voice: "${text}"`);
+  }
+  return parts.join(" ");
+}
+
+function openingRules(continues: boolean, narrated: boolean, look: string) {
+  return [
+    "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection.",
+    "Continuity holds: each shot starts where the last one ended, with the same positions, screen sides, props and light.",
+    "Each character is one body, as seen in their reference, with the same face and outfit in every shot. Never duplicate anyone.",
+    `Places, products and logos are @Image references from @Image1 on. Products are always in ${look} style. Describe a place only when the scene stands in a specific spot inside that image.`,
+    continues ? "This clip picks up straight from the previous part." : "",
+    narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function simpleScenePrompt(options: CompactPromptOptions) {
+  const { project, sceneIndexes } = options;
+  const images = options.images || [];
+  const { people, swaps, narratorTag } = buildTags(project, images, options.videos || []);
+  const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
+  const seconds = fittedSeconds(scenes, options.maxSeconds);
+  const shots = continuityPass(project);
+  const look = project.style === "claymation" ? "Claymation" : "Pixar";
+  const locationTags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
+  const seenTags = assetTags(swaps);
+  const narrated = scenes.some((scene) => (scene?.dialogue || []).some((line) => line.speaker && isVoiceoverSpeaker(project, line.speaker)));
+  const continues = Boolean(project.scenes.length && sceneIndexes[0] !== project.scenes[0]?.index);
+  const usedCameras: string[] = [];
+
+  const blocks = sceneIndexes.map((index, i) => {
+    const scene = scenes[i];
+    const camera = safeCinematicCamera(scene, CAMERA_VARIETY[i % CAMERA_VARIETY.length], usedCameras, project);
+    usedCameras.push(camera);
+    const summary = withoutQuotedDialogue(rewriteProductContainers(scene?.summary || scene?.title || "", project), scene);
+    const space = `${scene?.title || ""} ${scene?.location || ""}`;
+    const action = expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space);
+    const locks = (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock));
+    const body = [action, ...locks]
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
+      .join(" ");
+    const tagged = dropPlaceOnlySentences(
+      scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project)),
+      locationTags,
+    );
+    const visual = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
+    return [
+      `SCENE ${i + 1} (${seconds[i]}s).`,
+      `${camera}.`,
+      participateLine(sceneOnScreenNames(scene, project), people, project),
+      sceneSays(project, scene, people, narratorTag),
+      visual,
+    ]
+      .filter(Boolean)
+      .join(" ");
+  });
+
+  return `${openingRules(continues, narrated, look)} ${look} style throughout the whole video. ${blocks.join(" CUT. ")} No background music. Speak from 0s. No repeated lines.`
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+}
+
 function videoPromptFor(options: CompactPromptOptions) {
-  return process.env.VIDEO_PROMPT_FORMAT === "compact" ? compactVideoPrompt(options) : directorBriefPrompt(options);
+  return simpleScenePrompt(options);
 }
 
 export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
