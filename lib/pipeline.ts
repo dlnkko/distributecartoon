@@ -1093,6 +1093,16 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     imageEntries.push(entry);
   }
 
+  for (const name of appearanceOrder(project)) {
+    const character = findCharacter(project, name);
+    if (!character || character.isExtra || isUnseenVoice(character)) continue;
+    const speaks = characterHasDialogue(project, character);
+    const hasVoice = speaks && Boolean(character.anchorVideoRemoteUrl || character.anchorVideoPublicPath);
+    if (hasVoice) continue;
+    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
+    if (portrait) add({ url: portrait, kind: "character", name: character.name });
+  }
+
   const places: string[] = [];
   for (const scene of project.scenes) {
     const place = (scene.location || "").trim();

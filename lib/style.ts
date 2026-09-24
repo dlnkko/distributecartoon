@@ -966,7 +966,10 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     const tag = `@Image${index + 1}`;
     const name = item.name.trim();
     if (!name) return;
-    if (item.kind === "character") return;
+    if (item.kind === "character") {
+      if (!people.has(name.toLowerCase())) people.set(name.toLowerCase(), tag);
+      return;
+    }
     if (item.kind === "product") refs.push(`${tag} is ${productCueLabel(name, item.notes || "")}, same packaging`);
     else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
     else refs.push(`${tag} is ${name}`);
@@ -1578,8 +1581,7 @@ function referenceLock(images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      if (item.kind === "character") return "";
-      const kind = item.kind === "location" ? "location" : item.kind;
+      const kind = item.kind === "character" ? "silent character" : item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
     .filter(Boolean);
@@ -1672,7 +1674,6 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       participateLine(sceneOnScreenNames(scene, project), people, project),
       visual,
       spoken,
-      "No background music.",
       placeTag ? `${placeTag}.` : "",
     ]
       .filter(Boolean)
@@ -1680,18 +1681,15 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   });
 
   const lead = [
-    `Keep the same exact character, voice, gestures as the reference.`,
     `${look} style throughout the whole video.`,
-    "Characters are @Video references only. @Image references are places and products. Each @Video keeps a distinct voice from that reference, different in pitch, pace, and tone, never flat or identical.",
-    "Each character keeps the same height, build, face, and features in every shot unless the story explicitly changes them in that shot. Each character speaks only their own lines. Never give one character's line to another.",
-    "Direct the scene: in one shot a character can speak and move at the same time. Cut only for a new angle, a new moment, or a separate action.",
+    "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
     referenceLock(images),
     continues ? "This clip picks up straight from the previous part." : "",
     narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
   ]
     .filter(Boolean)
     .join(" ");
-  return `${lead} ${blocks.join(" CUT. ")} ${videoCloseLead()}`
+  return `${lead} ${blocks.join(" CUT. ")} No background music.`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();

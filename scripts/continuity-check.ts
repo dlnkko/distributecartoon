@@ -102,14 +102,13 @@ const prompt = labeledReferencePrompt({
   sceneIndexes: [1, 2, 3, 4],
   duration: 24,
 });
-assert.match(prompt, /^Keep the same exact character, voice, gestures as the reference\. Pixar style throughout the whole video\./);
-assert.equal((prompt.match(/keep the same exact character/gi) || []).length, 1);
+assert.match(prompt, /^Pixar style throughout the whole video\./);
+assert.match(prompt, /Silent characters, places, and products are @Image/);
+assert.match(prompt, /@Image1 is Ben, a silent character/);
 assert.match(prompt, /SCENE 1 \(6s\)\./);
-assert.match(prompt, /Only @Video1 and Ben participate in this scene\./);
-assert.match(prompt, /Ben lipsyncs: "You look tired\."/);
-assert.match(prompt, /Characters are @Video references only/);
-assert.match(prompt, /No background music\. @Image2\./);
-assert.match(prompt, /Obey real-world physics:/);
+assert.match(prompt, /Only @Video1 and @Image1 participate in this scene\./);
+assert.match(prompt, /@Image1 lipsyncs: "You look tired\."/);
+assert.match(prompt, /No background music\.$/);
 assert.doesNotMatch(prompt, /keys in hand/);
 const lastScene = prompt.slice(prompt.indexOf("SCENE 4"));
 assert.ok(lastScene.indexOf("revealed") < lastScene.indexOf("lipsyncs:"));
@@ -156,7 +155,7 @@ assert.match(gymPrompt, /@Video1 leans on the rack, as seen in @Image1/);
 assert.match(gymPrompt, /The tiny @Video2 hops toward the larger @Video1/);
 assert.match(gymPrompt, /as seen in @Image1/);
 assert.doesNotMatch(gymPrompt, /home @Video|@Video1 Buddy|@Video2 Mascot|CUT to/);
-assert.equal((gymPrompt.match(/keep the same exact character/gi) || []).length, 1);
+assert.match(gymPrompt, /Speaking characters are @Video/);
 
 console.log(withNarrator);
 console.log("continuity checks passed");

@@ -25,12 +25,10 @@ export async function refineSeedancePrompt(draft: string) {
       model: ASTRA_MODEL,
       reasoning: { effort: "medium" },
       instructions: [
-        "Revise this Seedance video prompt. Return only the prompt.",
-        "Keep every SCENE heading, its duration, every @Video and @Image tag, every quoted line, and the closing physics paragraph. An @Image number means the same character or place in every scene.",
-        "Each character keeps the same height, build, face, and features unless that shot already says the story changes them.",
-        "Each character speaks only their own quoted line. Never move a line to another character and never repeat a line.",
-        "Fix actions that break real objects. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck.",
-        "Each shot continues the previous shot. Keep a day-to-night change or a flashback only when the action already says so.",
+        "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
+        "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
+        "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks.",
+        "Name which way a screen or object faces the camera. Each character speaks only their own line.",
       ].join(" "),
       input: trimmed,
     });
