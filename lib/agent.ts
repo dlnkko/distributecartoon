@@ -81,6 +81,7 @@ Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
 Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel.
 Each character keeps the same height, build, face, and features in every shot. Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
+A supporting character introduced once is that same person for the whole film. If the hero returns with his friends, those are the friends already introduced, with the same names, not new people. Never let a character's reference number later mean a place.
 Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
 Objects work the way they do in the world. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck. Do not invent a mechanism.
 Shots are a linear continuation. A cut from day to night, or a flashback, is allowed only when the story needs it, and that shot must say the time changed or that this is a flashback. Otherwise the next shot is the next moment.
@@ -784,7 +785,12 @@ export async function runAgent(options: {
   const userText =
     options.userText?.trim() ||
     (mode === "plan"
-      ? `Split the script into scenes with dialogue, action, and camera direction. Target total duration: ${options.project.targetDurationSeconds}s. Style: ${options.project.style}. Aspect: ${options.project.aspectRatio}. Call extract_storyboard once, then stop.`
+      ? `${
+          /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(options.project.scriptText) ||
+          /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(options.project.scriptText)
+            ? "The user already ordered this as a storyboard. Keep that scene order, those beats, and those characters. Do not merge, reorder, or replace a named person."
+            : "The user wrote a paragraph. Turn it into an ordered storyboard in the exact cause order they told, one beat per scene, naming each person once and reusing that name. Do not invent a different sequence."
+        } Target total duration: ${options.project.targetDurationSeconds}s. Style: ${options.project.style}. Aspect: ${options.project.aspectRatio}. Call extract_storyboard once, then stop.`
       : `The storyboard is approved. Do not rewrite scenes. ${
           shouldGenerateOneShot(options.project.targetDurationSeconds, options.project.scenes)
             ? `Generate this ${options.project.targetDurationSeconds}s ${options.project.style} short in ONE Seedance 2.5 take covering every scene at 480p.`

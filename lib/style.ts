@@ -1580,6 +1580,18 @@ function sceneAssetTags(project: Project, scene: Scene | undefined, images: Prom
   return tags;
 }
 
+function referenceLock(images: PromptRef[]) {
+  const parts = images
+    .map((item, index) => {
+      const name = item.name.trim();
+      if (!name) return "";
+      const kind = item.kind === "character" ? "character" : item.kind === "location" ? "location" : item.kind;
+      return `@Image${index + 1} is ${name}, a ${kind}`;
+    })
+    .filter(Boolean);
+  return parts.length ? `Reference tags stay fixed for the whole film: ${parts.join(". ")}.` : "";
+}
+
 function participateLine(names: string[], people: Map<string, string>, project: Project) {
   const tags = names.map((name) => people.get(name.toLowerCase()) || speakerLabel(project, name)).filter(Boolean);
   if (!tags.length) return "";
@@ -1677,6 +1689,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     `Keep the same exact character, voice, gestures as the reference.`,
     `${look} style throughout the whole video.`,
     "Each character keeps the same height, build, face, and features in every shot unless the story explicitly changes them in that shot. Each character speaks only their own lines. Never give one character's line to another.",
+    referenceLock(images),
     continues ? "This clip picks up straight from the previous part." : "",
     narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
   ]

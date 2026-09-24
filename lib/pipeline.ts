@@ -12,7 +12,7 @@ import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refi
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { packScenesIntoParts, scaleEstimatedSeconds, sceneHasStory, shouldGenerateOneShot } from "./timing";
-import type { Batch, Character, LocationPlate, Project, ReferenceAsset } from "./types";
+import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
 
@@ -1026,46 +1026,74 @@ function batchCastNames(project: Project, batch: Batch) {
   return leadNames(project, [...fromScenes, ...batch.characterNames]);
 }
 
-async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+function appearanceOrder(project: Project) {
+  const names: string[] = [];
+  const seen = new Set<string>();
+  for (const scene of project.scenes) {
+    for (const name of [...(scene.characterNames || []), ...(scene.extraNames || [])]) {
+      const key = name.trim().toLowerCase();
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      names.push(name.trim());
+    }
+  }
+  for (const character of leadCharacters(project)) {
+    const key = character.name.trim().toLowerCase();
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    names.push(character.name);
+  }
+  return names;
+}
+
+async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
   const imageEntries: PromptRef[] = [];
+  const seen = new Set<string>();
+  function add(entry: PromptRef) {
+    const key = `${entry.kind}:${entry.name.trim().toLowerCase()}`;
+    if (!entry.url || !entry.name.trim() || seen.has(key)) return;
+    seen.add(key);
+    imageEntries.push(entry);
+  }
+
+  for (const name of appearanceOrder(project)) {
+    const character = findCharacter(project, name);
+    if (!character || isUnseenVoice(character)) continue;
+    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
+    if (portrait) add({ url: portrait, kind: "character", name: character.name });
+  }
+
+  const places: string[] = [];
+  for (const scene of project.scenes) {
+    const place = (scene.location || "").trim();
+    if (place && !places.some((item) => samePlace(item, place))) places.push(place);
+  }
+  for (const place of places) {
+    const plate = (project.locationPlates || []).find((item) => samePlace(item.name, place));
+    if (!plate) continue;
+    const url = await resolveUploadUrl(plate.remoteUrl, plate.publicPath, abortSignal);
+    if (url) add({ url, kind: "location", name: plate.name });
+  }
+
+  for (const asset of promptReadyReferences(project, undefined, true)) {
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (!url) continue;
+    const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" ? asset.kind : "other";
+    add({ url, kind, name: asset.label, notes: asset.notes });
+  }
+  return imageEntries;
+}
+
+async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries: PromptRef[] = [];
   const cast = new Set(batchCastNames(project, batch).map((name) => name.toLowerCase()));
 
   for (const character of leadCharacters(project)) {
     if (!cast.has(character.name.toLowerCase())) continue;
-    if (characterHasDialogue(project, character)) {
-      const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
-      if (video) {
-        videoEntries.push({ url: video, kind: "character", name: character.name });
-        continue;
-      }
-    }
-    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
-    if (portrait) imageEntries.push({ url: portrait, kind: "character", name: character.name });
-  }
-
-  const scenePlaces = batch.sceneIndexes
-    .map((index) => project.scenes.find((scene) => scene.index === index)?.location || "")
-    .filter(Boolean);
-  const chosenPlates: LocationPlate[] = [];
-  for (const place of scenePlaces) {
-    const plate = (project.locationPlates || []).find(
-      (item) => samePlace(item.name, place) && !chosenPlates.includes(item),
-    );
-    if (plate) chosenPlates.push(plate);
-  }
-  for (const plate of chosenPlates) {
-    const url = await resolveUploadUrl(plate.remoteUrl, plate.publicPath, abortSignal);
-    if (!url) continue;
-    imageEntries.push({ url, kind: "location", name: plate.name });
-  }
-
-  for (const asset of promptReadyReferences(project, batch.sceneIndexes, true)) {
-    if (asset.kind === "location") continue;
-    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
-    if (!url) continue;
-    const kind = asset.kind === "logo" || asset.kind === "product" ? asset.kind : "other";
-    imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
+    if (!characterHasDialogue(project, character)) continue;
+    const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
+    if (video) videoEntries.push({ url: video, kind: "character", name: character.name });
   }
 
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
@@ -1077,31 +1105,8 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     return collectLongformReferences(project, batch, abortSignal);
   }
-  const imageEntries: PromptRef[] = [];
+  const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries: PromptRef[] = [];
-
-  for (const name of batchCastNames(project, batch)) {
-    const character = findCharacter(project, name);
-    const url = await resolveUploadUrl(character?.portraitRemoteUrl, character?.portraitPublicPath, abortSignal);
-    if (!url) continue;
-    imageEntries.push({
-      url,
-      kind: "character",
-      name: character?.name || name,
-    });
-  }
-
-  for (const asset of promptReadyReferences(project, batch.sceneIndexes, true)) {
-    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
-    if (!url) continue;
-    const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" ? asset.kind : "other";
-    imageEntries.push({
-      url,
-      kind,
-      name: asset.label,
-      notes: asset.notes,
-    });
-  }
 
   const pick = pickCastVideo(project, batch);
   if (pick) {

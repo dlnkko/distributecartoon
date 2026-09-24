@@ -26,7 +26,7 @@ export async function refineSeedancePrompt(draft: string) {
       reasoning: { effort: "medium" },
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt.",
-        "Keep every SCENE heading, its duration, every @Video and @Image tag, every quoted line, and the closing physics paragraph.",
+        "Keep every SCENE heading, its duration, every @Video and @Image tag, every quoted line, and the closing physics paragraph. An @Image number means the same character or place in every scene.",
         "Each character keeps the same height, build, face, and features unless that shot already says the story changes them.",
         "Each character speaks only their own quoted line. Never move a line to another character and never repeat a line.",
         "Fix actions that break real objects. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck.",
