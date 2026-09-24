@@ -86,7 +86,7 @@ export function ensureSceneShots(scene: Scene): Scene {
   const seconds = Math.max(2, Math.round(Number(scene.estimatedSeconds) || 3));
   const sizes = shotSizes(seconds);
   const seeded = (scene.shots || []).filter((shot) => shot.action?.trim() || shot.camera?.trim());
-  const planned = planShots({ ...scene, estimatedSeconds: seconds, shots: undefined });
+  const planned = planShots({ summary: scene.summary, camera: scene.camera, estimatedSeconds: seconds });
   const shots = sizes.map((value, index) => {
     const source = seeded[index] || planned[index];
     return {
