@@ -407,6 +407,7 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
         referenceImageUrls: [portrait],
         generateAudio: true,
         resolution: "480p",
+        model: "bytedance/seedance-2.0-fast",
         seed: projectSeed(project),
         onTaskCreated: async (id) => {
           character.anchorVideoTaskId = id;

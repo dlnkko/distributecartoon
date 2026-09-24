@@ -4,6 +4,7 @@ import { generateGptImage25Flare as generateFalGptImage25Flare, uploadLocalPubli
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const SEEDANCE_MODEL = "bytedance/seedance-2.5";
+const SEEDANCE_FAST_MODEL = "bytedance/seedance-2.0-fast";
 
 type OpenRouterJob = {
   id?: string;
@@ -137,6 +138,7 @@ type SeedanceRequest = {
   referenceVideoUrls?: string[];
   generateAudio?: boolean;
   resolution?: "480p" | "720p" | "1080p";
+  model?: "bytedance/seedance-2.5" | "bytedance/seedance-2.0-fast";
   seed?: number;
   abortSignal?: AbortSignal;
   existingTaskId?: string;
@@ -147,7 +149,9 @@ export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
   const existing = options.existingTaskId?.trim() || "";
   if (existing && existing !== "pending") return existing;
   throwIfAborted(options.abortSignal);
-    const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
+    const model = options.model || SEEDANCE_MODEL;
+    const durationCap = model === SEEDANCE_FAST_MODEL ? 15 : 30;
+    const duration = Math.min(durationCap, Math.max(4, Math.round(options.duration || 8)));
     const aspectRatio = options.aspectRatio === "9:16" ? "9:16" : options.aspectRatio === "1:1" ? "1:1" : "16:9";
     const input_references: Array<Record<string, unknown>> = [];
     for (const url of (options.referenceImageUrls || []).slice(0, 30)) {
@@ -160,7 +164,7 @@ export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
       method: "POST",
       headers: openrouterHeaders(),
       body: JSON.stringify({
-        model: SEEDANCE_MODEL,
+        model,
         prompt: options.prompt,
         duration,
         aspect_ratio: aspectRatio,
