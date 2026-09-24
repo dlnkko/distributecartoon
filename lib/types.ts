@@ -23,6 +23,12 @@ export type DialogueLine = {
   line: string;
 };
 
+export type SceneShot = {
+  seconds: number;
+  camera: string;
+  action: string;
+};
+
 export type Scene = {
   id: string;
   index: number;
@@ -34,6 +40,7 @@ export type Scene = {
   dialogue: DialogueLine[];
   estimatedSeconds: number;
   camera: string;
+  shots?: SceneShot[];
 };
 
 export type CharacterClip = {

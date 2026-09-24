@@ -104,7 +104,9 @@ const prompt = labeledReferencePrompt({
 });
 assert.match(prompt, /^Keep the same exact character, voice, gestures as the reference\. Pixar style throughout the whole video\./);
 assert.equal((prompt.match(/keep the same exact character/gi) || []).length, 1);
-assert.match(prompt, /SCENE 1 \(6s\)\./);
+assert.match(prompt, /SCENE 1 \(3s\)\./);
+assert.match(prompt, /The same line continues over this cut\./);
+assert.equal((prompt.match(/\(6s\)/g) || []).length, 0);
 assert.match(prompt, /Only @Video1 and @Image1 participate in this scene\./);
 assert.match(prompt, /@Image1 lipsyncs: "You look tired\."/);
 assert.match(prompt, /No background music\. @Image2\./);
@@ -114,7 +116,7 @@ const lastScene = prompt.slice(prompt.indexOf("SCENE 4"));
 assert.ok(lastScene.indexOf("revealed") < lastScene.indexOf("lipsyncs:"));
 assert.equal((lastScene.match(/I forgot my keys/g) || []).length, 1);
 assert.equal(projectSeed(project), projectSeed(project));
-assert.match(packedScenePrompt(project, [1], "", 6), /SCENE 1 \(6s\)/);
+assert.match(packedScenePrompt(project, [1], "", 6), /SCENE 1 \(3s\)/);
 
 const narrated = structuredClone(project);
 narrated.scenes[1].dialogue = [{ speaker: "Narrator", line: "Some mornings start slower than others, and this was one of them." }];
@@ -151,7 +153,8 @@ const gymPrompt = labeledReferencePrompt({
   sceneIndexes: [1],
   duration: 8,
 });
-assert.match(gymPrompt, /@Video1 leans on the rack, as seen in @Image1\. The tiny @Video2 hops toward the larger @Video1\./);
+assert.match(gymPrompt, /@Video1 leans on the rack, as seen in @Image1/);
+assert.match(gymPrompt, /The tiny @Video2 hops toward the larger @Video1/);
 assert.match(gymPrompt, /as seen in @Image1/);
 assert.doesNotMatch(gymPrompt, /home @Video|@Video1 Buddy|@Video2 Mascot|CUT to/);
 assert.equal((gymPrompt.match(/keep the same exact character/gi) || []).length, 1);

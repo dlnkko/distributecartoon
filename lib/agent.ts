@@ -5,6 +5,7 @@ import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary
 import { driveProduce } from "./produce";
 import { englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { estimateSceneSeconds, parseDurationFromText, sceneHasStory, shouldGenerateOneShot } from "./timing";
+import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
@@ -78,7 +79,8 @@ const PLAN_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
-Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Use CUT to inside a summary only to change angle on that same action. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel. Vary the shot with the emotion and the distance, and do not repeat the same shot size on consecutive scenes.
+Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel.
+Inside every scene, write shots of 2 or 3 seconds. Each shot has its own English camera and one physical action on that same continuous moment. A scene longer than 3 seconds must contain more than one shot, including while a long line of dialogue or voice-over is still being spoken. The dialogue stays on the scene and continues across those shots. Never hold one camera for 4 seconds or more. Do not repeat the same shot size back to back.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. A character talking to himself stays on screen and keeps the line. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion in the face and the body. Keep a character the same age and size until a later scene explicitly shows they grew. Clothes may change. Keep who is in front, behind, left, and right until the action moves them. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
 Make scene times add up to the project's targetDurationSeconds. Never add an empty or placeholder scene to fill leftover seconds; lengthen a real scene instead.
@@ -188,7 +190,30 @@ const tools: OpenAI.Responses.Tool[] = [
               camera: {
                 type: "string",
                 description:
-                  "English shot SIZE and ANGLE names only. Pick the size from the story: wide when distance matters, closer when emotion or a small action matters. Do not repeat the same shot size as the previous scene. The new angle continues the same blocking. Examples: eye level, wide shot; low angle, close-up; tracking shot, full shot; insert; bird's eye. Over the shoulder or two-shot only if two different characters are on screen: shoulder of A, face of B. Never clone. Never Spanish names.",
+                  "English camera of the first shot. The shots array carries the rest.",
+              },
+              shots: {
+                type: "array",
+                description:
+                  "2 or 3 second cuts inside this scene. More than one shot whenever the scene is longer than 3 seconds, even during one long line. Each shot is the next angle of the same moment.",
+                items: {
+                  type: "object",
+                  additionalProperties: false,
+                  properties: {
+                    seconds: { type: "number", description: "2 or 3." },
+                    camera: {
+                      type: "string",
+                      description:
+                        "English shot size and angle, different from the previous shot. Wide when distance matters, closer when emotion matters.",
+                    },
+                    action: {
+                      type: "string",
+                      description:
+                        "One physical action at this angle. Same place, distance, and body as the previous shot unless this action moves them.",
+                    },
+                  },
+                  required: ["seconds", "camera", "action"],
+                },
               },
             },
             required: [
@@ -456,6 +481,7 @@ function scaleScenesToTarget(project: Project) {
   if (sum <= 0) {
     const each = Math.max(2, Math.round((target / project.scenes.length) * 10) / 10);
     for (const scene of project.scenes) scene.estimatedSeconds = each;
+    project.scenes = project.scenes.map((scene) => ensureSceneShots(scene));
     return;
   }
   const scale = target / sum;
@@ -468,6 +494,7 @@ function scaleScenesToTarget(project: Project) {
     scene.estimatedSeconds = Math.max(2, Math.round(scene.estimatedSeconds * scale * 10) / 10);
     used += scene.estimatedSeconds;
   });
+  project.scenes = project.scenes.map((scene) => ensureSceneShots(scene));
 }
 
 function toolsFor(mode: AgentMode) {
@@ -541,6 +568,13 @@ async function executeTool(
         const summary = String(item.summary || "");
         const computed = estimateSceneSeconds({ summary, dialogue });
         const raw = Number(item.estimated_seconds || 0);
+        const shots = ((item.shots as Array<Record<string, unknown>>) || [])
+          .map((shot) => ({
+            seconds: Math.max(2, Math.min(3, Math.round(Number(shot.seconds) || 3))),
+            camera: String(shot.camera || ""),
+            action: String(shot.action || ""),
+          }))
+          .filter((shot) => shot.action || shot.camera);
         return {
           id: createId("scene"),
           index: Number(item.index),
@@ -551,7 +585,8 @@ async function executeTool(
           extraNames: ((item.extra_names as string[]) || []).map((name) => englishExtraName(name)),
           dialogue,
           estimatedSeconds: Math.max(2, raw > 0 ? raw : computed),
-          camera: String(item.camera || ""),
+          camera: String(item.camera || shots[0]?.camera || ""),
+          shots,
         };
       }) as Scene[];
       const withStory = project.scenes.filter(sceneHasStory);

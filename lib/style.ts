@@ -2,6 +2,7 @@ import { characterRole, continuityPass } from "./continuity";
 import { samePlace } from "./places";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
 import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
+import { planShots } from "./shots";
 
 export type PromptRef = {
   url: string;
@@ -1619,15 +1620,35 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const continues = Boolean(project.scenes.length && sceneIndexes[0] !== project.scenes[0]?.index);
   const usedCameras: string[] = [];
 
-  const blocks = sceneIndexes.map((index, i) => {
+  const flat = sceneIndexes.flatMap((index, i) => {
     const scene = scenes[i];
-    const camera = safeCinematicCamera(scene, CAMERA_VARIETY[i % CAMERA_VARIETY.length], usedCameras, project);
+    const cuts = scene?.shots?.length ? scene.shots : planShots(scene || { summary: "", camera: "", estimatedSeconds: seconds[i] || 3 });
+    return cuts.map((shot, shotIndex) => ({ scene, index, shot, shotIndex }));
+  });
+  const cutSeconds = fittedSeconds(
+    flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
+    options.maxSeconds,
+  );
+
+  const blocks = flat.map((item, i) => {
+    const { scene, shot, shotIndex, index } = item;
+    let camera = safeCinematicCamera(
+      scene ? { ...scene, camera: shot.camera || scene.camera } : scene,
+      CAMERA_VARIETY[i % CAMERA_VARIETY.length],
+      usedCameras,
+      project,
+    );
+    if (usedCameras.some((item) => item.toLowerCase() === camera.toLowerCase())) {
+      camera =
+        CAMERA_VARIETY.find((item) => !usedCameras.some((prev) => prev.toLowerCase() === item.toLowerCase())) || camera;
+    }
     usedCameras.push(camera);
-    const summary = withoutQuotedDialogue(rewriteProductContainers(scene?.summary || scene?.title || "", project), scene);
+    const summary = withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene);
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
     const action = expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space);
-    const locks = (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock));
-    const body = [action, ...locks]
+    const locks = shotIndex === 0 ? (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock)) : [];
+    const continued = shotIndex > 0 ? "Same place, distance, and body as the previous shot." : "";
+    const body = [continued, action, ...locks]
       .map((part) => part.trim())
       .filter(Boolean)
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
@@ -1638,12 +1659,13 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     );
     const visual = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
+    const spoken = shotIndex === 0 ? sceneSays(project, scene, people, narratorTag) : sceneSays(project, scene, people, narratorTag) ? "The same line continues over this cut." : "";
     return [
-      `SCENE ${i + 1} (${seconds[i]}s).`,
+      `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
       participateLine(sceneOnScreenNames(scene, project), people, project),
       visual,
-      sceneSays(project, scene, people, narratorTag),
+      spoken,
       "No background music.",
       placeTag ? `${placeTag}.` : "",
     ]

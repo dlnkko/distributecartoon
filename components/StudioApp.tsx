@@ -7,6 +7,7 @@ import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene,
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
+import { ensureSceneShots, planShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
@@ -1817,7 +1818,7 @@ function ReviewStep({
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 className="display text-2xl md:text-3xl">Edit scenes</h3>
-          <p className="mt-1 text-sm text-[var(--muted)]">Keep each scene whole. Delete a blank one if it has no action.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Each scene stays one continuous moment. Shots inside it are 2–3 seconds.</p>
         </div>
         <p className="text-xs text-[var(--muted)]">
           {totalSeconds}s · {formatPartPlan(parts)}
@@ -1842,9 +1843,10 @@ function ReviewStep({
                 max={30}
                 value={scene.estimatedSeconds}
                 disabled={busy}
-                onChange={(event) =>
-                  update(index, { estimatedSeconds: Math.min(30, Math.max(2, Number(event.target.value) || 2)) })
-                }
+                onChange={(event) => {
+                  const estimatedSeconds = Math.min(30, Math.max(2, Number(event.target.value) || 2));
+                  update(index, ensureSceneShots({ ...scene, estimatedSeconds }));
+                }}
                 className="w-12 rounded-md border border-stone-200 bg-stone-50 px-1.5 py-1 text-right text-xs tabular-nums outline-none"
               />
               s
@@ -1866,38 +1868,69 @@ function ReviewStep({
             placeholder="Title"
             className="mb-2 w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm font-medium outline-none"
           />
-          <div className="mb-2 grid gap-2 sm:grid-cols-2">
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Direction</span>
-              <input
-                value={scene.camera}
-                disabled={busy}
-                onChange={(event) => update(index, { camera: event.target.value })}
-                placeholder="Wide shot, eye level"
-                className="w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
-              />
-            </label>
-            <label className="block">
-              <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Location</span>
-              <input
-                value={scene.location}
-                disabled={busy}
-                onChange={(event) => update(index, { location: event.target.value })}
-                placeholder="Where this is"
-                className="w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
-              />
-            </label>
-          </div>
           <label className="mb-2 block">
-            <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Action</span>
-            <textarea
-              value={scene.summary}
+            <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Location</span>
+            <input
+              value={scene.location}
               disabled={busy}
-              onChange={(event) => update(index, { summary: event.target.value })}
-              placeholder="What happens in this scene"
-              className="min-h-[56px] w-full resize-none rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
+              onChange={(event) => update(index, { location: event.target.value })}
+              placeholder="Where this is"
+              className="w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
             />
           </label>
+          <div className="mb-2 space-y-2">
+            {(scene.shots?.length ? scene.shots : planShots(scene)).map((shot, shotIndex) => (
+              <div key={`${scene.id}-shot-${shotIndex}`} className="rounded-lg bg-stone-50 p-2">
+                <div className="mb-1.5 flex items-center gap-2">
+                  <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Shot {shotIndex + 1}</span>
+                  <label className="ml-auto flex items-center gap-1 text-[11px] font-medium text-[var(--ink)]">
+                    <input
+                      type="number"
+                      min={2}
+                      max={3}
+                      value={shot.seconds}
+                      disabled={busy}
+                      onChange={(event) => {
+                        const base = scene.shots?.length ? scene.shots : planShots(scene);
+                        const shots = base.map((item, i) =>
+                          i === shotIndex ? { ...item, seconds: Math.min(3, Math.max(2, Number(event.target.value) || 2)) } : item,
+                        );
+                        update(index, {
+                          shots,
+                          estimatedSeconds: shots.reduce((sum, item) => sum + item.seconds, 0),
+                          camera: shots[0]?.camera || scene.camera,
+                        });
+                      }}
+                      className="w-10 rounded-md border border-stone-200 bg-white px-1.5 py-1 text-right text-xs tabular-nums outline-none"
+                    />
+                    s
+                  </label>
+                </div>
+                <input
+                  value={shot.camera}
+                  disabled={busy}
+                  placeholder="Wide shot, eye level"
+                  onChange={(event) => {
+                    const base = scene.shots?.length ? scene.shots : planShots(scene);
+                    const shots = base.map((item, i) => (i === shotIndex ? { ...item, camera: event.target.value } : item));
+                    update(index, { shots, camera: shots[0]?.camera || scene.camera });
+                  }}
+                  className="mb-1.5 w-full rounded-lg bg-white px-2.5 py-1.5 text-sm outline-none"
+                />
+                <textarea
+                  value={shot.action}
+                  disabled={busy}
+                  placeholder="What this angle shows"
+                  onChange={(event) => {
+                    const base = scene.shots?.length ? scene.shots : planShots(scene);
+                    const shots = base.map((item, i) => (i === shotIndex ? { ...item, action: event.target.value } : item));
+                    update(index, { shots, summary: shots.map((item) => item.action).filter(Boolean).join(" ") });
+                  }}
+                  className="min-h-[48px] w-full resize-none rounded-lg bg-white px-2.5 py-1.5 text-sm outline-none"
+                />
+              </div>
+            ))}
+          </div>
           <div className="flex items-center justify-between">
             <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Dialogue</label>
             <button
