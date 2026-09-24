@@ -822,7 +822,7 @@ export async function runAgent(options: {
       instructions,
       tools: activeTools,
       input,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "medium" },
     },
     { signal },
   );

@@ -24,7 +24,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     const client = new OpenAI({ apiKey: openaiApiKey });
     const response = await client.responses.create({
       model: ASTRA_MODEL,
-      reasoning: { effort: "low" },
+      reasoning: { effort: "medium" },
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
         "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
