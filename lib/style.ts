@@ -1671,7 +1671,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
 }
 
 function videoPromptFor(options: CompactPromptOptions) {
-  return simpleScenePrompt(options);
+  return process.env.VIDEO_PROMPT_FORMAT === "compact" ? compactVideoPrompt(options) : directorBriefPrompt(options);
 }
 
 export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
