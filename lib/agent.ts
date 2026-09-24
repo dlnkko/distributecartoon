@@ -772,9 +772,9 @@ export async function runAgent(options: {
 
   const { openaiApiKey } = getSecrets();
   if (!openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing for the GPT-6 Astra agent.");
+    throw new Error("OPENAI_API_KEY is missing for the GPT-6 Sol agent.");
   }
-  const openaiModel = "gpt-6-astra";
+  const openaiModel = "gpt-6-sol";
 
   const client = new OpenAI({ apiKey: openaiApiKey });
   const onStatus = (text: string) => options.onEvent({ type: "status", text });

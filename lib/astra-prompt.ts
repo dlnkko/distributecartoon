@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { getSecrets } from "./config";
 
-const ASTRA_MODEL = "gpt-6-astra";
+const ASTRA_MODEL = "gpt-6-sol";
 
 function quotedLines(text: string) {
   return [...text.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
