@@ -21,8 +21,8 @@ Pipeline real:
 3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto a Pixar o claymation; nunca inventes pelo, piel, ropa ni especie. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a look for a Narrator or unseen voice-over. If the script is narrator VO and does not name whose voice, keep speaker as Narrator (is_extra true); the system picks any fitting off-screen voice. If an on-screen character has dialogue, that is their realistic lipsync. A speaker named Narrator is always off-screen voice-over. Never give those lines to an on-screen character and never lipsync them. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
 4. NO first-frame still. Only character look portraits are generated. Seedance 2.5 R2V receives those portraits plus product/logo/location photos when the script uses them. The system maps files to @Image1, @Image2, @Image3 in upload order and writes those tags INSIDE the scenes when that person or object is on screen. Do not dump "@Image2 is Guy. Match his design..." at the start of the prompt.
 5. Duración de cada ESCENA: si hay diálogo, el tiempo es el de decirlo con calma. Si casi no pasa nada (un beat, un insert, un corte), 2 a 3 segundos, según complejidad, intención y relevancia. No alargues una escena vacía ni comprimas una frase hablada.
-6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, empaqueta escenas enteras en clips de 4-30s. Nunca partas una escena a la mitad ni la repitas en el clip siguiente: si al segundo 28 entra una escena de 5s, cierra ese clip en 28s y empieza el siguiente con esa escena. La suma de clips cubre targetDurationSeconds.
-7. Si el guion es largo (más de 30s), con varias escenas y diálogos, estructura varios clips de 4-30s. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
+6. El total del video está en targetDurationSeconds (5-300). Seedance 2.5 genera hasta 30s por clip, siempre a 480p. Si el total es 30s o menos, UNA sola tanda con TODAS las escenas (one-shot). Si es más de 30s, generaciones de 30s: 60s son 2 tandas de 30s, 90s son 3 tandas de 30s. Nunca partas una escena a la mitad ni la repitas en el clip siguiente.
+7. Si el guion pasa de 30s, cada generación dura 30s. 60s son dos generaciones. 90s son tres. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
 8. El aspect ratio del proyecto (16:9 o 9:16) ya lo aplica el sistema. No lo cambies salvo que el usuario lo pida.
 9. Animar con Seedance 2.5 Reference-to-Video. Menciona @ImageN / @VideoN en la escena en la que aparecen, no en un preámbulo.
 10. El sistema tagea internamente cada clip por las voces de los leads que hablan ahí. En la siguiente tanda sube COMO MÁXIMO un @Video1: el clip anterior donde estén las voces de los personajes que participan en esa tanda. No adjunta varios videos ni clips de gente que no habla en la escena nueva.
@@ -70,7 +70,7 @@ Storyboard continuity:
 Herramientas:
 - Usa extract_storyboard cuando entiendas el guion. En mentioned_refs solo listes logo/producto/locación si el texto del guion los involucra de verdad. En camera usa solo nombres en inglés y cambia tamaño o ángulo cuando cambia la emoción o la distancia, nunca el mismo tamaño en dos escenas seguidas. En summaries, write the blocking so the next scene continues the previous ending: place, distance, screen sides, and body state. If A sees B while B does not see A, write that distance and those eyelines. If A talks to B, A looks at B. Glow behind a body is occluded. Hands keep contact with doors and utensils. Show emotion in faces, eyes, ears, tails, and body. Show complete physical actions. Keep the attached product packaging (pouch vs bottle). Keep age/size locked until a later scene shows growth. List every on-screen principal in character_names and background animals/people in extra_names. Never write a time-lapse as a bullet list; write each beat as a full physical sentence so the system can insert CUT to. A CUT to only changes the angle. Never clone a character. Do not paste physics lectures into every summary.
 - No uses stylize_reference. Nunca generes una imagen solo del producto ni un first frame de la escena.
-- Usa plan_video_batches cuando el usuario ya aprobó las escenas. Si targetDurationSeconds es 30 o menos, exactamente UNA tanda con todas las escenas. Si es más de 30, empaqueta en clips de 4-30s.
+- Usa plan_video_batches cuando el usuario ya aprobó las escenas. Si targetDurationSeconds es 30 o menos, exactamente UNA tanda con todas las escenas. Si es 60, dos tandas de 30s. Si es 90, tres tandas de 30s.
 - generate_video_batch anima UNA tanda con Seedance 2.5 reference-to-video. Respeta 4-30s. Cuando termine, el video YA está en el proyecto. No inventes URLs. No llames generate_batch_frame.
 
 Nunca inventes URLs. Nunca digas que ya existe un video si la herramienta no lo creó. No uses markdown con asteriscos; escribe texto plano con saltos de línea. No hagas chat libre. No preguntes nada fuera del flujo.`;
@@ -96,7 +96,7 @@ const PRODUCE_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PRODUCE.
 The user already approved the storyboard. Do NOT rewrite or re-extract scenes.
-If targetDurationSeconds is 30 or less, call plan_video_batches with EXACTLY one batch covering every scene at that duration (Seedance 2.5 one-shot). Otherwise pack whole scenes into 4-30s clips whose durations add up to targetDurationSeconds. Never repeat a scene across clips.
+If targetDurationSeconds is 30 or less, call plan_video_batches with EXACTLY one batch covering every scene at that duration (Seedance 2.5 one-shot). If it is 60s, two batches of 30s. If it is 90s, three batches of 30s. Longer films use one 30s generation per 30 seconds. Never repeat a scene across clips.
 Then call generate_video_batch for each batch in order until all clips exist. Do not generate a first-frame still.
 Do not ask questions. Do not chat.`;
 
@@ -318,7 +318,7 @@ const tools: OpenAI.Responses.Tool[] = [
     strict: false,
     name: "plan_video_batches",
     description:
-      "Parte las escenas en tandas Seedance 2.5. Si el corto dura 30s o menos, exactamente una tanda con todas las escenas. Si dura más, tandas de 4 a 30s.",
+      "Parte las escenas en tandas Seedance 2.5. Si el corto dura 30s o menos, exactamente una tanda. Si dura 60s, dos tandas de 30s. Si dura 90s, tres tandas de 30s.",
     parameters: {
       type: "object",
       additionalProperties: false,
@@ -794,7 +794,7 @@ export async function runAgent(options: {
       : `The storyboard is approved. Do not rewrite scenes. ${
           shouldGenerateOneShot(options.project.targetDurationSeconds, options.project.scenes)
             ? `Generate this ${options.project.targetDurationSeconds}s ${options.project.style} short in ONE Seedance 2.5 take covering every scene at 480p.`
-            : `Plan 4-30s clips covering all scenes for a ${options.project.targetDurationSeconds}s ${options.project.style} video at ${options.project.aspectRatio}, then generate every clip in order at 480p.`
+            : `Plan ${Math.ceil(options.project.targetDurationSeconds / 30)} generations of 30s covering all scenes for a ${options.project.targetDurationSeconds}s ${options.project.style} video at ${options.project.aspectRatio}, then generate every clip in order at 480p.`
         }`);
 
   const input: OpenAI.Responses.ResponseInput = [

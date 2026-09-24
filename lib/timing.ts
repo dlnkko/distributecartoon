@@ -96,53 +96,51 @@ function sceneSpan(seconds: number) {
   return Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, Math.round(value * 10) / 10));
 }
 
+function generationDurations(target: number) {
+  const total = Math.max(4, Math.round(target));
+  if (total <= SEEDANCE_MAX_SECONDS) return [total];
+  const count = Math.ceil(total / SEEDANCE_MAX_SECONDS);
+  const durations = Array.from({ length: count }, () => SEEDANCE_MAX_SECONDS);
+  const last = total - SEEDANCE_MAX_SECONDS * (count - 1);
+  durations[count - 1] = Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, last));
+  return durations;
+}
+
 export function packScenesIntoParts(
   scenes: Array<{ index: number; estimatedSeconds: number }>,
   targetSeconds?: number,
 ): SeedancePartPlan[] {
-  if (!scenes.length) {
-    const total = Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(Number(targetSeconds) || 4)));
-    return [{ duration: total, sceneIndexes: [] }];
-  }
+  const summed = scenes.reduce((sum, scene) => sum + sceneSpan(scene.estimatedSeconds), 0);
+  const target = Math.round(Number(targetSeconds)) > 0 ? Math.round(Number(targetSeconds)) : Math.round(summed) || 4;
+  const durations = generationDurations(target);
+  if (!scenes.length) return durations.map((duration) => ({ duration, sceneIndexes: [] }));
+  if (durations.length === 1) return [{ duration: durations[0], sceneIndexes: scenes.map((scene) => scene.index) }];
 
-  const packed: SeedancePartPlan[] = [];
-  let indexes: number[] = [];
+  const boundaries: number[] = [];
+  let cursor = 0;
+  for (let index = 0; index < durations.length - 1; index += 1) {
+    cursor += durations[index];
+    boundaries.push((cursor / target) * summed);
+  }
+  const groups: number[][] = durations.map(() => []);
   let used = 0;
+  let part = 0;
   for (const scene of scenes) {
     const span = sceneSpan(scene.estimatedSeconds);
-    if (indexes.length && used + span > SEEDANCE_MAX_SECONDS) {
-      packed.push({ duration: used, sceneIndexes: indexes });
-      indexes = [];
-      used = 0;
-    }
-    indexes.push(scene.index);
+    if (part < boundaries.length && groups[part].length && used >= boundaries[part]) part += 1;
+    groups[part].push(scene.index);
     used += span;
   }
-  if (indexes.length) packed.push({ duration: used, sceneIndexes: indexes });
-
-  const merged: SeedancePartPlan[] = [];
-  for (const part of packed) {
-    const prev = merged.at(-1);
-    if (prev && part.duration < 4 && prev.duration + part.duration <= SEEDANCE_MAX_SECONDS) {
-      prev.sceneIndexes.push(...part.sceneIndexes);
-      prev.duration += part.duration;
-      continue;
-    }
-    merged.push({ duration: part.duration, sceneIndexes: [...part.sceneIndexes] });
+  for (let index = 1; index < groups.length; index += 1) {
+    if (groups[index].length) continue;
+    const previous = groups[index - 1];
+    if (previous.length < 2) continue;
+    const moved = previous.pop();
+    if (moved !== undefined) groups[index].unshift(moved);
   }
-
-  const durations = merged.map((part) => Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))));
-  const target = Math.round(Number(targetSeconds));
-  if (Number.isFinite(target) && target > 0 && durations.length) {
-    const last = durations.length - 1;
-    const sum = durations.reduce((acc, value) => acc + value, 0);
-    durations[last] = Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, durations[last] + (target - sum)));
-  }
-
-  return merged.map((part, index) => ({
-    duration: durations[index] ?? Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))),
-    sceneIndexes: part.sceneIndexes,
-  }));
+  return durations
+    .map((duration, index) => ({ duration, sceneIndexes: groups[index] }))
+    .filter((part) => part.sceneIndexes.length);
 }
 
 export function formatPartPlan(parts: SeedancePartPlan[]) {

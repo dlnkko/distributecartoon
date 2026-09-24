@@ -503,8 +503,45 @@ function schedulePartRetry(batch: Batch, message: string) {
 
 // One heavy step per pass: store a finished part, or submit the next missing one.
 // A provider failure retries that part. It does not cancel the parts already saved.
+async function prepareStoryPrompt(project: Project, batch: Batch) {
+  const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
+  const { imageEntries, videoEntries } = await collectReferences(project, batch);
+  const labeled = labeledReferencePrompt({
+    images: imageEntries,
+    videos: videoEntries,
+    style: project.style,
+    project,
+    sceneIndexes: batch.sceneIndexes,
+    videoPrompt: prompt,
+    duration: batch.duration,
+  });
+  batch.videoPrompt = await refineSeedancePrompt(labeled);
+  batch.promptReady = true;
+}
+
 async function stepStoryParts(project: Project): Promise<StepResult> {
   const batches = [...project.batches].sort((a, b) => a.index - b.index);
+  const waiting = batches.filter(
+    (batch) =>
+      !batch.promptReady &&
+      !durableVideoSrc(batch) &&
+      !batch.videoRemoteUrl &&
+      !batch.videoPublicPath &&
+      !realKieVideoTaskId(batch.kieVideoTaskId) &&
+      batch.kieVideoTaskId !== "pending",
+  );
+  if (waiting.length) {
+    await Promise.all(
+      waiting.map(async (batch) => {
+        try {
+          await prepareStoryPrompt(project, batch);
+        } catch (error) {
+          console.warn("prompt prepare failed", project.id, batch.index, error instanceof Error ? error.message : error);
+        }
+      }),
+    );
+    await saveSoon(project);
+  }
   let heavy = false;
   for (const batch of batches) {
     if (durableVideoSrc(batch)) continue;
@@ -1218,6 +1255,7 @@ export function planSeedanceBatches(project: Project) {
         .filter(Boolean)
         .join(" / "),
       videoPrompt: prior?.videoPrompt || packedScenePrompt(project, sceneIndexes, "", duration),
+      promptReady: prior?.promptReady,
       framePrompt: prior?.framePrompt || "",
       pacingNotes: `Part ${index + 1} of ${parts.length}, ${duration}s.`,
       status: (prior?.videoPublicPath || prior?.videoRemoteUrl
@@ -1241,18 +1279,21 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   if (!storyBatchNeedsSubmit(batch)) return false;
   throwIfAborted(abortSignal);
   onStatus("Generating your video…");
-  const prompt = packedScenePrompt(project, batch.sceneIndexes, batch.videoPrompt, batch.duration);
   const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
-  const labeled = labeledReferencePrompt({
-    images: imageEntries,
-    videos: videoEntries,
-    style: project.style,
-    project,
-    sceneIndexes: batch.sceneIndexes,
-    videoPrompt: prompt,
-    duration: batch.duration,
-  });
-  batch.videoPrompt = await refineSeedancePrompt(labeled);
+  if (!batch.promptReady) {
+    const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
+    const labeled = labeledReferencePrompt({
+      images: imageEntries,
+      videos: videoEntries,
+      style: project.style,
+      project,
+      sceneIndexes: batch.sceneIndexes,
+      videoPrompt: prompt,
+      duration: batch.duration,
+    });
+    batch.videoPrompt = await refineSeedancePrompt(labeled);
+    batch.promptReady = true;
+  }
   batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
   if (batch.continuityFlags.length) console.info("continuity", project.id, batch.index, batch.continuityFlags);
   batch.status = "generating_video";

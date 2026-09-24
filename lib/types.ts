@@ -120,6 +120,7 @@ export type Batch = {
   newLeadNames: string[];
   cameraPlan: string;
   videoPrompt: string;
+  promptReady?: boolean;
   framePrompt: string;
   pacingNotes: string;
   status: BatchStatus;
