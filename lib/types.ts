@@ -138,6 +138,9 @@ export type Batch = {
   submittedAt?: string;
   readyAt?: string;
   storedAt?: string;
+  tailPublicPath?: string;
+  tailRemoteUrl?: string;
+  tailAttempts?: number;
 };
 
 export type PendingTask = {

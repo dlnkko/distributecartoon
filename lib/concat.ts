@@ -22,6 +22,36 @@ function listPath(file: string) {
   return file.replace(/\\/g, "/").replace(/'/g, "'\\''");
 }
 
+export async function tailVideoBuffer(buffer: Buffer, seconds = 5) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "tail-"));
+  const input = path.join(dir, "in.mp4");
+  const out = path.join(dir, "tail.mp4");
+  await writeFile(input, buffer);
+  try {
+    await runFfmpeg([
+      "-y",
+      "-sseof",
+      `-${Math.max(1, seconds)}`,
+      "-i",
+      input,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-c:a",
+      "aac",
+      "-movflags",
+      "+faststart",
+      out,
+    ]);
+    return await readFile(out);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export async function concatVideoBuffers(buffers: Buffer[]) {
   if (buffers.length < 2) throw new Error("Need at least two videos to join.");
   const dir = await mkdtemp(path.join(os.tmpdir(), "parts-"));

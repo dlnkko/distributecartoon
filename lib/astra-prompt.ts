@@ -1,7 +1,7 @@
 import OpenAI from "openai";
 import { getSecrets } from "./config";
 
-const ASTRA_MODEL = "gpt-6-sol";
+const ASTRA_MODEL = "gpt-5.6-sol";
 
 function quotedLines(text: string) {
   return [...text.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
@@ -14,23 +14,29 @@ function sameQuotes(draft: string, revised: string) {
   return left.every((line, index) => line === right[index]);
 }
 
-export async function refineSeedancePrompt(draft: string) {
+export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
   const trimmed = draft.trim();
   if (!trimmed) return draft;
+  const prior = priorPrompt.trim();
   const { openaiApiKey } = getSecrets();
   if (!openaiApiKey) return trimmed;
   try {
     const client = new OpenAI({ apiKey: openaiApiKey });
     const response = await client.responses.create({
       model: ASTRA_MODEL,
-      reasoning: { effort: "medium" },
+      reasoning: { effort: "low" },
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
         "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
         "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks.",
         "Name which way a screen or object faces the camera. Each character speaks only their own line.",
-      ].join(" "),
-      input: trimmed,
+        prior
+          ? "A previous part prompt is included. Continue from its last moment. Do not restart the story or repeat a finished action. The video tagged as the last 5 seconds is the end of that previous part."
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" "),
+      input: prior ? `PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}` : trimmed,
     });
     const revised = (response.output_text || "").trim();
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;

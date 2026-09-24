@@ -960,6 +960,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       narratorTag = tag;
       refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
     } else if (item.kind === "character" && key) people.set(key, tag);
+    else if (item.kind === "video") refs.push(`${tag} is the last 5 seconds of the previous video. Continue from that exact moment, place, and motion.`);
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
   images.forEach((item, index) => {

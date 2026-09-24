@@ -1,5 +1,5 @@
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
-import { concatVideoBuffers } from "./concat";
+import { concatVideoBuffers, tailVideoBuffer } from "./concat";
 import { continuityFlags, projectSeed } from "./continuity";
 import { refineSeedancePrompt } from "./astra-prompt";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
@@ -503,7 +503,32 @@ function schedulePartRetry(batch: Batch, message: string) {
 
 // One heavy step per pass: store a finished part, or submit the next missing one.
 // A provider failure retries that part. It does not cancel the parts already saved.
+function previousStoryBatch(project: Project, batch: Batch) {
+  return project.batches.find((item) => item.index === batch.index - 1);
+}
+
+function tailUrl(batch?: Batch) {
+  if (!batch) return "";
+  return batch.tailRemoteUrl || batch.tailPublicPath || "";
+}
+
+async function savePartTail(project: Project, batch: Batch) {
+  const src = durableVideoSrc(batch);
+  if (!src || tailUrl(batch)) return;
+  const buffer = await readPublicFile(src);
+  const tail = await tailVideoBuffer(buffer, 5);
+  const saved = await storeGeneratedFile({
+    project,
+    buffer: tail,
+    relativeParts: [project.id, "tails", `part-${String(batch.index).padStart(2, "0")}-tail.mp4`],
+    contentType: "video/mp4",
+  });
+  batch.tailPublicPath = saved.publicPath;
+  batch.tailRemoteUrl = saved.publicPath;
+}
+
 async function prepareStoryPrompt(project: Project, batch: Batch) {
+  const previous = previousStoryBatch(project, batch);
   const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
   const { imageEntries, videoEntries } = await collectReferences(project, batch);
   const labeled = labeledReferencePrompt({
@@ -515,36 +540,35 @@ async function prepareStoryPrompt(project: Project, batch: Batch) {
     videoPrompt: prompt,
     duration: batch.duration,
   });
-  batch.videoPrompt = await refineSeedancePrompt(labeled);
+  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "");
   batch.promptReady = true;
 }
 
 async function stepStoryParts(project: Project): Promise<StepResult> {
   const batches = [...project.batches].sort((a, b) => a.index - b.index);
-  const waiting = batches.filter(
-    (batch) =>
-      !batch.promptReady &&
-      !durableVideoSrc(batch) &&
-      !batch.videoRemoteUrl &&
-      !batch.videoPublicPath &&
-      !realKieVideoTaskId(batch.kieVideoTaskId) &&
-      batch.kieVideoTaskId !== "pending",
-  );
-  if (waiting.length) {
-    await Promise.all(
-      waiting.map(async (batch) => {
-        try {
-          await prepareStoryPrompt(project, batch);
-        } catch (error) {
-          console.warn("prompt prepare failed", project.id, batch.index, error instanceof Error ? error.message : error);
-        }
-      }),
-    );
-    await saveSoon(project);
-  }
   let heavy = false;
   for (const batch of batches) {
     if (durableVideoSrc(batch)) continue;
+    const previous = previousStoryBatch(project, batch);
+    if (previous && !durableVideoSrc(previous)) return { ready: false };
+    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+      previous.tailAttempts = (previous.tailAttempts || 0) + 1;
+      try {
+        await savePartTail(project, previous);
+      } catch (error) {
+        console.warn("tail cut failed", project.id, previous.index, error instanceof Error ? error.message : error);
+      }
+      await saveSoon(project);
+      if (!tailUrl(previous)) return { ready: false };
+    }
+    if (
+      previous &&
+      !realKieVideoTaskId(batch.kieVideoTaskId) &&
+      batch.kieVideoTaskId !== "pending" &&
+      !/last 5 seconds/i.test(batch.videoPrompt || "")
+    ) {
+      batch.promptReady = false;
+    }
     if (batch.videoRemoteUrl || batch.videoPublicPath) {
       if (heavy) return { ready: false };
       heavy = true;
@@ -554,11 +578,11 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
         console.info("part stored", project.id, batch.index);
       }
       await saveSoon(project);
-      continue;
+      return { ready: false };
     }
     if (batch.kieVideoTaskId === "pending") {
       const age = Date.now() - new Date(batch.submittedAt || 0).getTime();
-      if (batch.submittedAt && age < PENDING_STALE_MS) continue;
+      if (batch.submittedAt && age < PENDING_STALE_MS) return { ready: false };
       delete batch.kieVideoTaskId;
       delete batch.submittedAt;
       await saveSoon(project);
@@ -566,7 +590,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
     if (taskId) {
       const peek = await peekKieTask(taskId);
-      if (peek.status === "pending") continue;
+      if (peek.status === "pending") return { ready: false };
       if (peek.status === "success") {
         batch.videoRemoteUrl = peek.url;
         batch.status = "done";
@@ -587,14 +611,14 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
           });
         }
         await saveSoon(project);
-        continue;
+        return { ready: false };
       }
       delete batch.kieVideoTaskId;
       schedulePartRetry(batch, peek.error || `Couldn't generate part ${batch.index}.`);
       console.warn("part failed, will retry", project.id, batch.index, batch.error);
       await saveSoon(project);
     }
-    if (batch.nextRetryAt && Date.now() < new Date(batch.nextRetryAt).getTime()) continue;
+    if (batch.nextRetryAt && Date.now() < new Date(batch.nextRetryAt).getTime()) return { ready: false };
     if (heavy) return { ready: false };
     heavy = true;
     try {
@@ -681,7 +705,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
   const narrator = storyStarted ? { ready: true } : await stepNarratorVoice(project);
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     const intros = await stepCharacterIntros(project);
-    if (intros.failed) {
+    if (intros.failed && !storyStarted) {
       failProduce(project, intros.failed);
       return "failed";
     }
@@ -690,7 +714,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
       project.platesTried = true;
       await saveSoon(project);
     }
-    if (!intros.ready) return "waiting";
+    if (!intros.ready && !storyStarted) return "waiting";
   }
   if (!narrator.ready) return "waiting";
   const story = await stepStoryParts(project);
@@ -1135,13 +1159,25 @@ async function stableCharacterVideos(project: Project, abortSignal?: AbortSignal
   return videos;
 }
 
+async function previousTailRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
+  const previous = previousStoryBatch(project, batch);
+  const src = tailUrl(previous);
+  if (!src) return undefined;
+  const url = await resolveUploadUrl(previous?.tailRemoteUrl, previous?.tailPublicPath, abortSignal);
+  return url ? { url, kind: "video", name: "Previous ending" } : undefined;
+}
+
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
-
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
-  const characters = videoEntries.slice(0, narrator ? MAX_ANCHOR_VIDEOS - 1 : MAX_ANCHOR_VIDEOS);
-  return { imageEntries, videoEntries: narrator ? [...characters, narrator] : characters };
+  const tail = await previousTailRef(project, batch, abortSignal);
+  const reserve = (narrator ? 1 : 0) + (tail ? 1 : 0);
+  const characters = videoEntries.slice(0, Math.max(0, MAX_ANCHOR_VIDEOS - reserve));
+  return {
+    imageEntries,
+    videoEntries: [...characters, ...(narrator ? [narrator] : []), ...(tail ? [tail] : [])],
+  };
 }
 
 async function collectReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
@@ -1150,7 +1186,6 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
-
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
   const characters = videoEntries.slice(0, narrator ? MAX_ANCHOR_VIDEOS - 1 : MAX_ANCHOR_VIDEOS);
   return { imageEntries, videoEntries: narrator ? [...characters, narrator] : characters };
@@ -1274,20 +1309,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   throwIfAborted(abortSignal);
   onStatus("Generating your video…");
   const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
-  if (!batch.promptReady) {
-    const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
-    const labeled = labeledReferencePrompt({
-      images: imageEntries,
-      videos: videoEntries,
-      style: project.style,
-      project,
-      sceneIndexes: batch.sceneIndexes,
-      videoPrompt: prompt,
-      duration: batch.duration,
-    });
-    batch.videoPrompt = await refineSeedancePrompt(labeled);
-    batch.promptReady = true;
-  }
+  if (!batch.promptReady) await prepareStoryPrompt(project, batch);
   batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
   if (batch.continuityFlags.length) console.info("continuity", project.id, batch.index, batch.continuityFlags);
   batch.status = "generating_video";
