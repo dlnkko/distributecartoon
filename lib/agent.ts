@@ -85,7 +85,7 @@ A supporting character introduced once is that same person for the whole film. I
 Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
 Objects work the way they do in the world. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck. Do not invent a mechanism.
 Shots are a linear continuation. A cut from day to night, or a flashback, is allowed only when the story needs it, and that shot must say the time changed or that this is a flashback. Otherwise the next shot is the next moment.
-Inside every scene, write shots of 2 or 3 seconds. Each shot has its own English camera and one physical action on that same continuous moment. A scene longer than 3 seconds must contain more than one shot, including while a long line of dialogue or voice-over is still being spoken. The dialogue stays on the scene and continues across those shots. Never hold one camera for 4 seconds or more. Do not repeat the same shot size back to back.
+A scene can hold several actions and its dialogue in one take of about 3 to 6 seconds. While a character speaks, they can lean in, look, or handle an object. Cut to a new shot only when the story needs another camera angle, another moment, or a separate action. Do not slice a single exchange into 2-second cuts. Give each speaking character a distinct voice in voice_notes: pitch, pace, and tone, not a flat or identical voice.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. A character talking to himself stays on screen and keeps the line. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion in the face and the body. Keep a character the same age and size until a later scene explicitly shows they grew. Clothes may change. Keep who is in front, behind, left, and right until the action moves them. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
 Make scene times add up to the project's targetDurationSeconds. Never add an empty or placeholder scene to fill leftover seconds; lengthen a real scene instead.
@@ -200,12 +200,12 @@ const tools: OpenAI.Responses.Tool[] = [
               shots: {
                 type: "array",
                 description:
-                  "2 or 3 second cuts inside this scene. More than one shot whenever the scene is longer than 3 seconds, even during one long line. Each shot is the next angle of the same moment.",
+                  "Only when this scene needs another camera angle or a new moment. A 3 to 6 second scene can be one shot with several actions and the dialogue together. Do not add a cut just to make it shorter.",
                 items: {
                   type: "object",
                   additionalProperties: false,
                   properties: {
-                    seconds: { type: "number", description: "2 or 3." },
+                    seconds: { type: "number", description: "About 3 to 6 seconds for one continuous shot." },
                     camera: {
                       type: "string",
                       description:

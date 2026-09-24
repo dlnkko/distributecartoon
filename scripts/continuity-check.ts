@@ -104,11 +104,10 @@ const prompt = labeledReferencePrompt({
 });
 assert.match(prompt, /^Keep the same exact character, voice, gestures as the reference\. Pixar style throughout the whole video\./);
 assert.equal((prompt.match(/keep the same exact character/gi) || []).length, 1);
-assert.match(prompt, /SCENE 1 \(3s\)\./);
-assert.match(prompt, /The same line continues over this cut\./);
-assert.equal((prompt.match(/\(6s\)/g) || []).length, 0);
-assert.match(prompt, /Only @Video1 and @Image1 participate in this scene\./);
-assert.match(prompt, /@Image1 lipsyncs: "You look tired\."/);
+assert.match(prompt, /SCENE 1 \(6s\)\./);
+assert.match(prompt, /Only @Video1 and Ben participate in this scene\./);
+assert.match(prompt, /Ben lipsyncs: "You look tired\."/);
+assert.match(prompt, /Characters are @Video references only/);
 assert.match(prompt, /No background music\. @Image2\./);
 assert.match(prompt, /Obey real-world physics:/);
 assert.doesNotMatch(prompt, /keys in hand/);
@@ -116,7 +115,7 @@ const lastScene = prompt.slice(prompt.indexOf("SCENE 4"));
 assert.ok(lastScene.indexOf("revealed") < lastScene.indexOf("lipsyncs:"));
 assert.equal((lastScene.match(/I forgot my keys/g) || []).length, 1);
 assert.equal(projectSeed(project), projectSeed(project));
-assert.match(packedScenePrompt(project, [1], "", 6), /SCENE 1 \(3s\)/);
+assert.match(packedScenePrompt(project, [1], "", 6), /SCENE 1 \(6s\)/);
 
 const narrated = structuredClone(project);
 narrated.scenes[1].dialogue = [{ speaker: "Narrator", line: "Some mornings start slower than others, and this was one of them." }];

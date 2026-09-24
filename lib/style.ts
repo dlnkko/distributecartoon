@@ -115,30 +115,34 @@ function appearanceForLook(character: Character) {
   return `${name}, ${text}`;
 }
 
-const SOLO_LOOK =
-  "exactly one character in frame, isolated solo portrait, no other people or animals, not a scene, not a fight, not a two-shot, no interaction";
+function shortLookAppearance(character: Character) {
+  const name = character.name.trim();
+  const text = (character.description || "")
+    .split(/[.!?]/)[0]
+    .replace(/\b\d+\s*-?\s*years?\s*old\b/gi, "")
+    .replace(
+      /\b(fight|fighting|blood|weapon|gun|knife|nude|naked|injury|wound|kill|dead|child|kid|minor|teen|sexy|body|muscle|bare|violent|attack)\b/gi,
+      "",
+    )
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  const words = text.split(/\s+/).filter(Boolean).slice(0, 12);
+  const look = words.join(" ");
+  if (!look || look.toLowerCase() === name.toLowerCase()) return name;
+  return `${name}, ${look}`;
+}
 
 export function characterLookPrompt(character: Character, style: VisualStyle) {
-  return joinPromptParts([
-    imageStyleLead(style),
-    `solo portrait of ${character.name} only`,
-    appearanceForLook(character),
-    SOLO_LOOK,
-    "single three-quarter standing pose, full character clearly visible, face hair wardrobe and body readable",
-    "looking at camera, even studio lighting",
-    "plain light gray seamless background",
-    "one image, one pose, no grid, no collage, no character sheet, no turnaround, no multiple expressions or faces",
-  ]);
+  return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. One character, plain gray background.`;
 }
 
 export function characterLookFromPhotoPrompt(_character: Character, style: VisualStyle, _role = "") {
-  const look = imageStyleLead(style);
-  return `Convert the attached photo to ${look}. Same subject. Solo portrait pose on a plain grey background.`;
+  return `${imageStyleLead(style)} portrait from the attached photo. One character, plain gray background.`;
 }
 
 export function characterAnchorPrompt(name: string, style: VisualStyle) {
   const line = `Hi, my name is ${name}, nice to meet you!`;
-  return `${videoStyleLead(style)} @Image1 looks into the camera and says, "${line}" Realistic lipsync. Plain background. ${sceneAudioClose()}`;
+  return `${videoStyleLead(style)} @Image1 looks into the camera and says, "${line}" Distinct voice, not flat or robotic. Realistic lipsync. Plain background. ${sceneAudioClose()}`;
 }
 
 export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto: boolean) {
@@ -153,16 +157,8 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
 }
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
-  return joinPromptParts([
-    imageStyleLead(style),
-    `Keep this same character, ${character.name}, alone`,
-    "apply only these look changes:",
-    notes.trim(),
-    SOLO_LOOK,
-    "single three-quarter standing pose, full character clearly visible",
-    "plain light gray seamless background, even studio lighting",
-    "one image, one pose, no grid, no collage, no character sheet, no multiple expressions",
-  ]);
+  const change = notes.trim().split(/[.!?]/)[0].slice(0, 120);
+  return `${imageStyleLead(style)} portrait of ${character.name}. ${change}. One character, plain gray background.`;
 }
 
 function sceneByIndex(project: Project, index?: number): Scene | undefined {
@@ -970,10 +966,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     const tag = `@Image${index + 1}`;
     const name = item.name.trim();
     if (!name) return;
-    if (item.kind === "character") {
-      if (!people.has(name.toLowerCase())) people.set(name.toLowerCase(), tag);
-      return;
-    }
+    if (item.kind === "character") return;
     if (item.kind === "product") refs.push(`${tag} is ${productCueLabel(name, item.notes || "")}, same packaging`);
     else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
     else refs.push(`${tag} is ${name}`);
@@ -1585,7 +1578,8 @@ function referenceLock(images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      const kind = item.kind === "character" ? "character" : item.kind === "location" ? "location" : item.kind;
+      if (item.kind === "character") return "";
+      const kind = item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
     .filter(Boolean);
@@ -1688,7 +1682,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const lead = [
     `Keep the same exact character, voice, gestures as the reference.`,
     `${look} style throughout the whole video.`,
+    "Characters are @Video references only. @Image references are places and products. Each @Video keeps a distinct voice from that reference, different in pitch, pace, and tone, never flat or identical.",
     "Each character keeps the same height, build, face, and features in every shot unless the story explicitly changes them in that shot. Each character speaks only their own lines. Never give one character's line to another.",
+    "Direct the scene: in one shot a character can speak and move at the same time. Cut only for a new angle, a new moment, or a separate action.",
     referenceLock(images),
     continues ? "This clip picks up straight from the previous part." : "",
     narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",

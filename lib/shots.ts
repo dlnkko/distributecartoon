@@ -13,11 +13,11 @@ const ANGLES = [
 
 function shotSizes(total: number) {
   const whole = Math.max(2, Math.round(total));
-  if (whole <= 3) return [whole];
+  if (whole <= 6) return [whole];
   const parts: number[] = [];
   let left = whole;
-  while (left > 3) {
-    const take = left - 3 === 1 ? 2 : 3;
+  while (left > 6) {
+    const take = left - 6 === 1 ? 5 : 6;
     parts.push(take);
     left -= take;
   }

@@ -1093,13 +1093,6 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     imageEntries.push(entry);
   }
 
-  for (const name of appearanceOrder(project)) {
-    const character = findCharacter(project, name);
-    if (!character || isUnseenVoice(character)) continue;
-    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
-    if (portrait) add({ url: portrait, kind: "character", name: character.name });
-  }
-
   const places: string[] = [];
   for (const scene of project.scenes) {
     const place = (scene.location || "").trim();
@@ -1121,17 +1114,20 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
   return imageEntries;
 }
 
+async function stableCharacterVideos(project: Project, abortSignal?: AbortSignal) {
+  const videos: PromptRef[] = [];
+  for (const name of appearanceOrder(project)) {
+    const character = findCharacter(project, name);
+    if (!character || character.isExtra || isUnseenVoice(character)) continue;
+    const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
+    if (video) videos.push({ url: video, kind: "character", name: character.name });
+  }
+  return videos;
+}
+
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
-  const videoEntries: PromptRef[] = [];
-  const cast = new Set(batchCastNames(project, batch).map((name) => name.toLowerCase()));
-
-  for (const character of leadCharacters(project)) {
-    if (!cast.has(character.name.toLowerCase())) continue;
-    if (!characterHasDialogue(project, character)) continue;
-    const video = await resolveUploadUrl(character.anchorVideoRemoteUrl, character.anchorVideoPublicPath, abortSignal);
-    if (video) videoEntries.push({ url: video, kind: "character", name: character.name });
-  }
+  const videoEntries = await stableCharacterVideos(project, abortSignal);
 
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
   const characters = videoEntries.slice(0, narrator ? MAX_ANCHOR_VIDEOS - 1 : MAX_ANCHOR_VIDEOS);
@@ -1143,23 +1139,11 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
     return collectLongformReferences(project, batch, abortSignal);
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
-  const videoEntries: PromptRef[] = [];
-
-  const pick = pickCastVideo(project, batch);
-  if (pick) {
-    const url = await resolveUploadUrl(pick.batch.videoRemoteUrl, pick.batch.videoPublicPath, abortSignal);
-    if (url) {
-      videoEntries.push({
-        url,
-        kind: "video",
-        name: pick.names.join(" and "),
-      });
-    }
-  }
+  const videoEntries = await stableCharacterVideos(project, abortSignal);
 
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
-  const clips = videoEntries.slice(0, 1);
-  return { imageEntries, videoEntries: narrator ? [...clips, narrator] : clips };
+  const characters = videoEntries.slice(0, narrator ? MAX_ANCHOR_VIDEOS - 1 : MAX_ANCHOR_VIDEOS);
+  return { imageEntries, videoEntries: narrator ? [...characters, narrator] : characters };
 }
 
 function assignClipToCharacters(
