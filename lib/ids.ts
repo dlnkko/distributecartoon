@@ -18,10 +18,21 @@ export function clampClipDuration(seconds: unknown, fallback = 8) {
   return Math.min(30, Math.max(4, value));
 }
 
+export const DURATION_CHOICES = [15, 30, 45, 60, 75, 90, 100, 120] as const;
+
 export function clampTotalDuration(seconds: unknown, fallback = 15) {
   const value = Math.round(Number(seconds));
   if (!Number.isFinite(value)) return fallback;
-  return Math.min(300, Math.max(5, value));
+  let best: (typeof DURATION_CHOICES)[number] = DURATION_CHOICES[0];
+  let gap = Infinity;
+  for (const choice of DURATION_CHOICES) {
+    const next = Math.abs(choice - value);
+    if (next < gap) {
+      gap = next;
+      best = choice;
+    }
+  }
+  return best;
 }
 
 export function normalizeAspectRatio(value: unknown): "16:9" | "9:16" {

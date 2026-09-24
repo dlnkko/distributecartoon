@@ -4,6 +4,7 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 import { getAuthUser, loadOwnedProject } from "@/lib/auth";
 import { normalizeAspectRatio, clampTotalDuration, createId } from "@/lib/ids";
+import { scaleEstimatedSeconds } from "@/lib/timing";
 import { recoverPendingVideos } from "@/lib/pipeline";
 import { driveProduce } from "@/lib/produce";
 import type { Project } from "@/lib/types";
@@ -110,9 +111,23 @@ export async function PATCH(request: Request) {
         : [],
       estimatedSeconds: Math.min(30, Math.max(2, Number(item.estimatedSeconds) || 3)),
       camera: String(item.camera || ""),
+      shots: Array.isArray(item.shots)
+        ? item.shots
+            .map((shot) => ({
+              seconds: Math.min(30, Math.max(1.5, Number(shot.seconds) || 2)),
+              camera: String(shot.camera || ""),
+              action: String(shot.action || ""),
+            }))
+            .filter((shot) => shot.action || shot.camera)
+        : undefined,
     }));
-    const total = project.scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0);
-    if (total > 0) project.targetDurationSeconds = clampTotalDuration(total);
+    const scaled = scaleEstimatedSeconds(
+      project.scenes.map((scene) => scene.estimatedSeconds || 0),
+      project.targetDurationSeconds || 15,
+    );
+    project.scenes.forEach((scene, index) => {
+      scene.estimatedSeconds = scaled[index] ?? scene.estimatedSeconds;
+    });
     if (body.resetGeneration) {
       archiveReadyVideos(project);
       project.batches = [];

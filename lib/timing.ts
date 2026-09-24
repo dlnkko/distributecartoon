@@ -1,3 +1,4 @@
+import { clampTotalDuration } from "./ids";
 import type { Scene } from "./types";
 
 const DURATION_RE =
@@ -9,12 +10,12 @@ export function parseDurationFromText(text: string): number | undefined {
   const seconds = text.match(DURATION_RE);
   if (seconds) {
     const value = Math.round(Number(seconds[1]));
-    if (Number.isFinite(value) && value > 0) return Math.min(300, Math.max(5, value));
+    if (Number.isFinite(value) && value > 0) return clampTotalDuration(value);
   }
   const minutes = text.match(MINUTE_RE);
   if (minutes && /min|minuto/i.test(minutes[0])) {
     const value = Math.round(Number(minutes[1]) * 60);
-    if (Number.isFinite(value) && value > 0) return Math.min(300, Math.max(5, value));
+    if (Number.isFinite(value) && value > 0) return clampTotalDuration(value);
   }
   return undefined;
 }

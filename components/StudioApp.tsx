@@ -6,8 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
+import { DURATION_CHOICES } from "@/lib/ids";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
-import { ensureSceneShots, planShots } from "@/lib/shots";
+import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 
 function assetSrc(publicPath?: string) {
@@ -801,8 +802,7 @@ export function StudioApp() {
   async function continueFromSetup() {
     const current = projectRef.current;
     if (!current || busy) return;
-    const seconds = Math.min(300, Math.max(5, Math.round(current.targetDurationSeconds || 15)));
-    await patchProject({ targetDurationSeconds: seconds, workflowStep: "setup" });
+    await patchProject({ targetDurationSeconds: current.targetDurationSeconds || 15, workflowStep: "setup" });
     await run("plan");
   }
 
@@ -821,10 +821,8 @@ export function StudioApp() {
         setBusy(false);
         return;
       }
-      const total = scenes.reduce((sum, scene) => sum + Math.max(2, Math.round(scene.estimatedSeconds || 0)), 0);
       const saved = await patchProject({
         scenes,
-        targetDurationSeconds: Math.min(300, Math.max(5, total)),
         workflowStep: "cast",
         resetGeneration: true,
       });
@@ -1185,6 +1183,7 @@ export function StudioApp() {
           {step === "review" ? (
             <ReviewStep
               scenes={scenesDraft}
+              targetSeconds={project.targetDurationSeconds || 15}
               busy={working}
               hasVideo={Boolean(projectDeliveredSrc(project))}
               onChange={setScenesDraft}
@@ -1685,15 +1684,9 @@ function SetupStep({
         </div>
         <div className="mt-4">
           <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
-          <DurationControl
-            value={project.targetDurationSeconds || 15}
-            resetKey={project.id}
-            disabled={busy}
-            onChange={onDuration}
-          />
+          <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
           <p className="mt-2 text-xs text-[var(--muted)]">
-            5–300s. Up to 30s is one take. Longer videos keep each scene whole: if the next scene would pass 30s, that
-            clip ends there.
+            Scenes are fitted to this length. Each take is at most 30s, and a scene is never split across takes.
           </p>
         </div>
       </section>
@@ -1780,6 +1773,7 @@ function SetupStep({
 
 function ReviewStep({
   scenes,
+  targetSeconds,
   busy,
   hasVideo,
   onChange,
@@ -1787,6 +1781,7 @@ function ReviewStep({
   onContinue,
 }: {
   scenes: Scene[];
+  targetSeconds: number;
   busy: boolean;
   hasVideo: boolean;
   onChange: (scenes: Scene[]) => void;
@@ -1802,10 +1797,9 @@ function ReviewStep({
     onChange(scenes.filter((_, i) => i !== index).map((scene, i) => ({ ...scene, index: i + 1 })));
   }
 
-  const totalSeconds = scenes.reduce((sum, scene) => sum + Math.max(2, Math.round(scene.estimatedSeconds || 0)), 0);
   const parts = packScenesIntoParts(
     scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-    totalSeconds,
+    targetSeconds,
   );
   const partByScene = new Map<number, number>();
   parts.forEach((part, partIndex) => {
@@ -1817,12 +1811,10 @@ function ReviewStep({
     <div className="flex flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
-          <h3 className="display text-2xl md:text-3xl">Edit scenes</h3>
-          <p className="mt-1 text-sm text-[var(--muted)]">Each scene stays one continuous moment. Shots inside it are 2–3 seconds.</p>
+          <h3 className="display text-xl">Scenes</h3>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">One action per scene. Times are fitted to {targetSeconds}s.</p>
         </div>
-        <p className="text-xs text-[var(--muted)]">
-          {totalSeconds}s · {formatPartPlan(parts)}
-        </p>
+        <p className="text-xs text-[var(--muted)]">{formatPartPlan(parts)}</p>
       </div>
 
       {scenes.map((scene, index) => {
@@ -1861,76 +1853,29 @@ function ReviewStep({
               Delete
             </button>
           </div>
-          <input
-            value={scene.title}
-            disabled={busy}
-            onChange={(event) => update(index, { title: event.target.value })}
-            placeholder="Title"
-            className="mb-2 w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm font-medium outline-none"
-          />
-          <label className="mb-2 block">
-            <span className="mb-1 block text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Location</span>
+          <div className="mb-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-[1fr_1.4fr]">
             <input
               value={scene.location}
               disabled={busy}
               onChange={(event) => update(index, { location: event.target.value })}
-              placeholder="Where this is"
-              className="w-full rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
+              placeholder="Place"
+              className="w-full rounded-lg bg-stone-50 px-2 py-1 text-sm outline-none"
             />
-          </label>
-          <div className="mb-2 space-y-2">
-            {(scene.shots?.length ? scene.shots : planShots(scene)).map((shot, shotIndex) => (
-              <div key={`${scene.id}-shot-${shotIndex}`} className="rounded-lg bg-stone-50 p-2">
-                <div className="mb-1.5 flex items-center gap-2">
-                  <span className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Shot {shotIndex + 1}</span>
-                  <label className="ml-auto flex items-center gap-1 text-[11px] font-medium text-[var(--ink)]">
-                    <input
-                      type="number"
-                      min={2}
-                      max={3}
-                      value={shot.seconds}
-                      disabled={busy}
-                      onChange={(event) => {
-                        const base = scene.shots?.length ? scene.shots : planShots(scene);
-                        const shots = base.map((item, i) =>
-                          i === shotIndex ? { ...item, seconds: Math.min(3, Math.max(2, Number(event.target.value) || 2)) } : item,
-                        );
-                        update(index, {
-                          shots,
-                          estimatedSeconds: shots.reduce((sum, item) => sum + item.seconds, 0),
-                          camera: shots[0]?.camera || scene.camera,
-                        });
-                      }}
-                      className="w-10 rounded-md border border-stone-200 bg-white px-1.5 py-1 text-right text-xs tabular-nums outline-none"
-                    />
-                    s
-                  </label>
-                </div>
-                <input
-                  value={shot.camera}
-                  disabled={busy}
-                  placeholder="Wide shot, eye level"
-                  onChange={(event) => {
-                    const base = scene.shots?.length ? scene.shots : planShots(scene);
-                    const shots = base.map((item, i) => (i === shotIndex ? { ...item, camera: event.target.value } : item));
-                    update(index, { shots, camera: shots[0]?.camera || scene.camera });
-                  }}
-                  className="mb-1.5 w-full rounded-lg bg-white px-2.5 py-1.5 text-sm outline-none"
-                />
-                <textarea
-                  value={shot.action}
-                  disabled={busy}
-                  placeholder="What this angle shows"
-                  onChange={(event) => {
-                    const base = scene.shots?.length ? scene.shots : planShots(scene);
-                    const shots = base.map((item, i) => (i === shotIndex ? { ...item, action: event.target.value } : item));
-                    update(index, { shots, summary: shots.map((item) => item.action).filter(Boolean).join(" ") });
-                  }}
-                  className="min-h-[48px] w-full resize-none rounded-lg bg-white px-2.5 py-1.5 text-sm outline-none"
-                />
-              </div>
-            ))}
+            <input
+              value={scene.camera}
+              disabled={busy}
+              onChange={(event) => update(index, { camera: event.target.value })}
+              placeholder="Camera"
+              className="w-full rounded-lg bg-stone-50 px-2 py-1 text-sm outline-none"
+            />
           </div>
+          <textarea
+            value={scene.summary}
+            disabled={busy}
+            placeholder="What happens"
+            onChange={(event) => update(index, { summary: event.target.value })}
+            className="mb-1.5 min-h-[40px] w-full resize-none rounded-lg bg-stone-50 px-2 py-1 text-sm outline-none"
+          />
           <div className="flex items-center justify-between">
             <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Dialogue</label>
             <button
@@ -1942,8 +1887,7 @@ function ReviewStep({
               Add line
             </button>
           </div>
-          <div className="mt-1.5 space-y-1.5">
-            {scene.dialogue.length === 0 ? <p className="text-[11px] text-[var(--muted)]">No dialogue.</p> : null}
+          <div className="mt-1 space-y-1">
             {scene.dialogue.map((line, lineIndex) => (
               <div key={`${scene.id}-d-${lineIndex}`} className="grid grid-cols-[6.5rem_1fr_auto] gap-1.5">
                 <input
@@ -2199,82 +2143,32 @@ function ProduceStep({
 
 function DurationControl({
   value,
-  resetKey,
   disabled,
   onChange,
 }: {
   value: number;
-  resetKey: string;
   disabled?: boolean;
   onChange: (seconds: number) => void;
 }) {
-  const [seconds, setSeconds] = useState(value);
-  const [text, setText] = useState(String(value));
-  const secondsRef = useRef(value);
-
-  useEffect(() => {
-    secondsRef.current = value;
-    setSeconds(value);
-    setText(String(value));
-    // Keep local +/- as the source of truth while this project is open.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [resetKey]);
-
-  function commitNumber(raw: string | number) {
-    const parsed = Math.round(Number(raw));
-    if (!Number.isFinite(parsed)) {
-      setText(String(secondsRef.current));
-      return;
-    }
-    const next = Math.min(300, Math.max(5, parsed));
-    secondsRef.current = next;
-    setSeconds(next);
-    setText(String(next));
-    onChange(next);
-  }
-
-  function bump(delta: number) {
-    commitNumber(secondsRef.current + delta);
-  }
-
+  const selected = DURATION_CHOICES.includes(value as (typeof DURATION_CHOICES)[number])
+    ? value
+    : DURATION_CHOICES[0];
   return (
-    <div className="flex h-12 w-fit items-center rounded-2xl border border-[var(--line)] bg-stone-50 p-1">
-      <button
-        type="button"
-        disabled={disabled || seconds <= 5}
-        aria-label="Decrease duration"
-        onClick={() => bump(-1)}
-        className="grid size-10 place-items-center rounded-xl text-xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
-      >
-        −
-      </button>
-      <input
-        type="text"
-        inputMode="numeric"
-        disabled={disabled}
-        aria-label="Duration in seconds"
-        value={text}
-        className="w-16 bg-transparent text-center text-xl font-semibold tabular-nums outline-none"
-        onChange={(event) => setText(event.target.value.replace(/[^\d]/g, "").slice(0, 3))}
-        onBlur={() => commitNumber(text)}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            event.preventDefault();
-            commitNumber(text);
-            event.currentTarget.blur();
-          }
-        }}
-      />
-      <span className="pr-2 text-sm font-medium text-stone-400">s</span>
-      <button
-        type="button"
-        disabled={disabled || seconds >= 300}
-        aria-label="Increase duration"
-        onClick={() => bump(1)}
-        className="grid size-10 place-items-center rounded-xl text-xl text-stone-500 hover:bg-white hover:text-[var(--ink)] disabled:opacity-40"
-      >
-        +
-      </button>
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Duration in seconds">
+      {DURATION_CHOICES.map((seconds) => (
+        <button
+          key={seconds}
+          type="button"
+          disabled={disabled}
+          aria-pressed={selected === seconds}
+          onClick={() => onChange(seconds)}
+          className={`rounded-full px-3 py-1.5 text-sm font-medium tabular-nums ${
+            selected === seconds ? "bg-[var(--ink)] text-white" : "bg-stone-100 text-[var(--ink)] hover:bg-stone-200"
+          } disabled:opacity-40`}
+        >
+          {seconds}s
+        </button>
+      ))}
     </div>
   );
 }

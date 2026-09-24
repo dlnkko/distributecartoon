@@ -147,7 +147,7 @@ export function characterAnchorPrompt(name: string, style: VisualStyle) {
 
 export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto: boolean) {
   const angle =
-    "Three-quarter angle, never head-on. The angle bakes depth and distance into the image so a moving camera can hold the geometry. No flat frontal view.";
+    "Wide three-quarter view of this exact place, about three quarters of the room or street in frame. Never a flat head-on photo and never a tight corner. Keep the same walls, furniture, and layout so a later scene can return here and match.";
   const look = imageStyleLead(style);
   const time = "Neutral lighting. Do not lock this place to day or night. The video will change the time of day.";
   if (fromPhoto) {
