@@ -822,10 +822,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
     replacements.push({
       pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
       tag,
-      always:
-        item.kind === "character"
-          ? `${tag}, keep the same exact character, voice, gestures as the reference`
-          : undefined,
+      always: undefined,
     });
   });
 
@@ -1598,27 +1595,14 @@ function sceneSays(project: Project, scene: Scene | undefined, people: Map<strin
     if (!entry.speaker || !text) continue;
     if (isVoiceoverSpeaker(project, entry.speaker)) {
       const voice = narratorTag ? `, voice as heard in ${narratorTag}` : "";
-      parts.push(`Off-screen narrator voice-over, no lipsync${voice}: "${text}"`);
+      parts.push(`Voiceover${voice}: "${text}"`);
       continue;
     }
     const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
     const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-    parts.push(onScreen.includes(name.toLowerCase()) ? `${who} says: "${text}"` : `${who} off-screen voice: "${text}"`);
+    parts.push(onScreen.includes(name.toLowerCase()) ? `${who} lipsyncs: "${text}"` : `${who} off-screen voice: "${text}"`);
   }
   return parts.join(" ");
-}
-
-function openingRules(continues: boolean, narrated: boolean, look: string) {
-  return [
-    "Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection.",
-    "Continuity holds: each shot starts where the last one ended, with the same positions, screen sides, props and light.",
-    "Each character is one body, as seen in their reference, with the same face and outfit in every shot. Never duplicate anyone.",
-    `Places, products and logos are @Image references from @Image1 on. Products are always in ${look} style. Describe a place only when the scene stands in a specific spot inside that image.`,
-    continues ? "This clip picks up straight from the previous part." : "",
-    narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
-  ]
-    .filter(Boolean)
-    .join(" ");
 }
 
 function simpleScenePrompt(options: CompactPromptOptions) {
@@ -1653,25 +1637,36 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       locationTags,
     );
     const visual = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
+    const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     return [
       `SCENE ${i + 1} (${seconds[i]}s).`,
       `${camera}.`,
       participateLine(sceneOnScreenNames(scene, project), people, project),
-      sceneSays(project, scene, people, narratorTag),
       visual,
+      sceneSays(project, scene, people, narratorTag),
+      "No background music.",
+      placeTag ? `${placeTag}.` : "",
     ]
       .filter(Boolean)
       .join(" ");
   });
 
-  return `${openingRules(continues, narrated, look)} ${look} style throughout the whole video. ${blocks.join(" CUT. ")} No background music. Speak from 0s. No repeated lines.`
+  const lead = [
+    `Keep the same exact character, voice, gestures as the reference.`,
+    `${look} style throughout the whole video.`,
+    continues ? "This clip picks up straight from the previous part." : "",
+    narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+  return `${lead} ${blocks.join(" CUT. ")} ${videoCloseLead()}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();
 }
 
 function videoPromptFor(options: CompactPromptOptions) {
-  return process.env.VIDEO_PROMPT_FORMAT === "compact" ? compactVideoPrompt(options) : directorBriefPrompt(options);
+  return simpleScenePrompt(options);
 }
 
 export function packedScenePrompt(project: Project, sceneIndexes: number[], _existing = "", maxSeconds?: number) {
