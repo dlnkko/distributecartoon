@@ -1676,6 +1676,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const lead = [
     `Keep the same exact character, voice, gestures as the reference.`,
     `${look} style throughout the whole video.`,
+    "Each character keeps the same height, build, face, and features in every shot unless the story explicitly changes them in that shot. Each character speaks only their own lines. Never give one character's line to another.",
     continues ? "This clip picks up straight from the previous part." : "",
     narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
   ]

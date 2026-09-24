@@ -1,6 +1,7 @@
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
 import { concatVideoBuffers } from "./concat";
 import { continuityFlags, projectSeed } from "./continuity";
+import { refineSeedancePrompt } from "./astra-prompt";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
@@ -1245,7 +1246,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     videoPrompt: prompt,
     duration: batch.duration,
   });
-  batch.videoPrompt = labeled;
+  batch.videoPrompt = await refineSeedancePrompt(labeled);
   batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
   if (batch.continuityFlags.length) console.info("continuity", project.id, batch.index, batch.continuityFlags);
   batch.status = "generating_video";
@@ -1255,7 +1256,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   delete batch.nextRetryAt;
   await saveSoon(project);
   const taskId = await submitSeedance25ReferenceVideo({
-    prompt: labeled,
+    prompt: batch.videoPrompt,
     duration: batch.duration,
     aspectRatio: normalizeAspectRatio(project.aspectRatio),
     referenceImageUrls: imageEntries.map((item) => item.url),
@@ -1424,8 +1425,9 @@ async function runGenerateBatchVideo(
     });
 
     onStatus("Generating your video…");
+    const revised = await refineSeedancePrompt(labeled);
     const remoteUrl = await generateSeedance25ReferenceVideo({
-      prompt: labeled,
+      prompt: revised,
       duration: batch.duration,
       aspectRatio: normalizeAspectRatio(project.aspectRatio),
       referenceImageUrls: imageEntries.map((item) => item.url),

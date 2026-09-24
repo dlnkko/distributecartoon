@@ -80,6 +80,10 @@ const PLAN_PROMPT = `${SYSTEM_PROMPT}
 Current task: PLAN ONLY.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
 Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel.
+Each character keeps the same height, build, face, and features in every shot. Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
+Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
+Objects work the way they do in the world. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck. Do not invent a mechanism.
+Shots are a linear continuation. A cut from day to night, or a flashback, is allowed only when the story needs it, and that shot must say the time changed or that this is a flashback. Otherwise the next shot is the next moment.
 Inside every scene, write shots of 2 or 3 seconds. Each shot has its own English camera and one physical action on that same continuous moment. A scene longer than 3 seconds must contain more than one shot, including while a long line of dialogue or voice-over is still being spoken. The dialogue stays on the scene and continues across those shots. Never hold one camera for 4 seconds or more. Do not repeat the same shot size back to back.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. A character talking to himself stays on screen and keeps the line. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion in the face and the body. Keep a character the same age and size until a later scene explicitly shows they grew. Clothes may change. Keep who is in front, behind, left, and right until the action moves them. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
@@ -766,10 +770,11 @@ export async function runAgent(options: {
     return;
   }
 
-  const { openaiApiKey, openaiModel } = getSecrets();
+  const { openaiApiKey } = getSecrets();
   if (!openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing for the GPT-5.6 Luna agent.");
+    throw new Error("OPENAI_API_KEY is missing for the GPT-6 Astra agent.");
   }
+  const openaiModel = "gpt-6-astra";
 
   const client = new OpenAI({ apiKey: openaiApiKey });
   const onStatus = (text: string) => options.onEvent({ type: "status", text });
