@@ -30,6 +30,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
         "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
         "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks.",
         "Name which way a screen or object faces the camera. Each character speaks only their own line.",
+        "Before any gaze, state the camera position relative to the look target. Do not leave two competing face directions. If the eyes are not on the lens, say eyes NOT on camera. On an emotional close-up keep: gaze must not be directed at lens unless explicitly stated.",
         prior
           ? "A previous part prompt is included. Continue from its last moment. Do not restart the story or repeat a finished action. The video tagged as the last 5 seconds is the end of that previous part."
           : "",

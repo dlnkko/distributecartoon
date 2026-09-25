@@ -8,6 +8,8 @@ import { getProject, saveProject } from "@/lib/store";
 import { activeTask } from "@/lib/tasks";
 import type { AgentMode, Project, StudioEvent } from "@/lib/types";
 import { projectDeliveredSrc } from "@/lib/video-jobs";
+import { activeMembership } from "@/lib/billing";
+import { whopReady } from "@/lib/whop";
 
 export const runtime = "nodejs";
 // Pro allows 800s. The worker keeps going after this request ends.
@@ -111,6 +113,9 @@ export async function POST(request: Request) {
   }
   if (body.mode === "produce" && !project.scenes.length) {
     return new Response(JSON.stringify({ error: "Review scenes before generating." }), { status: 400 });
+  }
+  if (body.mode === "produce" && whopReady() && !project.paidAt && !(await activeMembership())) {
+    return new Response(JSON.stringify({ error: "Subscribe on the pricing page before generating." }), { status: 402 });
   }
 
   if (body.mode === "produce") {

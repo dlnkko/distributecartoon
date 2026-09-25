@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { getSecrets } from "./config";
+import { r2Ready, uploadToR2 } from "./r2";
 import { slugify } from "./ids";
 import type { Project } from "./types";
 
@@ -85,11 +86,13 @@ export async function publishGeneratedBuffer(
   contentType?: string,
 ) {
   if (!project.ownerId) return undefined;
-  const supabase = await createClient();
   const objectPath = [project.ownerId, ...relativeParts].join("/").replaceAll("\\", "/");
+  const content = contentType || mimeFromName(objectPath);
+  if (r2Ready()) return uploadToR2(objectPath, buffer, content);
+  const supabase = await createClient();
   const { error } = await supabase.storage.from("generated").upload(objectPath, buffer, {
     upsert: true,
-    contentType: contentType || mimeFromName(objectPath),
+    contentType: content,
   });
   if (error) throw new Error(error.message || "Couldn't store that image.");
   const { data } = supabase.storage.from("generated").getPublicUrl(objectPath);

@@ -10,6 +10,7 @@ import { DURATION_CHOICES } from "@/lib/ids";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
+import { WhopPay } from "@/components/WhopPay";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -361,6 +362,7 @@ export function StudioApp() {
   const [notifyReady, setNotifyReady] = useState(false);
   const [notifyHint, setNotifyHint] = useState("");
   const [pane, setPane] = useState<"library" | "studio">("library");
+  const [payOpen, setPayOpen] = useState(false);
   const [generatingIds, setGeneratingIds] = useState<string[]>([]);
   const busyRef = useRef(false);
   const poppingRef = useRef(false);
@@ -898,6 +900,16 @@ export function StudioApp() {
       return;
     }
     setBusy(false);
+    const current = projectRef.current;
+    if (current && !current.paidAt) {
+      const status = await fetch(`/api/checkout?projectId=${encodeURIComponent(current.id)}`).then((response) =>
+        response.json().catch(() => ({ enabled: false })),
+      );
+      if (status.enabled && !status.paid) {
+        setPayOpen(true);
+        return;
+      }
+    }
     setPane("library");
     await run("produce");
   }
@@ -1146,6 +1158,19 @@ export function StudioApp() {
               locked={working || (!projectDeliveredSrc(project) && projectIsGenerating(project))}
               onJump={(target) => void goToStep(target)}
             />
+            {payOpen && project ? (
+              <WhopPay
+                projectId={project.id}
+                email={profile?.email}
+                onClose={() => setPayOpen(false)}
+                onPaid={(next) => {
+                  remember(next);
+                  setPayOpen(false);
+                  setPane("library");
+                  void run("produce");
+                }}
+              />
+            ) : null}
             <div className="scroll-thin mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
           {step === "script" ? (
             <ScriptStep

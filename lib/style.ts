@@ -1675,6 +1675,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       participateLine(sceneOnScreenNames(scene, project), people, project),
       visual,
       spoken,
+      /close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : "",
       placeTag ? `${placeTag}.` : "",
     ]
       .filter(Boolean)

@@ -44,3 +44,5 @@ next-env.d.ts
 /data/projects
 /data/secrets.json
 /public/generated
+
+.vercel

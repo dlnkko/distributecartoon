@@ -188,6 +188,8 @@ export type Project = {
   scriptRefCues: ScriptRefCue[];
   skippedRefs: boolean;
   ownerId?: string;
+  paidAt?: string;
+  paymentId?: string;
   targetDurationSeconds?: number;
   durationPending?: boolean;
   durationAuto?: boolean;
