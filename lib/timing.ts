@@ -117,20 +117,21 @@ export function packScenesIntoParts(
   if (!scenes.length) return durations.map((duration) => ({ duration, sceneIndexes: [] }));
   if (durations.length === 1) return [{ duration: durations[0], sceneIndexes: scenes.map((scene) => scene.index) }];
 
-  const boundaries: number[] = [];
-  let cursor = 0;
-  for (let index = 0; index < durations.length - 1; index += 1) {
-    cursor += durations[index];
-    boundaries.push((cursor / target) * summed);
-  }
   const groups: number[][] = durations.map(() => []);
-  let used = 0;
+  const usedInPart = durations.map(() => 0);
   let part = 0;
   for (const scene of scenes) {
     const span = sceneSpan(scene.estimatedSeconds);
-    if (part < boundaries.length && groups[part].length && used >= boundaries[part]) part += 1;
-    groups[part].push(scene.index);
-    used += span;
+    while (
+      part < durations.length - 1 &&
+      groups[part].length > 0 &&
+      usedInPart[part] + span > durations[part] + 0.05
+    ) {
+      part += 1;
+    }
+    const slot = Math.min(part, durations.length - 1);
+    groups[slot].push(scene.index);
+    usedInPart[slot] += span;
   }
   for (let index = 1; index < groups.length; index += 1) {
     if (groups[index].length) continue;
@@ -142,6 +143,32 @@ export function packScenesIntoParts(
   return durations
     .map((duration, index) => ({ duration, sceneIndexes: groups[index] }))
     .filter((part) => part.sceneIndexes.length);
+}
+
+export function capPartSceneSeconds(
+  scenes: Array<{ index: number; estimatedSeconds: number }>,
+  parts: SeedancePartPlan[],
+) {
+  const next = new Map(scenes.map((scene) => [scene.index, sceneSpan(scene.estimatedSeconds)]));
+  for (const part of parts) {
+    const values = part.sceneIndexes.map((index) => next.get(index) || 2);
+    const sum = values.reduce((total, value) => total + value, 0);
+    if (sum <= part.duration + 0.05) continue;
+    const fitted = scaleEstimatedSeconds(values, part.duration).map((value) => Math.min(part.duration, value));
+    let overflow = fitted.reduce((total, value) => total + value, 0) - part.duration;
+    for (let position = fitted.length - 1; position >= 0 && overflow > 0.05; position -= 1) {
+      const floor = 0.5;
+      const room = fitted[position] - floor;
+      if (room <= 0) continue;
+      const cut = Math.min(room, overflow);
+      fitted[position] = Math.round((fitted[position] - cut) * 10) / 10;
+      overflow -= cut;
+    }
+    part.sceneIndexes.forEach((index, position) => {
+      next.set(index, fitted[position]);
+    });
+  }
+  return next;
 }
 
 export function formatPartPlan(parts: SeedancePartPlan[]) {

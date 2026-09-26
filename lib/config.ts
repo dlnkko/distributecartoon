@@ -9,6 +9,8 @@ export type Secrets = {
   openrouterApiKey: string;
 };
 
+export const TEXT_MODEL = "gpt-5.6-luna";
+
 const secretsPath = () => path.join(process.cwd(), "data", "secrets.json");
 
 function readFileSecrets(): Partial<Secrets> {
@@ -24,7 +26,7 @@ export function getSecrets(): Secrets {
   const file = readFileSecrets();
   return {
     openaiApiKey: process.env.OPENAI_API_KEY || file.openaiApiKey || "",
-    openaiModel: process.env.OPENAI_MODEL || file.openaiModel || "gpt-5.6-luna",
+    openaiModel: TEXT_MODEL,
     kieApiKey: process.env.KIE_API_KEY || file.kieApiKey || "",
     falKey: process.env.FAL_KEY || file.falKey || "",
     openrouterApiKey: process.env.OPENROUTER_API_KEY || file.openrouterApiKey || "",

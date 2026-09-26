@@ -1,7 +1,5 @@
 import OpenAI from "openai";
-import { getSecrets } from "./config";
-
-const ASTRA_MODEL = "gpt-5.6-sol";
+import { getSecrets, TEXT_MODEL } from "./config";
 
 function quotedLines(text: string) {
   return [...text.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
@@ -22,8 +20,9 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
   if (!openaiApiKey) return trimmed;
   try {
     const client = new OpenAI({ apiKey: openaiApiKey });
+    console.info("seedance prompt model", TEXT_MODEL);
     const response = await client.responses.create({
-      model: ASTRA_MODEL,
+      model: TEXT_MODEL,
       reasoning: { effort: "medium" },
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
@@ -32,7 +31,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
         "Name which way a screen or object faces the camera. Each character speaks only their own line.",
         "Before any gaze, state the camera position relative to the look target. Do not leave two competing face directions. If the eyes are not on the lens, say eyes NOT on camera. On an emotional close-up keep: gaze must not be directed at lens unless explicitly stated.",
         prior
-          ? "A previous part prompt is included. Continue from its last moment. Do not restart the story or repeat a finished action. The video tagged as the last 5 seconds is the end of that previous part."
+          ? "A previous part prompt is included. Continue from its last moment. Do not restart the story or repeat a finished action. The video tagged as the last 5 seconds is the end of that previous part. Use it for the clothes, anything in their hands, and a body change that still applies. This part may open in a new place."
           : "",
       ]
         .filter(Boolean)
@@ -43,6 +42,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (/@Video\d|@Image\d/.test(trimmed) && !/@Video\d|@Image\d/.test(revised)) return trimmed;
+    if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     return revised;
   } catch (error) {
     console.warn("astra prompt revise failed", error instanceof Error ? error.message : error);

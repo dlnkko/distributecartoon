@@ -11,7 +11,7 @@ import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { packScenesIntoParts, scaleEstimatedSeconds, sceneHasStory, shouldGenerateOneShot } from "./timing";
+import { capPartSceneSeconds, packScenesIntoParts, sceneHasStory, shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1245,17 +1245,18 @@ export function planSeedanceBatches(project: Project) {
   const fallback = project.scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0) || 15;
   const target = clampTotalDuration(project.targetDurationSeconds || fallback);
   project.targetDurationSeconds = target;
-  const scaled = scaleEstimatedSeconds(
-    project.scenes.map((scene) => scene.estimatedSeconds || 0),
-    target,
-  );
-  project.scenes.forEach((scene, index) => {
-    scene.estimatedSeconds = scaled[index] ?? scene.estimatedSeconds;
-  });
   const parts = packScenesIntoParts(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     target,
   );
+  const capped = capPartSceneSeconds(
+    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    parts,
+  );
+  project.scenes.forEach((scene) => {
+    const next = capped.get(scene.index);
+    if (next) scene.estimatedSeconds = next;
+  });
   const previous = project.batches;
   project.batches = parts.map((part, index) => {
     const duration = part.duration;

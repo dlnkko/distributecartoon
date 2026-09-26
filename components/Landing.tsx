@@ -17,7 +17,7 @@ export function Landing() {
       <section className="max-w-2xl pt-16 md:pt-24">
         <h1 className="display text-5xl leading-[0.95] md:text-7xl">Scripts into Pixar and claymation shorts.</h1>
         <p className="mt-5 max-w-xl text-lg leading-7 text-[var(--muted)]">
-          Buy seconds once. Use them whenever you want. No monthly plan.
+          Buy credits once. Use them whenever you want. No monthly plan.
         </p>
         <a href="#pricing" className="btn-primary mt-8 inline-flex rounded-full bg-[var(--ink)] px-5 py-3 text-sm font-medium text-white">
           Buy credits
@@ -35,7 +35,7 @@ export function Landing() {
               {plan.featured ? " · popular" : ""}
             </p>
             <p className="display mt-3 text-4xl">${money(plan.price)}</p>
-            <p className="mt-1 text-sm font-medium">{plan.seconds}s of video</p>
+            <p className="mt-1 text-sm font-medium">{plan.seconds} credits</p>
             <p className="mt-2 flex-1 text-sm text-[var(--muted)]">{plan.blurb}</p>
             <a
               href={`/login?next=/checkout/${plan.id}`}

@@ -15,6 +15,13 @@ export function imageStyleLead(style: VisualStyle) {
   return style === "claymation" ? "claymation style" : "pixar style";
 }
 
+function portraitCraft(style: VisualStyle) {
+  if (style === "claymation") {
+    return "Hand-sculpted stop-motion clay puppet. Lumpy handmade face, fingerprints, tool marks, matte clay. Not smooth skin with a clay texture on top.";
+  }
+  return "Original 3D face. Use a specific nose, brow, and jaw from the description, with uneven features. Not a generic big-eyed hero.";
+}
+
 export function videoAudioLead() {
   return "Dialogue starts early, but never before its speaker is on screen. Each line stays inside its own SCENE. No repeated lines.";
 }
@@ -133,16 +140,24 @@ function shortLookAppearance(character: Character) {
 }
 
 export function characterLookPrompt(character: Character, style: VisualStyle) {
-  return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. One character, plain gray background.`;
+  return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
 export function characterLookFromPhotoPrompt(_character: Character, style: VisualStyle, _role = "") {
-  return `${imageStyleLead(style)} portrait from the attached photo. One character, plain gray background.`;
+  const craft =
+    style === "claymation"
+      ? "Same person as the photo, rebuilt as a hand-sculpted clay puppet. Fingerprints, tool marks, matte clay. Not smooth skin with a clay texture."
+      : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
+  return `${imageStyleLead(style)} portrait from the attached photo. ${craft} One character, plain gray background.`;
 }
 
 export function characterAnchorPrompt(name: string, style: VisualStyle) {
   const line = `Hi, my name is ${name}, nice to meet you!`;
-  return `${videoStyleLead(style)} @Image1 looks into the camera and says, "${line}" Distinct voice, not flat or robotic. Realistic lipsync. Plain background. ${sceneAudioClose()}`;
+  const face =
+    style === "claymation"
+      ? "Keep the handmade clay face, fingerprints and all. Do not smooth it."
+      : "Keep this original face. Do not restyle it into a famous character.";
+  return `${videoStyleLead(style)} @Image1 looks into the camera and says, "${line}" ${face} Distinct voice, not flat or robotic. Realistic lipsync. Plain background. ${sceneAudioClose()}`;
 }
 
 export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto: boolean) {
@@ -158,7 +173,7 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
   const change = notes.trim().split(/[.!?]/)[0].slice(0, 120);
-  return `${imageStyleLead(style)} portrait of ${character.name}. ${change}. One character, plain gray background.`;
+  return `${imageStyleLead(style)} portrait of ${character.name}. ${change}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
 function sceneByIndex(project: Project, index?: number): Scene | undefined {
@@ -960,7 +975,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       narratorTag = tag;
       refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
     } else if (item.kind === "character" && key) people.set(key, tag);
-    else if (item.kind === "video") refs.push(`${tag} is the last 5 seconds of the previous video. Continue from that exact moment, place, and motion.`);
+    else if (item.kind === "video") refs.push(`${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. Keep the camera cinematic.`);
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
   images.forEach((item, index) => {
@@ -1618,7 +1633,8 @@ function sceneSays(project: Project, scene: Scene | undefined, people: Map<strin
 function simpleScenePrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
   const images = options.images || [];
-  const { people, swaps, narratorTag } = buildTags(project, images, options.videos || []);
+  const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
+  const tailLine = refs.find((line) => /last 5 seconds/i.test(line)) || "";
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
@@ -1684,9 +1700,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
 
   const lead = [
     `${look} style throughout the whole video.`,
+    tailLine,
     "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
     referenceLock(images),
-    continues ? "This clip picks up straight from the previous part." : "",
+    tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
     narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
   ]
     .filter(Boolean)

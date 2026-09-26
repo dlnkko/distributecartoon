@@ -11,6 +11,7 @@ import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { WhopPay } from "@/components/WhopPay";
+import { PLANS } from "@/lib/plans";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -154,7 +155,6 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
   for (const project of projects) {
     const joined = projectJoinedSrc(project) || (projectIsMultipart(project) ? "" : projectDeliveredSrc(project));
     const ready = project.batches.filter((batch) => durableVideoSrc(batch) || batchVideoSrc(batch));
-    const hideParts = Boolean(projectJoinedSrc(project));
     const partSrcs = new Set(ready.map((batch) => batchVideoSrc(batch)).filter(Boolean));
     if (joined) {
       const dedupe = `${project.id}:${joined}`;
@@ -174,7 +174,7 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
         });
       }
     }
-    if (!projectJoinedSrc(project)) {
+    if (!projectIsMultipart(project)) {
       for (const batch of project.batches) {
         const src = durableVideoSrc(batch);
         if (!src) continue;
@@ -197,7 +197,7 @@ function historyFromProjects(projects: Project[]): HistoryVideo[] {
     }
     for (const item of project.archivedVideos || []) {
       const src = item.publicPath;
-      if (!src || isProviderContentUrl(src) || (hideParts && partSrcs.has(src))) continue;
+      if (!src || isProviderContentUrl(src) || partSrcs.has(src) || /· part \d+/i.test(item.title || "")) continue;
       const dedupe = `${project.id}:${src}`;
       if (seen.has(dedupe)) continue;
       seen.add(dedupe);
@@ -577,8 +577,9 @@ export function StudioApp() {
       markGenerating(project.id, true);
       setPane("library");
       setStatus("Generating your video…");
-    }
-    else setStatus("");
+    } else if (mode === "plan") {
+      setStatus("Writing your scenes…");
+    } else setStatus("");
     const controller = mode === "produce" ? null : new AbortController();
     if (controller) {
       abortRef.current?.abort();
@@ -612,8 +613,9 @@ export function StudioApp() {
           const line = chunk.replace(/^data: /, "").trim();
           if (!line) continue;
           const event = JSON.parse(line) as { type: string; text?: string; project?: Project };
-          if (event.type === "status" && event.text && mode === "produce") {
-            setStatus(/couldn't|failed|error|stopped/i.test(event.text) ? event.text : "Generating your video…");
+          if (event.type === "status" && event.text) {
+            if (mode === "produce") setStatus(/couldn't|failed|error|stopped/i.test(event.text) ? event.text : "Generating your video…");
+            else if (mode === "plan") setStatus("Writing your scenes…");
           }
           if (event.type === "project" && event.project) {
             remember(event.project);
@@ -1041,7 +1043,7 @@ export function StudioApp() {
   const allSlots = [...charactersSlots, ...products, ...locations, ...logos];
 
   return (
-    <div className="relative flex h-screen overflow-hidden" data-style={project.style}>
+    <div className="relative flex h-dvh overflow-hidden" data-style={project.style}>
       {sidebarOpen ? (
         <button
           type="button"
@@ -1108,7 +1110,7 @@ export function StudioApp() {
               <span className="block truncate text-sm font-medium">Your account</span>
               <span className="block truncate text-[11px] text-[var(--muted)]">
                 {profile?.email || "Account"}
-                {profile ? ` · ${credits} credits` : ""}
+                {profile ? ` · ${credits} credits left` : ""}
               </span>
             </span>
           </button>
@@ -1120,6 +1122,7 @@ export function StudioApp() {
           <VideosDashboard
             videos={history}
             generating={generating}
+            credits={credits}
             error={pane === "library" && status && !busy && /couldn't|failed|error|stopped|request failed/i.test(status) ? status : ""}
             onMenu={() => setSidebarOpen(true)}
             onPlay={(item) =>
@@ -1138,19 +1141,21 @@ export function StudioApp() {
           />
         ) : (
           <>
-        <header className="flex items-center gap-3 px-3 py-3 md:px-6">
-          <button type="button" className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm md:hidden" onClick={() => setSidebarOpen(true)}>
-            Menu
+        <header className="flex items-center gap-2 px-3 py-3 md:gap-3 md:px-6">
+          <button type="button" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white md:hidden" aria-label="Open menu" onClick={() => setSidebarOpen(true)}>
+            <MenuIcon />
           </button>
           <div className="min-w-0 flex-1">
-            <h2 className="display truncate text-xl md:text-2xl">{project.title}</h2>
+            <h2 className="display truncate text-lg md:text-2xl">{project.title}</h2>
           </div>
+          <span className="shrink-0 rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium">{credits} credits</span>
           <button
             type="button"
             onClick={() => setPane("library")}
-            className="rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
+            className="shrink-0 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
           >
-            Your videos
+            <span className="sm:hidden">Library</span>
+            <span className="hidden sm:inline">Your videos</span>
           </button>
         </header>
             <StepBar
@@ -1171,7 +1176,20 @@ export function StudioApp() {
                 }}
               />
             ) : null}
-            <div className="scroll-thin mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
+            <div className="scroll-thin relative mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
+          {working && step === "setup" ? (
+            <div className="absolute inset-0 z-10 grid place-items-center bg-[var(--bg)]/75 p-6">
+              <div className="w-full max-w-sm rounded-3xl border border-[var(--line)] bg-white px-6 py-7 text-center shadow-[0_12px_40px_rgba(28,25,23,0.08)]">
+                <span className="mx-auto grid size-10 place-items-center">
+                  <span className="size-7 animate-spin rounded-full border-2 border-stone-200 border-t-[var(--ink)]" />
+                </span>
+                <p className="display mt-4 text-2xl">Writing your scenes</p>
+                <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
+                  This takes a minute. The storyboard is being fitted to the length you picked.
+                </p>
+              </div>
+            </div>
+          ) : null}
           {step === "script" ? (
             <ScriptStep
               key={project.id}
@@ -1294,16 +1312,28 @@ export function StudioApp() {
               </button>
             </div>
             <dl className="mt-5 space-y-3 text-sm">
-              <div className="flex justify-between rounded-2xl bg-[var(--bg)] px-4 py-3">
-                <dt>Plan</dt>
-                <dd className="capitalize">{profile?.plan || "free"}</dd>
+              <div className="flex items-end justify-between rounded-2xl bg-[var(--bg)] px-4 py-3">
+                <dt>
+                  <span className="block text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Credits left</span>
+                  <span className="display mt-1 block text-3xl">{credits}</span>
+                </dt>
+                <dd className="max-w-[140px] text-right text-xs text-[var(--muted)]">A 30s film uses 30 credits.</dd>
               </div>
-              <div className="flex justify-between rounded-2xl bg-[var(--bg)] px-4 py-3">
-                <dt>Credits</dt>
-                <dd>{credits}</dd>
-              </div>
-              <div className="rounded-2xl bg-[var(--bg)] px-4 py-3 text-[var(--muted)]">
-                Subscriptions and credit top-ups will live here.
+              <div className="rounded-2xl border border-[var(--line)] p-3">
+                <p className="px-1 text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Buy credits</p>
+                <ul className="mt-2 flex flex-col gap-1.5">
+                  {PLANS.map((plan) => (
+                    <li key={plan.id}>
+                      <a href={`/checkout/${plan.id}`} className="flex items-center justify-between rounded-xl px-2 py-2 hover:bg-[var(--bg)]">
+                        <span>
+                          {plan.name}
+                          <span className="ml-2 text-[var(--muted)]">{plan.seconds} credits</span>
+                        </span>
+                        <span className="font-medium">${plan.price.toFixed(2)}</span>
+                      </a>
+                    </li>
+                  ))}
+                </ul>
               </div>
             </dl>
             <button type="button" onClick={() => void logout()} className="mt-5 w-full rounded-2xl border border-[var(--line)] px-4 py-2.5 text-sm">
@@ -1358,7 +1388,7 @@ function cloneScene(scene: Scene): Scene {
 function StepBar({ current, locked, onJump }: { current: WorkflowStep; locked?: boolean; onJump?: (step: WorkflowStep) => void }) {
   const index = STEPS.findIndex((item) => item.id === current);
   return (
-    <ol className="mx-auto mb-3 flex w-full max-w-4xl items-center gap-1.5 px-3 md:px-6">
+    <ol className="mx-auto mb-3 flex w-full max-w-4xl items-center gap-1 overflow-x-auto px-3 md:gap-1.5 md:px-6">
       {STEPS.map((item, i) => {
         const active = i === index;
         const done = i < index;
@@ -1371,7 +1401,7 @@ function StepBar({ current, locked, onJump }: { current: WorkflowStep; locked?: 
             >
               {i + 1}
             </span>
-            <span className={`hidden truncate text-[11px] font-medium sm:inline ${active ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>{item.label}</span>
+            <span className={`truncate text-[10px] font-medium sm:text-[11px] ${active ? "text-[var(--ink)]" : "text-[var(--muted)]"}`}>{item.label}</span>
           </>
         );
         return (
@@ -1400,6 +1430,7 @@ function StepBar({ current, locked, onJump }: { current: WorkflowStep; locked?: 
 function VideosDashboard({
   videos,
   generating,
+  credits,
   error,
   onMenu,
   onPlay,
@@ -1408,6 +1439,7 @@ function VideosDashboard({
 }: {
   videos: HistoryVideo[];
   generating: Array<{ projectId: string; title: string; duration: number; aspectRatio: AspectRatio }>;
+  credits: number;
   error?: string;
   onMenu: () => void;
   onPlay: (item: HistoryVideo) => void;
@@ -1422,28 +1454,50 @@ function VideosDashboard({
         ? `${generating.length} generating · ${videos.length} finished`
         : "Generating your video"
       : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`;
+  const low = credits < 15;
   return (
-    <div className="scroll-thin flex-1 overflow-y-auto px-4 pb-12 sm:px-6 lg:px-8">
+    <div className="scroll-thin flex-1 overflow-y-auto px-4 pb-16 sm:px-6 lg:px-8">
       <div className="mx-auto w-full max-w-7xl">
-        <div className="flex flex-col gap-5 pt-5 sm:flex-row sm:items-end sm:justify-between sm:pt-7">
-          <div className="flex min-w-0 items-start gap-3">
-            <button type="button" className="mt-1 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm md:hidden" onClick={onMenu}>
-              Menu
-            </button>
-            <div className="min-w-0">
-              <h2 className="display text-[2rem] leading-none sm:text-[2.35rem]">Your videos</h2>
-              <p className="mt-2 text-sm text-[var(--muted)]">{summary}</p>
-            </div>
+        <div className="flex items-center gap-3 pt-4 sm:pt-7">
+          <button type="button" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white md:hidden" aria-label="Open menu" onClick={onMenu}>
+            <MenuIcon />
+          </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="display text-[1.75rem] leading-none sm:text-[2.35rem]">Your videos</h2>
+            <p className="mt-1.5 text-sm text-[var(--muted)]">{summary}</p>
           </div>
           <button
             type="button"
             onClick={onCreate}
-            className="btn-primary inline-flex shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-6 py-3 text-[15px] font-semibold text-white shadow-[0_14px_32px_rgba(28,25,23,0.2)]"
+            className="btn-primary hidden shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(28,25,23,0.2)] sm:inline-flex"
           >
             <PlusIcon />
             Create a video
           </button>
         </div>
+
+        <div className={`mt-4 flex flex-col gap-3 rounded-[24px] border bg-white p-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${low ? "border-[var(--warn)]" : "border-[var(--line)]"}`}>
+          <div>
+            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--muted)]">Credits left</p>
+            <p className="display mt-1 text-4xl leading-none">{credits}</p>
+            <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">
+              {low ? "Not enough for a 15s film. Buy a pack to generate." : "One credit is one second of video. A 30s film uses 30 credits."}
+            </p>
+          </div>
+          <a href="/checkout/pro" className="btn-primary inline-flex items-center justify-center rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white">
+            Buy credits
+          </a>
+        </div>
+
+        <button
+          type="button"
+          onClick={onCreate}
+          className="btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-5 py-3 text-sm font-semibold text-white sm:hidden"
+        >
+          <PlusIcon />
+          Create a video
+        </button>
+
         {error ? <p className="mt-4 text-sm text-[var(--danger)]">{error}</p> : null}
 
         {empty ? (
@@ -1460,7 +1514,7 @@ function VideosDashboard({
             </button>
           </div>
         ) : (
-          <div className="mt-8 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+          <div className="mt-5 grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:mt-8 lg:grid-cols-3 xl:grid-cols-4">
             {generating.map((item) => (
               <article
                 key={`generating-${item.projectId}`}
@@ -1796,6 +1850,39 @@ function SetupStep({
   );
 }
 
+function FitText({
+  value,
+  disabled,
+  placeholder,
+  onChange,
+}: {
+  value: string;
+  disabled: boolean;
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    const field = ref.current;
+    if (!field) return;
+    field.style.height = "0px";
+    field.style.height = `${field.scrollHeight}px`;
+  }, [value]);
+
+  return (
+    <textarea
+      ref={ref}
+      value={value}
+      disabled={disabled}
+      placeholder={placeholder}
+      rows={2}
+      onChange={(event) => onChange(event.target.value)}
+      className="w-full resize-none overflow-hidden bg-transparent text-sm leading-5 outline-none"
+    />
+  );
+}
+
 function ReviewStep({
   scenes,
   targetSeconds,
@@ -1826,128 +1913,146 @@ function ReviewStep({
     scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     targetSeconds,
   );
-  const partByScene = new Map<number, number>();
-  parts.forEach((part, partIndex) => {
-    for (const sceneIndex of part.sceneIndexes) partByScene.set(sceneIndex, partIndex + 1);
-  });
   const canContinue = scenes.some(sceneHasStory);
+
+  const groups = parts.length
+    ? parts.map((part, partIndex) => ({
+        key: `part-${partIndex + 1}`,
+        label: `Part ${partIndex + 1}`,
+        max: part.duration,
+        indexes: part.sceneIndexes
+          .map((sceneIndex) => scenes.findIndex((scene) => scene.index === sceneIndex))
+          .filter((index) => index >= 0),
+      }))
+    : [{ key: "all", label: "Scenes", max: targetSeconds, indexes: scenes.map((_, index) => index) }];
 
   return (
     <div className="flex flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 className="display text-xl">Scenes</h3>
-          <p className="mt-0.5 text-xs text-[var(--muted)]">One action per scene. Times are fitted to {targetSeconds}s.</p>
+          <p className="mt-0.5 text-xs text-[var(--muted)]">One short beat per card. Each part stays within 30s.</p>
         </div>
         <p className="text-xs text-[var(--muted)]">{formatPartPlan(parts)}</p>
       </div>
 
-      {scenes.map((scene, index) => {
-        const empty = !sceneHasStory(scene);
-        const part = partByScene.get(scene.index);
+      {groups.map((group) => {
+        const seconds = group.indexes.reduce((sum, index) => sum + (scenes[index]?.estimatedSeconds || 0), 0);
         return (
-        <article key={scene.id} className={`rounded-2xl border bg-white p-3 ${empty ? "border-amber-200" : "border-[var(--line)]"}`}>
-          <div className="mb-2 flex items-center gap-2">
-            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
-              Scene {scene.index || index + 1}
-              {part ? ` · Part ${part}` : ""}
-              {empty ? " · Empty" : ""}
-            </p>
-            <label className="ml-auto flex items-center gap-1.5 text-[11px] font-medium text-[var(--ink)]">
-              <input
-                type="number"
-                min={2}
-                max={30}
-                value={scene.estimatedSeconds}
-                disabled={busy}
-                onChange={(event) => {
-                  const estimatedSeconds = Math.min(30, Math.max(2, Number(event.target.value) || 2));
-                  update(index, ensureSceneShots({ ...scene, estimatedSeconds }));
-                }}
-                className="w-12 rounded-md border border-stone-200 bg-stone-50 px-1.5 py-1 text-right text-xs tabular-nums outline-none"
-              />
-              s
-            </label>
-            <button
-              type="button"
-              disabled={busy || scenes.length <= 1}
-              aria-label={`Delete scene ${scene.index || index + 1}`}
-              onClick={() => remove(index)}
-              className="rounded-md px-2 py-1 text-[11px] font-medium text-stone-400 hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-30"
-            >
-              Delete
-            </button>
-          </div>
-          <div className="mb-1.5 grid grid-cols-1 gap-1.5 sm:grid-cols-[1fr_1.4fr]">
-            <input
-              value={scene.location}
-              disabled={busy}
-              onChange={(event) => update(index, { location: event.target.value })}
-              placeholder="Place"
-              className="w-full rounded-lg bg-stone-50 px-2 py-1 text-sm outline-none"
-            />
-            <input
-              value={scene.camera}
-              disabled={busy}
-              onChange={(event) => update(index, { camera: event.target.value })}
-              placeholder="Camera"
-              className="w-full rounded-lg bg-stone-50 px-2 py-1 text-sm outline-none"
-            />
-          </div>
-          <textarea
-            value={scene.summary}
-            disabled={busy}
-            placeholder="What happens"
-            onChange={(event) => update(index, { summary: event.target.value })}
-            className="mb-1.5 min-h-[40px] w-full resize-none rounded-lg bg-stone-50 px-2 py-1 text-sm outline-none"
-          />
-          <div className="flex items-center justify-between">
-            <label className="text-[10px] font-medium uppercase tracking-[0.14em] text-[var(--muted)]">Dialogue</label>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => update(index, { dialogue: [...scene.dialogue, { speaker: "", line: "" }] })}
-              className="text-[11px] text-[var(--accent)]"
-            >
-              Add line
-            </button>
-          </div>
-          <div className="mt-1 space-y-1">
-            {scene.dialogue.map((line, lineIndex) => (
-              <div key={`${scene.id}-d-${lineIndex}`} className="grid grid-cols-[6.5rem_1fr_auto] gap-1.5">
-                <input
-                  value={line.speaker}
-                  disabled={busy}
-                  placeholder="Speaker"
-                  onChange={(event) => {
-                    const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, speaker: event.target.value } : item));
-                    update(index, { dialogue });
-                  }}
-                  className="rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
-                />
-                <input
-                  value={line.line}
-                  disabled={busy}
-                  placeholder="Line"
-                  onChange={(event) => {
-                    const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, line: event.target.value } : item));
-                    update(index, { dialogue });
-                  }}
-                  className="rounded-lg bg-stone-50 px-2.5 py-1.5 text-sm outline-none"
-                />
-                <button
-                  type="button"
-                  disabled={busy}
-                  aria-label="Remove line"
-                  onClick={() => update(index, { dialogue: scene.dialogue.filter((_, i) => i !== lineIndex) })}
-                  className="px-1.5 text-sm text-stone-400 hover:text-[var(--danger)]"
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-          </div>
-        </article>
+          <section key={group.key} className="flex flex-col gap-1.5">
+            <div className="flex items-baseline justify-between px-0.5">
+              <h4 className="text-sm font-semibold">{group.label}</h4>
+              <p className="text-[11px] tabular-nums text-[var(--muted)]">
+                {Math.round(seconds * 10) / 10}s · max {group.max}s
+              </p>
+            </div>
+            {group.indexes.map((index) => {
+              const scene = scenes[index];
+              const empty = !sceneHasStory(scene);
+              return (
+                <article key={scene.id} className={`overflow-hidden rounded-xl border bg-white ${empty ? "border-amber-200" : "border-[var(--line)]"}`}>
+                  <div className="flex items-center gap-2 border-b border-[var(--line)] bg-stone-50/80 px-3 py-1.5">
+                    <span className="text-xs font-semibold tabular-nums">Scene {scene.index || index + 1}</span>
+                    {empty ? <span className="text-[11px] text-amber-700">Empty</span> : null}
+                    <label className="ml-auto flex items-center gap-1 text-[11px] text-[var(--muted)]">
+                      <input
+                        type="number"
+                        min={2}
+                        max={30}
+                        value={scene.estimatedSeconds}
+                        disabled={busy}
+                        aria-label={`Scene ${scene.index || index + 1} seconds`}
+                        onChange={(event) => {
+                          const estimatedSeconds = Math.min(30, Math.max(2, Number(event.target.value) || 2));
+                          update(index, ensureSceneShots({ ...scene, estimatedSeconds }));
+                        }}
+                        className="w-10 rounded-md border border-stone-200 bg-white px-1 py-0.5 text-right text-xs tabular-nums text-[var(--ink)] outline-none"
+                      />
+                      sec
+                    </label>
+                    <button
+                      type="button"
+                      disabled={busy || scenes.length <= 1}
+                      aria-label={`Delete scene ${scene.index || index + 1}`}
+                      onClick={() => remove(index)}
+                      className="rounded-md px-1.5 py-0.5 text-[11px] text-stone-400 hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-30"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-[4.25rem_1fr] items-start gap-x-3 gap-y-1.5 px-3 py-2.5">
+                    <span className="pt-0.5 text-[11px] text-[var(--muted)]">Place</span>
+                    <input
+                      value={scene.location}
+                      disabled={busy}
+                      onChange={(event) => update(index, { location: event.target.value })}
+                      placeholder="Where this happens"
+                      className="w-full bg-transparent text-sm font-medium outline-none"
+                    />
+                    <span className="pt-0.5 text-[11px] text-[var(--muted)]">Shot</span>
+                    <input
+                      value={scene.camera}
+                      disabled={busy}
+                      onChange={(event) => update(index, { camera: event.target.value })}
+                      placeholder="Camera"
+                      className="w-full bg-transparent text-sm outline-none"
+                    />
+                    <span className="pt-0.5 text-[11px] text-[var(--muted)]">Action</span>
+                    <FitText
+                      value={scene.summary}
+                      disabled={busy}
+                      placeholder="What happens in this shot"
+                      onChange={(summary) => update(index, { summary })}
+                    />
+                    <span className="pt-1 text-[11px] text-[var(--muted)]">Line</span>
+                    <div className="min-w-0">
+                      {scene.dialogue.map((line, lineIndex) => (
+                        <div key={`${scene.id}-d-${lineIndex}`} className="mb-1 flex items-center gap-1.5">
+                          <input
+                            value={line.speaker}
+                            disabled={busy}
+                            placeholder="Speaker"
+                            onChange={(event) => {
+                              const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, speaker: event.target.value } : item));
+                              update(index, { dialogue });
+                            }}
+                            className="w-24 shrink-0 rounded-md bg-stone-100 px-1.5 py-0.5 text-xs font-medium outline-none"
+                          />
+                          <input
+                            value={line.line}
+                            disabled={busy}
+                            placeholder="Spoken line"
+                            onChange={(event) => {
+                              const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, line: event.target.value } : item));
+                              update(index, { dialogue });
+                            }}
+                            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
+                          />
+                          <button
+                            type="button"
+                            disabled={busy}
+                            aria-label="Remove line"
+                            onClick={() => update(index, { dialogue: scene.dialogue.filter((_, i) => i !== lineIndex) })}
+                            className="px-1 text-sm text-stone-400 hover:text-[var(--danger)]"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        type="button"
+                        disabled={busy}
+                        onClick={() => update(index, { dialogue: [...scene.dialogue, { speaker: "", line: "" }] })}
+                        className="text-[11px] text-[var(--accent)]"
+                      >
+                        Add line
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </section>
         );
       })}
 
@@ -2357,6 +2462,14 @@ function InfoIcon() {
     <svg width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
       <circle cx="6" cy="2.35" r="1.05" fill="currentColor" />
       <path d="M6 5.1v4.55" stroke="currentColor" strokeWidth="1.55" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function MenuIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16M4 12h16M4 17h16" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
     </svg>
   );
 }

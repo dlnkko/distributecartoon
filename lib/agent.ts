@@ -1,10 +1,10 @@
 import OpenAI from "openai";
-import { getSecrets } from "./config";
+import { getSecrets, TEXT_MODEL } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
 import { driveProduce } from "./produce";
 import { englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
-import { estimateSceneSeconds, parseDurationFromText, sceneHasStory, shouldGenerateOneShot } from "./timing";
+import { capPartSceneSeconds, estimateDialogueSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, seedancePartDurations, shouldGenerateOneShot } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
@@ -20,8 +20,8 @@ Pipeline real:
 2. Extraer escenas, diálogos, locaciones y personajes.
 3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, fondo gris claro, ese personaje solo). Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto a Pixar o claymation; nunca inventes pelo, piel, ropa ni especie. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a look for a Narrator or unseen voice-over. If the script is narrator VO and does not name whose voice, keep speaker as Narrator (is_extra true); the system picks any fitting off-screen voice. If an on-screen character has dialogue, that is their realistic lipsync. A speaker named Narrator is always off-screen voice-over. Never give those lines to an on-screen character and never lipsync them. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
 4. NO first-frame still. Only character look portraits are generated. Seedance 2.5 R2V receives those portraits plus product/logo/location photos when the script uses them. The system maps files to @Image1, @Image2, @Image3 in upload order and writes those tags INSIDE the scenes when that person or object is on screen. Do not dump "@Image2 is Guy. Match his design..." at the start of the prompt.
-5. Duración de cada ESCENA: si hay diálogo, el tiempo es el de decirlo con calma. Si casi no pasa nada (un beat, un insert, un corte), 2 a 3 segundos, según complejidad, intención y relevancia. No alargues una escena vacía ni comprimas una frase hablada.
-6. El total del video está en targetDurationSeconds y solo puede ser 15, 30, 45, 60, 75, 90, 100 o 120. Las escenas suman exactamente ese total. Seedance 2.5 genera hasta 30s por clip, siempre a 480p. 15 y 30 son una sola tanda. 45 es 30+15, 60 es 30+30, 75 es 30+30+15, 90 es 30+30+30, 100 es 30+30+30+10, 120 es cuatro tandas de 30. Nunca partas una escena a la mitad.
+5. Cada escena es UN plano y UNA acción. El plano cambia en cada escena: wide, close-up, insert, low angle, high angle, tracking, dutch. Nunca repitas el mismo encuadre dos veces seguidas. La duración normal es 2 o 3 segundos, también si hay movimiento de cámara. La mayoría de las escenas duran 2 o 3. Pasa de 3 solo si la frase no cabe. No uses 6, 7 u 8 como duración normal. No juntes varias acciones en una escena larga.
+6. El total del video está en targetDurationSeconds y solo puede ser 15, 30, 45, 60, 75, 90, 100 o 120. Cada escena dura lo que su acción y su movimiento de cámara necesiten. Si el total pasa de 30 segundos, agrupa esas escenas en partes: 45 es 30+15, 60 es 30+30, 75 es 30+30+15, 90 es 30+30+30, 100 es 30+30+30+10, 120 es cuatro partes de 30. Las escenas de una parte suman como máximo 30 segundos. No cambies la duración de una escena para llenar la parte. Nunca partas una escena a la mitad. Seedance 2.5 genera hasta 30s por clip, siempre a 480p.
 7. Si el guion pasa de 30s, cada generación dura 30s. 60s son dos generaciones. 90s son tres. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
 8. El aspect ratio del proyecto (16:9 o 9:16) ya lo aplica el sistema. No lo cambies salvo que el usuario lo pida.
 9. Animar con Seedance 2.5 Reference-to-Video. Menciona @ImageN / @VideoN en la escena en la que aparecen, no en un preámbulo.
@@ -85,10 +85,10 @@ A supporting character introduced once is that same person for the whole film. I
 Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
 Objects work the way they do in the world. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck. Do not invent a mechanism.
 Shots are a linear continuation. A cut from day to night, or a flashback, is allowed only when the story needs it, and that shot must say the time changed or that this is a flashback. Otherwise the next shot is the next moment.
-One scene is one clear action and one camera move. A character may speak and move in that same shot, for example leaning in while talking. If a journey crosses several places, make one short scene per place. Do not put a corridor, a train, and a gym inside one 4 second scene. Tension can be about 2 seconds. A quiet ending can be longer, up to 6. Say which way a screen or object faces the camera, for example the monitor screen faces the character and the back of the monitor faces the lens. Before any gaze, state where the camera is relative to the look target, for example camera positioned behind @Image1, shooting down the hallway toward the doorway. Do not give a face direction and a gaze target that compete; say which one wins. If they look at something other than the lens, write eyes NOT on camera, gaze locked on that target. On an emotional close-up add: gaze must not be directed at lens unless explicitly stated. Give each speaking character a distinct voice in voice_notes. A principal who never speaks is still a lead, not an extra, so they get one consistent portrait.
+One scene is one clear action and one camera. A character may speak and move in that same shot, for example leaning in while talking. The next action or the next angle is the next scene. Sitting and looking at his hands is one scene. Walking into the next room is another scene. The mirror is another scene. Do not glue those into one 9, 10, or 11 second paragraph. If a journey crosses several places, make one scene per place. Change the shot on every scene and never repeat the same framing twice in a row. Use the list: extreme wide, wide, full, medium, medium close-up, close-up, extreme close-up, insert, low angle, high angle, dutch, tracking, dolly, handheld. Most shots are 2 or 3 seconds, including a camera move. A shot with no line, or a short line, is 2 or 3. Go past 3 only when the spoken line does not fit. Do not write 6, 7, or 8 second shots as the normal length, and do not merge shots to make a long scene. Say which way a screen or object faces the camera, for example the monitor screen faces the character and the back of the monitor faces the lens. Before any gaze, state where the camera is relative to the look target, for example camera positioned behind @Image1, shooting down the hallway toward the doorway. Do not give a face direction and a gaze target that compete; say which one wins. If they look at something other than the lens, write eyes NOT on camera, gaze locked on that target. On an emotional close-up add: gaze must not be directed at lens unless explicitly stated. Give each speaking character a distinct voice in voice_notes. A principal who never speaks is still a lead, not an extra, so they get one consistent portrait.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. A character talking to himself stays on screen and keeps the line. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion in the face and the body. Keep a character the same age and size until a later scene explicitly shows they grew. Clothes may change. Keep who is in front, behind, left, and right until the action moves them. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
-Make scene times add up to the project's targetDurationSeconds. Use at least two scenes for 45 or 60 seconds, three for 75 or 90, and four for 100 or 120, so every generation has a scene. Never add an empty or placeholder scene to fill leftover seconds; lengthen a real scene instead.
+Cut on every new action and every new angle, and give that scene its own camera. Vary wide, close, insert, low, high, and a move. Do not repeat tracking shot. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. If the film is longer than 30 seconds, group those scenes into parts: 45 is 30+15, 60 is 30+30, 75 is 30+30+15, 90 is 30+30+30, 100 is 30+30+30+10, 120 is four parts of 30. The scenes inside one part add up to at most 30 seconds. A part can end early. Do not split a scene across parts. Do not change a scene's length to fill its part. A later part may open in a new place. Carry the clothes, anything being held, and any body change from the last scene of the previous part, unless this scene changes them. Write enough scenes that every part has at least one. Vary the shot size and give each scene one camera move.
 Put the hook spoken line in scene 1 so audio starts at 0s.
 Then STOP. Do not plan batches. Do not generate frames or video. Do not ask questions.`;
 
@@ -190,22 +190,22 @@ const tools: OpenAI.Responses.Tool[] = [
               estimated_seconds: {
                 type: "number",
                 description:
-                  "Seconds this scene needs. Dialogue = time to say it calmly. Quiet/simple beats = 2-3s by complexity and intent. Do not create empty or leftover scenes to fill time.",
+                  "Most shots are 2 or 3 seconds, even with a camera move. Use more than 3 only when the spoken line does not fit in 3 seconds. Do not use 6, 7, or 8 as the normal length.",
               },
               camera: {
                 type: "string",
                 description:
-                  "English camera of the first shot. The shots array carries the rest.",
+                  "This scene's only camera, in English. Different shot size or angle from the previous scene. Never the same framing twice in a row.",
               },
               shots: {
                 type: "array",
                 description:
-                  "Only when this scene needs another camera angle or a new moment. A 3 to 6 second scene can be one shot with several actions and the dialogue together. Do not add a cut just to make it shorter.",
+                  "Leave this empty. A new angle is a new scene, not a hidden shot inside this one.",
                 items: {
                   type: "object",
                   additionalProperties: false,
                   properties: {
-                    seconds: { type: "number", description: "About 3 to 6 seconds for one continuous shot." },
+                    seconds: { type: "number", description: "2 or 3 seconds. More only if the spoken line does not fit in 3." },
                     camera: {
                       type: "string",
                       description:
@@ -482,23 +482,24 @@ function scaleScenesToTarget(project: Project) {
   const target = clampTotalDuration(project.targetDurationSeconds);
   project.targetDurationSeconds = target;
   if (!project.scenes.length) return;
-  const sum = project.scenes.reduce((total, scene) => total + (scene.estimatedSeconds || 0), 0);
-  if (sum <= 0) {
-    const each = Math.max(2, Math.round((target / project.scenes.length) * 10) / 10);
-    for (const scene of project.scenes) scene.estimatedSeconds = each;
-    project.scenes = project.scenes.map((scene) => ensureSceneShots(scene));
-    return;
+  for (const scene of project.scenes) {
+    const written = scene.estimatedSeconds || estimateSceneSeconds(scene);
+    const talk = (scene.dialogue || []).reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
+    const capped = talk > 3.2 ? Math.min(written, Math.max(3, Math.ceil(talk))) : Math.min(written, 3);
+    scene.estimatedSeconds = Math.max(2, Math.round(capped * 10) / 10);
   }
-  const scale = target / sum;
-  let used = 0;
-  project.scenes.forEach((scene, index) => {
-    if (index === project.scenes.length - 1) {
-      scene.estimatedSeconds = Math.max(2, Math.round((target - used) * 10) / 10);
-      return;
-    }
-    scene.estimatedSeconds = Math.max(2, Math.round(scene.estimatedSeconds * scale * 10) / 10);
-    used += scene.estimatedSeconds;
-  });
+  const parts = packScenesIntoParts(
+    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    target,
+  );
+  const capped = capPartSceneSeconds(
+    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    parts,
+  );
+  for (const scene of project.scenes) {
+    const next = capped.get(scene.index);
+    if (next) scene.estimatedSeconds = next;
+  }
   project.scenes = project.scenes.map((scene) => ensureSceneShots(scene));
 }
 
@@ -773,11 +774,10 @@ export async function runAgent(options: {
 
   const { openaiApiKey } = getSecrets();
   if (!openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing for the GPT-5.6 Sol agent.");
+    throw new Error("OPENAI_API_KEY is missing for the GPT-5.6 Luna agent.");
   }
-  const openaiModel = "gpt-5.6-sol";
-
   const client = new OpenAI({ apiKey: openaiApiKey });
+  console.info("storyboard model", TEXT_MODEL);
   const onStatus = (text: string) => options.onEvent({ type: "status", text });
   const signal = options.abortSignal;
   const activeTools = toolsFor(mode);
@@ -790,7 +790,7 @@ export async function runAgent(options: {
           /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(options.project.scriptText)
             ? "The user already ordered this as a storyboard. Keep that scene order, those beats, and those characters. Do not merge, reorder, or replace a named person."
             : "The user wrote a paragraph. Turn it into an ordered storyboard in the exact cause order they told, one beat per scene, naming each person once and reusing that name. Do not invent a different sequence."
-        } Target total duration: ${options.project.targetDurationSeconds}s. Style: ${options.project.style}. Aspect: ${options.project.aspectRatio}. Call extract_storyboard once, then stop.`
+        } Target total duration: ${options.project.targetDurationSeconds}s, grouped as ${seedancePartDurations(options.project.targetDurationSeconds).map((duration, index) => `part ${index + 1} (max ${duration}s)`).join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. Style: ${options.project.style}. Aspect: ${options.project.aspectRatio}. Call extract_storyboard once, then stop.`
       : `The storyboard is approved. Do not rewrite scenes. ${
           shouldGenerateOneShot(options.project.targetDurationSeconds, options.project.scenes)
             ? `Generate this ${options.project.targetDurationSeconds}s ${options.project.style} short in ONE Seedance 2.5 take covering every scene at 480p.`
@@ -818,7 +818,7 @@ export async function runAgent(options: {
   throwIfAborted(signal);
   let response = await client.responses.create(
     {
-      model: openaiModel,
+      model: TEXT_MODEL,
       instructions,
       tools: activeTools,
       input,
@@ -859,7 +859,7 @@ export async function runAgent(options: {
     throwIfAborted(signal);
     response = await client.responses.create(
       {
-        model: openaiModel,
+        model: TEXT_MODEL,
         instructions,
         tools: activeTools,
         previous_response_id: response.id,
