@@ -975,7 +975,12 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       narratorTag = tag;
       refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
     } else if (item.kind === "character" && key) people.set(key, tag);
-    else if (item.kind === "video") refs.push(`${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. Keep the camera cinematic.`);
+    else if (item.kind === "video")
+      refs.push(
+        project.song
+          ? `${tag} is the last 5 seconds of the previous generation, picture and music. The attached song is already playing there. Continue that same music on the next beat: no restart, no gap, no drop, and no new intro. Use the picture for clothes, anything in their hands, and a body change that still applies. If this part opens in a new place, bring those details into the new place.`
+          : `${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. Keep the camera cinematic.`,
+      );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
   images.forEach((item, index) => {
@@ -1710,11 +1715,14 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       ? [
           `${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds.`,
           `${look} style throughout the whole video.`,
-          tailLine,
-          "Nobody speaks. Every mouth stays closed. The soundtrack is @Audio1, this slice of the uploaded song, for the whole clip. No other music and no dialogue.",
+          "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
+          continues
+            ? "The last 5 seconds of the previous generation already play this song. Continue that music on the next beat. Do not restart it. @Audio2 is those 5 seconds, for the handoff only."
+            : "",
+          "Nobody speaks. Every mouth stays closed. No other music and no dialogue.",
           "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
-          tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
+          tailLine,
         ]
       : [
           `${look} style throughout the whole video.`,
@@ -1727,7 +1735,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   )
     .filter(Boolean)
     .join(" ");
-  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The soundtrack stays @Audio1." : "No background music."}`
+  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();

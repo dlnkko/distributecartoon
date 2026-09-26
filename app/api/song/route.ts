@@ -6,6 +6,7 @@ import {
   probeAudioDuration,
   sliceAudioMp3,
   songPartDurations,
+  songScriptText,
   SONG_MAX_SECONDS,
   SONG_MIN_SECONDS,
   transcribeLyrics,
@@ -60,6 +61,13 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Couldn't hear lyrics in that song." }, { status: 422 });
   }
   const parts = songPartDurations(rounded);
+  const full = await sliceAudioMp3(buffer, safeExt, 0, rounded);
+  const fullSaved = await storeGeneratedFile({
+    project,
+    buffer: full,
+    relativeParts: [project.id, "song", "full.mp3"],
+    contentType: "audio/mpeg",
+  });
   const clips = [];
   let start = 0;
   for (let index = 0; index < parts.length; index += 1) {
@@ -71,27 +79,42 @@ export async function POST(request: Request) {
       relativeParts: [project.id, "song", `part-${String(index + 1).padStart(2, "0")}.mp3`],
       contentType: "audio/mpeg",
     });
+    let bridgePublicPath = "";
+    if (start >= 5) {
+      const bridge = await sliceAudioMp3(buffer, safeExt, start - 5, 5);
+      const bridgeSaved = await storeGeneratedFile({
+        project,
+        buffer: bridge,
+        relativeParts: [project.id, "song", `bridge-${String(index + 1).padStart(2, "0")}.mp3`],
+        contentType: "audio/mpeg",
+      });
+      bridgePublicPath = bridgeSaved.publicPath;
+    }
     clips.push({
       index: index + 1,
       startSeconds: start,
       durationSeconds: length,
       publicPath: saved.publicPath,
+      ...(bridgePublicPath ? { bridgePublicPath } : {}),
     });
     start += length;
   }
+  const productBrief = project.song?.productBrief || "";
   resetStoryboard(project);
   project.song = {
     fileName: file.name,
     durationSeconds: rounded,
     lyrics,
+    productBrief,
+    fullPublicPath: fullSaved.publicPath,
     clips,
   };
   project.scriptName = file.name;
-  project.scriptText = lyrics;
+  project.scriptText = songScriptText(project.song);
   project.targetDurationSeconds = rounded;
   project.durationAuto = false;
   project.durationPending = false;
-  project.workflowStep = "script";
+  project.workflowStep = "song";
   await saveProject(project);
   return NextResponse.json({ project });
 }

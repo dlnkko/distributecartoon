@@ -1,5 +1,5 @@
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
-import { concatVideoBuffers, tailVideoBuffer } from "./concat";
+import { concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
 import { continuityFlags, projectSeed } from "./continuity";
 import { refineSeedancePrompt } from "./astra-prompt";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
@@ -129,6 +129,7 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
       }
       project.lastVideoFileName = saved.fileName;
       project.lastVideoPublicPath = saved.publicPath;
+      await muxSongOntoPart(project, batch);
       delete batch.kieVideoTaskId;
       delete batch.error;
     } catch (error) {
@@ -1323,10 +1324,36 @@ export function planSeedanceBatches(project: Project) {
   return project.batches;
 }
 
-async function songAudioUrl(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+async function songAudioUrls(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const clip = project.song?.clips.find((item) => item.index === batch.index);
-  if (!clip?.publicPath) return undefined;
-  return resolveUploadUrl(undefined, clip.publicPath, abortSignal);
+  if (!clip?.publicPath) return [];
+  const urls: string[] = [];
+  const main = await resolveUploadUrl(undefined, clip.publicPath, abortSignal);
+  if (main) urls.push(main);
+  if (batch.index > 1 && clip.bridgePublicPath) {
+    const bridge = await resolveUploadUrl(undefined, clip.bridgePublicPath, abortSignal);
+    if (bridge) urls.push(bridge);
+  }
+  return urls;
+}
+
+async function muxSongOntoPart(project: Project, batch: Batch) {
+  const clip = project.song?.clips.find((item) => item.index === batch.index);
+  const videoSrc = durableVideoSrc(batch);
+  if (!clip?.publicPath || !videoSrc) return;
+  const muxed = await replaceVideoAudio(await readPublicFile(videoSrc), await readPublicFile(clip.publicPath));
+  const saved = await storeGeneratedFile({
+    project,
+    buffer: muxed,
+    relativeParts: [project.id, "batches", `batch-${String(batch.index).padStart(2, "0")}-song.mp4`],
+    contentType: "video/mp4",
+  });
+  batch.videoFileName = saved.fileName;
+  batch.videoPublicPath = saved.publicPath;
+  batch.videoRemoteUrl = saved.publicPath;
+  project.lastVideoFileName = saved.fileName;
+  project.lastVideoPublicPath = saved.publicPath;
+  project.lastVideoRemoteUrl = saved.publicPath;
 }
 
 async function submitStoryBatch(project: Project, batch: Batch, onStatus: StatusFn, abortSignal?: AbortSignal) {
@@ -1343,14 +1370,14 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   delete batch.error;
   delete batch.nextRetryAt;
   await saveSoon(project);
-  const audioUrl = await songAudioUrl(project, batch, abortSignal);
+  const audioUrls = await songAudioUrls(project, batch, abortSignal);
   const taskId = await submitSeedance25ReferenceVideo({
     prompt: batch.videoPrompt,
     duration: batch.duration,
     aspectRatio: normalizeAspectRatio(project.aspectRatio),
     referenceImageUrls: imageEntries.map((item) => item.url),
     referenceVideoUrls: videoEntries.map((item) => item.url),
-    referenceAudioUrls: audioUrl ? [audioUrl] : undefined,
+    referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
     generateAudio: true,
     resolution: "480p",
     seed: projectSeed(project),
@@ -1381,7 +1408,10 @@ async function joinReadyParts(project: Project, onStatus: StatusFn) {
   for (const batch of parts) {
     buffers.push(await readPublicFile(durableVideoSrc(batch)));
   }
-  const joined = await concatVideoBuffers(buffers);
+  let joined = await concatVideoBuffers(buffers);
+  if (project.song?.fullPublicPath) {
+    joined = await replaceVideoAudio(joined, await readPublicFile(project.song.fullPublicPath));
+  }
   const saved = await storeGeneratedFile({
     project,
     buffer: joined,
@@ -1516,14 +1546,14 @@ async function runGenerateBatchVideo(
 
     onStatus("Generating your video…");
     const revised = await refineSeedancePrompt(labeled);
-    const audioUrl = await songAudioUrl(project, batch);
+    const audioUrls = await songAudioUrls(project, batch);
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,
       duration: batch.duration,
       aspectRatio: normalizeAspectRatio(project.aspectRatio),
       referenceImageUrls: imageEntries.map((item) => item.url),
       referenceVideoUrls: videoEntries.map((item) => item.url),
-      referenceAudioUrls: audioUrl ? [audioUrl] : undefined,
+      referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
       generateAudio: true,
       resolution: "480p",
       seed: projectSeed(project),

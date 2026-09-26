@@ -22,6 +22,26 @@ function listPath(file: string) {
   return file.replace(/\\/g, "/").replace(/'/g, "'\\''");
 }
 
+export async function replaceVideoAudio(video: Buffer, audio: Buffer) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "mux-"));
+  const videoPath = path.join(dir, "in.mp4");
+  const audioPath = path.join(dir, "in.mp3");
+  const out = path.join(dir, "out.mp4");
+  await writeFile(videoPath, video);
+  await writeFile(audioPath, audio);
+  const args = ["-map", "0:v:0", "-map", "1:a:0", "-c:a", "aac", "-shortest", "-movflags", "+faststart", out];
+  try {
+    try {
+      await runFfmpeg(["-y", "-i", videoPath, "-i", audioPath, "-c:v", "copy", ...args]);
+    } catch {
+      await runFfmpeg(["-y", "-i", videoPath, "-i", audioPath, "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", ...args]);
+    }
+    return await readFile(out);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export async function tailVideoBuffer(buffer: Buffer, seconds = 5) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "tail-"));
   const input = path.join(dir, "in.mp4");

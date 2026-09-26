@@ -391,6 +391,10 @@ export function promptReadyReferences(project: Project, sceneIndexes?: number[],
 export function syncReferenceInclusion(project: Project) {
   for (const asset of project.references) {
     const hasFile = Boolean(asset.originalPublicPath || asset.originalRemoteUrl);
+    if (project.song && asset.kind === "product" && hasFile) {
+      asset.includeInVideo = true;
+      continue;
+    }
     asset.includeInVideo = hasFile && scriptCallsForReference(project, asset);
   }
   return project.references;

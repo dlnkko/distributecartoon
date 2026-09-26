@@ -766,7 +766,10 @@ function planTask(project: Project) {
           `part ${clip.index} covers the song from ${clip.startSeconds}s for ${clip.durationSeconds}s (max ${clip.durationSeconds}s)`,
       )
       .join("; ");
-    return `SONG VIDEO. The script is the lyrics of a ${Math.round(project.song.durationSeconds)} second song, in the order they are sung. Build visual scenes of what those lyrics show, in that same order. Every dialogue array stays empty. Nobody speaks and there is no narrator. Characters may appear, with closed mouths. The song is the only audio. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds. Write enough scenes that the seconds inside each part add up to that part. Do not invent events the lyrics do not show. ${styleLine}`;
+    const about = project.song.productBrief?.trim()
+      ? `The song is about this product and brand: ${project.song.productBrief.trim()}. `
+      : "";
+    return `SONG VIDEO. The script is the lyrics of a ${Math.round(project.song.durationSeconds)} second song, in the order they are sung. ${about}Build visual scenes of what those lyrics show, in that same order, using the same storyboard rules as any other film. Every dialogue array stays empty. Nobody speaks and there is no narrator. Characters may appear, with closed mouths. The attached song is the only audio and it is already playing on frame one: do not open with a title card, a logo sting, or a silent intro. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds. Write enough scenes that the seconds inside each part add up to that part. Show the attached product the way the lyrics and the product description say. Do not invent events the lyrics do not show. ${styleLine}`;
   }
   const parts = seedancePartDurations(project.targetDurationSeconds || 15).map(
     (duration, index) => `part ${index + 1} (max ${duration}s)`,

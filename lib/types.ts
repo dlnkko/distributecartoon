@@ -1,6 +1,6 @@
 export type VisualStyle = "pixar" | "claymation";
 export type AspectRatio = "16:9" | "9:16";
-export type WorkflowStep = "script" | "setup" | "review" | "cast" | "produce";
+export type WorkflowStep = "script" | "song" | "setup" | "review" | "cast" | "produce";
 export type AgentMode = "plan" | "produce";
 
 export type ChatRole = "user" | "assistant" | "system";
@@ -184,12 +184,15 @@ export type SongClip = {
   startSeconds: number;
   durationSeconds: number;
   publicPath: string;
+  bridgePublicPath?: string;
 };
 
 export type Song = {
   fileName: string;
   durationSeconds: number;
   lyrics: string;
+  productBrief?: string;
+  fullPublicPath?: string;
   clips: SongClip[];
 };
 

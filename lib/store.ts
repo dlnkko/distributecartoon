@@ -66,6 +66,7 @@ export function normalizeProject(project: Project): Project {
 }
 
 export function inferWorkflowStep(project: Project): WorkflowStep {
+  if (project.song && project.scenes.length === 0) return project.song.productBrief?.trim() ? "setup" : "song";
   if (!project.scriptText?.trim() && project.scenes.length === 0) return "script";
   if (!project.scenes.length) return "setup";
   if (

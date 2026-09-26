@@ -90,13 +90,36 @@ const STEPS: Array<{ id: WorkflowStep; label: string }> = [
   { id: "produce", label: "Generate" },
 ];
 
-function stepIndex(step?: string) {
-  return STEPS.findIndex((item) => item.id === (step || "script"));
+function songMode(project: Project) {
+  return Boolean(project.song) || project.workflowStep === "song";
+}
+
+function stepsFor(project: Project) {
+  if (!songMode(project)) return STEPS;
+  return [
+    { id: "song" as const, label: "Song" },
+    { id: "setup" as const, label: "Setup" },
+    { id: "review" as const, label: "Scenes" },
+    { id: "cast" as const, label: "Cast" },
+    { id: "produce" as const, label: "Generate" },
+  ];
+}
+
+function stepIndex(project: Project, step?: string) {
+  return stepsFor(project).findIndex((item) => item.id === (step || (songMode(project) ? "song" : "script")));
+}
+
+function hasProductPhoto(project: Project) {
+  return project.references.some((item) => item.kind === "product" && (item.originalPublicPath || item.originalRemoteUrl));
 }
 
 function stepReachable(project: Project, step: WorkflowStep) {
-  if (step === "script") return true;
-  if (step === "setup") return Boolean(project.scriptText.trim());
+  if (step === "song") return songMode(project);
+  if (step === "script") return !project.song;
+  if (step === "setup") {
+    if (project.song) return Boolean(project.song.productBrief?.trim()) && hasProductPhoto(project);
+    return Boolean(project.scriptText.trim());
+  }
   if (step === "review") return project.scenes.length > 0;
   if (step === "cast") return project.scenes.length > 0 && missingCastLooks(project).length === 0;
   return Boolean(projectDeliveredSrc(project));
@@ -696,10 +719,11 @@ export function StudioApp() {
   async function goToStep(target: WorkflowStep, fromHistory = false) {
     const current = projectRef.current;
     if (!current) return;
-    const from = stepIndex(current.workflowStep);
-    const to = stepIndex(target);
+    const steps = stepsFor(current);
+    const from = stepIndex(current, current.workflowStep);
+    const to = stepIndex(current, target);
     const backward = to >= 0 && to < from;
-    const forward = to > from && STEPS.slice(from + 1, to + 1).every((item) => stepReachable(current, item.id));
+    const forward = to > from && steps.slice(from + 1, to + 1).every((item) => stepReachable(current, item.id));
     const generatingNow = !projectDeliveredSrc(current) && projectIsGenerating(current);
     if (busyRef.current || generatingNow || !(backward || (fromHistory && forward))) {
       if (fromHistory) window.history.replaceState(null, "", studioUrl(current.id, current.workflowStep || "script"));
@@ -788,17 +812,35 @@ export function StudioApp() {
     setBusy(false);
   }
 
+  async function continueFromSong(brief: string) {
+    if (!project || busy) return;
+    if (!project.song) {
+      setStatus("Upload a song first.");
+      return;
+    }
+    if (!hasProductPhoto(project)) {
+      setStatus("Add a photo of the product.");
+      return;
+    }
+    if (brief.trim().length < 8) {
+      setStatus("Describe what the product is about.");
+      return;
+    }
+    setBusy(true);
+    await patchProject({ songBrief: brief.trim(), workflowStep: "setup" });
+    setBusy(false);
+  }
+
   async function continueFromScript() {
     if (!project || busy) return;
     const text = scriptDraft.trim();
     const uploaded = isFileScript(project.scriptName) && Boolean(project.scriptText.trim());
-    const song = Boolean(project.song);
-    if (!text && !uploaded && !song) {
-      setStatus("Paste a script or upload a song first.");
+    if (!text && !uploaded) {
+      setStatus("Paste or upload a script first.");
       return;
     }
     setBusy(true);
-    if ((uploaded || song) && !text) {
+    if (uploaded && !text) {
       await patchProject({ workflowStep: "setup" });
       setBusy(false);
       return;
@@ -1183,6 +1225,7 @@ export function StudioApp() {
           </button>
         </header>
             <StepBar
+              steps={stepsFor(project)}
               current={step}
               locked={working || (!projectDeliveredSrc(project) && projectIsGenerating(project))}
               onJump={(target) => void goToStep(target)}
@@ -1221,16 +1264,36 @@ export function StudioApp() {
               key={project.id}
               scriptName={project.scriptName}
               fileAttached={isFileScript(project.scriptName)}
-              songName={project.song?.fileName || ""}
-              songAttached={Boolean(project.song)}
               value={scriptDraft}
               busy={working}
               textareaRef={textareaRef}
               onChange={setScriptDraft}
               onPickFile={() => fileRef.current?.click()}
-              onPickSong={() => songRef.current?.click()}
               onClearFile={() => void clearScriptFile()}
+              onSong={() => void patchProject({ workflowStep: "song" })}
               onContinue={() => void continueFromScript()}
+            />
+          ) : null}
+
+          {step === "song" ? (
+            <SongStep
+              key={project.id}
+              songName={project.song?.fileName || ""}
+              songAttached={Boolean(project.song)}
+              durationSeconds={project.song?.durationSeconds}
+              brief={project.song?.productBrief || ""}
+              productPreview={
+                products[0]?.originalPublicPath ? assetSrc(products[0].originalPublicPath) : ""
+              }
+              busy={working}
+              onPickSong={() => songRef.current?.click()}
+              onClearSong={() => void patchProject({ clearSong: true })}
+              onPickProduct={() => {
+                const slot = products[0];
+                if (slot) refInputs.current[slot.id]?.click();
+              }}
+              onUseScript={() => void (project.song ? clearScriptFile() : patchProject({ workflowStep: "script" }))}
+              onContinue={(brief) => void continueFromSong(brief)}
             />
           ) : null}
 
@@ -1242,7 +1305,7 @@ export function StudioApp() {
               locations={locations}
               logos={logos}
               busy={working}
-              onBack={() => void patchProject({ workflowStep: "script" })}
+              onBack={() => void patchProject({ workflowStep: project.song ? "song" : "script" })}
               onStyle={changeStyle}
               onAspect={changeAspect}
               onDuration={(seconds) => void changeDuration(seconds)}
@@ -1302,11 +1365,11 @@ export function StudioApp() {
         ref={fileRef}
         type="file"
         accept=".pdf,.doc,.docx"
-        disabled={Boolean(scriptDraft.trim()) || Boolean(project?.song)}
+        disabled={Boolean(scriptDraft.trim())}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
-          if (file && !scriptDraft.trim() && !project?.song) void onUploadScript(file);
+          if (file && !scriptDraft.trim()) void onUploadScript(file);
           event.target.value = "";
         }}
       />
@@ -1314,11 +1377,10 @@ export function StudioApp() {
         ref={songRef}
         type="file"
         accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
-        disabled={Boolean(scriptDraft.trim()) || isFileScript(project?.scriptName)}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
-          if (file && !scriptDraft.trim() && !isFileScript(project?.scriptName)) void onUploadSong(file);
+          if (file) void onUploadSong(file);
           event.target.value = "";
         }}
       />
@@ -1426,11 +1488,21 @@ function cloneScene(scene: Scene): Scene {
   return { ...scene, dialogue: scene.dialogue.map((line) => ({ ...line })), characterNames: [...scene.characterNames], extraNames: [...scene.extraNames] };
 }
 
-function StepBar({ current, locked, onJump }: { current: WorkflowStep; locked?: boolean; onJump?: (step: WorkflowStep) => void }) {
-  const index = STEPS.findIndex((item) => item.id === current);
+function StepBar({
+  steps,
+  current,
+  locked,
+  onJump,
+}: {
+  steps: Array<{ id: WorkflowStep; label: string }>;
+  current: WorkflowStep;
+  locked?: boolean;
+  onJump?: (step: WorkflowStep) => void;
+}) {
+  const index = steps.findIndex((item) => item.id === current);
   return (
     <ol className="mx-auto mb-3 flex w-full max-w-4xl items-center gap-1 overflow-x-auto px-3 md:gap-1.5 md:px-6">
-      {STEPS.map((item, i) => {
+      {steps.map((item, i) => {
         const active = i === index;
         const done = i < index;
         const content = (
@@ -1460,7 +1532,7 @@ function StepBar({ current, locked, onJump }: { current: WorkflowStep; locked?: 
             ) : (
               content
             )}
-            {i < STEPS.length - 1 ? <span className="hidden h-px flex-1 bg-stone-200 sm:block" /> : null}
+            {i < steps.length - 1 ? <span className="hidden h-px flex-1 bg-stone-200 sm:block" /> : null}
           </li>
         );
       })}
@@ -1633,37 +1705,32 @@ function VideosDashboard({
 function ScriptStep({
   scriptName,
   fileAttached,
-  songName,
-  songAttached,
   value,
   busy,
   textareaRef,
   onChange,
   onPickFile,
-  onPickSong,
   onClearFile,
+  onSong,
   onContinue,
 }: {
   scriptName: string;
   fileAttached: boolean;
-  songName: string;
-  songAttached: boolean;
   value: string;
   busy: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   onChange: (value: string) => void;
   onPickFile: () => void;
-  onPickSong: () => void;
   onClearFile: () => void;
+  onSong: () => void;
   onContinue: () => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
   const typing = Boolean(value.trim());
-  const uploadLocked = busy || typing || songAttached;
-  const songLocked = busy || typing || fileAttached;
-  const pasteLocked = busy || fileAttached || songAttached;
-  const canContinue = fileAttached || songAttached || typing;
+  const uploadLocked = busy || typing;
+  const pasteLocked = busy || fileAttached;
+  const canContinue = fileAttached || typing;
 
   useEffect(() => {
     if (!infoOpen) return;
@@ -1695,10 +1762,7 @@ function ScriptStep({
         </div>
         {infoOpen ? (
           <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-4 text-sm leading-6 text-[var(--ink)] shadow-[0_18px_50px_rgba(28,25,23,0.12)]">
-            <p>
-              You can add the script in only one way: upload a PDF or Word file, type the text, or upload a Suno song
-              between 30 and 90 seconds.
-            </p>
+            <p>You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.</p>
             <button
               type="button"
               onClick={() => setInfoOpen(false)}
@@ -1709,7 +1773,7 @@ function ScriptStep({
           </div>
         ) : null}
       </div>
-      <p className="mt-1 text-sm text-[var(--muted)]">Upload a PDF or Word file, type the script, or add a Suno song.</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Upload a PDF or Word file, or type the script.</p>
 
       <button
         type="button"
@@ -1734,50 +1798,108 @@ function ScriptStep({
         </button>
       ) : null}
 
-      <button
-        type="button"
-        onClick={onPickSong}
-        disabled={songLocked}
-        title={typing ? "Clear the typed text to upload a song." : fileAttached ? "Remove the file to upload a song." : undefined}
-        className={`mt-3 flex min-h-[108px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-5 text-center ${
-          songLocked
-            ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400 opacity-60"
-            : "border-stone-300 bg-white hover:border-stone-400 hover:bg-stone-50 hover:shadow-[0_12px_32px_rgba(28,25,23,0.06)]"
-        }`}
-      >
-        <span className="grid size-9 place-items-center rounded-xl bg-stone-100 text-stone-500">
-          <SongIcon />
-        </span>
-        <span className="text-sm font-medium text-[var(--ink)]">{songAttached ? songName : "Upload a Suno song"}</span>
-        <span className="text-xs text-[var(--muted)]">{songAttached ? "Song attached · 30 to 90 seconds" : "30 to 90 seconds · mp3, wav, m4a"}</span>
-      </button>
-      {songAttached ? (
-        <button type="button" disabled={busy} onClick={onClearFile} className="btn-secondary mt-2 self-start rounded-full px-3 py-1.5 text-xs">
-          Remove song
-        </button>
-      ) : null}
-
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">or type it here</label>
       <textarea
         ref={textareaRef}
         value={value}
         disabled={pasteLocked}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={
-          fileAttached
-            ? "Remove the file to type the script instead."
-            : songAttached
-              ? "Remove the song to type a script instead."
-              : "Type or paste the full script or storyboard…"
-        }
+        placeholder={fileAttached ? "Remove the file to type the script instead." : "Type or paste the full script or storyboard…"}
         className="mt-1.5 min-h-[120px] max-h-[220px] w-full resize-none overflow-y-auto rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
       />
 
-      <div className="mt-auto flex justify-end pt-6">
+      <div className="mt-auto flex items-center justify-between pt-6">
+        <button type="button" disabled={busy} onClick={onSong} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]">
+          Make a song video
+        </button>
         <button
           type="button"
           disabled={busy || !canContinue}
           onClick={onContinue}
+          className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
+        >
+          Continue
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SongStep({
+  songName,
+  songAttached,
+  durationSeconds,
+  brief,
+  productPreview,
+  busy,
+  onPickSong,
+  onClearSong,
+  onPickProduct,
+  onUseScript,
+  onContinue,
+}: {
+  songName: string;
+  songAttached: boolean;
+  durationSeconds?: number;
+  brief: string;
+  productPreview: string;
+  busy: boolean;
+  onPickSong: () => void;
+  onClearSong: () => void;
+  onPickProduct: () => void;
+  onUseScript: () => void;
+  onContinue: (brief: string) => void;
+}) {
+  const [text, setText] = useState(brief);
+  const ready = songAttached && Boolean(productPreview) && text.trim().length >= 8;
+
+  return (
+    <div className="flex flex-1 flex-col">
+      <h3 className="display text-2xl md:text-3xl">Song video</h3>
+      <p className="mt-1 text-sm text-[var(--muted)]">Upload a Suno song, the product, and what it is about. Scenes come after the next step.</p>
+
+      <button
+        type="button"
+        onClick={onPickSong}
+        disabled={busy}
+        className="mt-4 flex min-h-[108px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-stone-300 bg-white px-5 text-center hover:border-stone-400 hover:bg-stone-50"
+      >
+        <span className="grid size-9 place-items-center rounded-xl bg-stone-100 text-stone-500">
+          <SongIcon />
+        </span>
+        <span className="text-sm font-medium text-[var(--ink)]">{songAttached ? songName : "Upload a Suno song"}</span>
+        <span className="text-xs text-[var(--muted)]">
+          {songAttached && durationSeconds ? `${Math.round(durationSeconds)} seconds` : "30 to 90 seconds · mp3, wav, m4a"}
+        </span>
+      </button>
+      {songAttached ? (
+        <button type="button" disabled={busy} onClick={onClearSong} className="btn-secondary mt-2 self-start rounded-full px-3 py-1.5 text-xs">
+          Remove song
+        </button>
+      ) : null}
+
+      <p className="mb-2 mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product</p>
+      <div className="max-w-xs">
+        <UploadTile label="Product photo" preview={productPreview} hint={productPreview ? "Replace" : "Required"} disabled={busy} onClick={onPickProduct} />
+      </div>
+
+      <label className="mt-4 text-xs font-medium text-[var(--muted)]">What is this product about?</label>
+      <textarea
+        value={text}
+        disabled={busy}
+        onChange={(event) => setText(event.target.value)}
+        placeholder="The brand, who it is for, and what the song should show."
+        className="mt-1.5 min-h-[120px] w-full resize-none rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400"
+      />
+
+      <div className="mt-auto flex items-center justify-between pt-6">
+        <button type="button" disabled={busy} onClick={onUseScript} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]">
+          Use a script instead
+        </button>
+        <button
+          type="button"
+          disabled={busy || !ready}
+          onClick={() => onContinue(text)}
           className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
         >
           Continue
@@ -1819,8 +1941,12 @@ function SetupStep({
   return (
     <div className="flex flex-1 flex-col gap-3">
       <div>
-        <h3 className="display text-2xl md:text-3xl">Look and length</h3>
-        <p className="mt-1 text-sm text-[var(--muted)]">Photos are optional. Name a role if you restyle a real person.</p>
+        <h3 className="display text-2xl md:text-3xl">{project.song ? "Characters and places" : "Look and length"}</h3>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          {project.song
+            ? "The song sets the length. Add characters and places if you have them."
+            : "Photos are optional. Name a role if you restyle a real person."}
+        </p>
       </div>
 
       <section className="setup-card">
@@ -1841,19 +1967,15 @@ function SetupStep({
             <AspectPicker value={project.aspectRatio || "16:9"} onChange={onAspect} />
           </div>
         </div>
-        <div className="mt-4">
-          <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
-          {project.song ? (
-            <p className="text-sm text-[var(--ink)]">This song is {Math.round(project.song.durationSeconds)} seconds.</p>
-          ) : (
+        {project.song ? null : (
+          <div className="mt-4">
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
             <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
-          )}
-          <p className="mt-2 text-xs text-[var(--muted)]">
-            {project.song
-              ? "The video matches the song. Each take is at most 30s, and a scene is never split across takes."
-              : "Scenes are fitted to this length. Each take is at most 30s, and a scene is never split across takes."}
-          </p>
-        </div>
+            <p className="mt-2 text-xs text-[var(--muted)]">
+              Scenes are fitted to this length. Each take is at most 30s, and a scene is never split across takes.
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="setup-card">
@@ -1876,20 +1998,22 @@ function SetupStep({
         </div>
       </section>
 
-      <section className="setup-card">
-        <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          {products.map((slot) => (
-            <UploadTile
-              key={slot.id}
-              label={slot.label}
-              preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-              disabled={busy}
-              onClick={() => onPickSlot(slot)}
-            />
-          ))}
-        </div>
-      </section>
+      {project.song ? null : (
+        <section className="setup-card">
+          <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+            {products.map((slot) => (
+              <UploadTile
+                key={slot.id}
+                label={slot.label}
+                preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
+                disabled={busy}
+                onClick={() => onPickSlot(slot)}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="setup-card">
         <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Location · up to 2</p>
@@ -2491,11 +2615,13 @@ function CharacterSlot({
 function UploadTile({
   label,
   preview,
+  hint,
   disabled,
   onClick,
 }: {
   label: string;
   preview: string;
+  hint?: string;
   disabled?: boolean;
   onClick: () => void;
 }) {
@@ -2516,7 +2642,7 @@ function UploadTile({
       )}
       <span className="min-w-0">
         <span className="block truncate text-[13px] font-medium text-[var(--ink)]">{label}</span>
-        <span className="block text-[11px] text-[var(--muted)]">{preview ? "Replace" : "Optional"}</span>
+        <span className="block text-[11px] text-[var(--muted)]">{hint || (preview ? "Replace" : "Optional")}</span>
       </span>
     </button>
   );

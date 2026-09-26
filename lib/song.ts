@@ -86,6 +86,13 @@ export async function sliceAudioMp3(buffer: Buffer, ext: string, start: number, 
   }
 }
 
+export function songScriptText(song: { lyrics: string; productBrief?: string }) {
+  const lyrics = song.lyrics.trim();
+  const brief = song.productBrief?.trim();
+  if (!brief) return lyrics;
+  return `This song is about this product and brand: ${brief}\n\nLyrics, in the order they are sung:\n${lyrics}`;
+}
+
 export async function transcribeLyrics(buffer: Buffer, filename: string) {
   const { openaiApiKey } = getSecrets();
   if (!openaiApiKey) throw new Error("OPENAI_API_KEY is missing.");

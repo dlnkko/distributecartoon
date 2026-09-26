@@ -4,6 +4,8 @@ export const runtime = "nodejs";
 export const maxDuration = 300;
 import { getAuthUser, loadOwnedProject } from "@/lib/auth";
 import { normalizeAspectRatio, clampTotalDuration, createId } from "@/lib/ids";
+import { ensureReferenceSlots } from "@/lib/refs";
+import { songScriptText } from "@/lib/song";
 import { scaleEstimatedSeconds } from "@/lib/timing";
 import { recoverPendingVideos } from "@/lib/pipeline";
 import { driveProduce } from "@/lib/produce";
@@ -64,30 +66,49 @@ export async function PATCH(request: Request) {
     targetDurationSeconds?: number | null;
     durationAuto?: boolean;
     workflowStep?: WorkflowStep;
+    songBrief?: string;
     scenes?: Scene[];
     clearScript?: boolean;
+    clearSong?: boolean;
     resetGeneration?: boolean;
   };
   if (!body.projectId) return NextResponse.json({ error: "Missing project" }, { status: 400 });
   const loaded = await loadOwnedProject(body.projectId);
   if ("response" in loaded) return loaded.response;
   const { user, project } = loaded;
-  if (body.clearScript) {
+  if (body.clearScript || body.clearSong) {
     resetStoryboard(project);
     project.scriptText = "";
     project.scriptName = "";
     delete project.song;
-    project.workflowStep = "script";
+    if (body.clearSong) project.targetDurationSeconds = 15;
+    project.workflowStep = body.clearSong ? "song" : "script";
   }
   if (body.style === "pixar" || body.style === "claymation") project.style = body.style;
   if (body.aspectRatio) project.aspectRatio = normalizeAspectRatio(body.aspectRatio);
-  if (typeof body.targetDurationSeconds === "number" && !project.song) {
+  if (typeof body.targetDurationSeconds === "number" && !project.song && !body.clearSong) {
     project.targetDurationSeconds = clampTotalDuration(body.targetDurationSeconds);
     project.durationAuto = false;
     project.durationPending = false;
   }
+  if (project.song && typeof body.songBrief === "string") {
+    const brief = body.songBrief.trim();
+    if (brief !== (project.song.productBrief || "")) {
+      project.song.productBrief = brief;
+      const text = songScriptText(project.song);
+      if (text !== project.scriptText) {
+        resetStoryboard(project);
+        project.scriptText = text;
+      }
+      const product = project.references.find(
+        (item) => item.kind === "product" && (item.originalPublicPath || item.originalRemoteUrl),
+      );
+      if (product) product.notes = brief;
+    }
+  }
   if (
     body.workflowStep === "script" ||
+    body.workflowStep === "song" ||
     body.workflowStep === "setup" ||
     body.workflowStep === "review" ||
     body.workflowStep === "cast" ||
@@ -95,6 +116,7 @@ export async function PATCH(request: Request) {
   ) {
     project.workflowStep = body.workflowStep;
   }
+  if (project.workflowStep === "song") ensureReferenceSlots(project);
   if (Array.isArray(body.scenes)) {
     project.scenes = body.scenes.map((item, index) => ({
       id: String(item.id || createId("scene")),
