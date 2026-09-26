@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { normalizeImageMime, storeGeneratedFile } from "@/lib/assets";
 import { loadOwnedProject } from "@/lib/auth";
+import { IMAGE_TOO_SMALL, imagePixelCount, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { emptySlot, ensureReferenceSlots, syncReferenceInclusion } from "@/lib/refs";
 import { saveProject } from "@/lib/store";
 import type { ReferenceKind } from "@/lib/types";
@@ -41,6 +42,10 @@ export async function POST(request: Request) {
 
     const ext = mime === "image/jpeg" ? ".jpg" : mime === "image/webp" ? ".webp" : mime === "image/gif" ? ".gif" : ".png";
     const buffer = Buffer.from(await file.arrayBuffer());
+    const pixels = imagePixelCount(buffer);
+    if (!pixels || pixels < MIN_IMAGE_PIXELS) {
+      return NextResponse.json({ error: IMAGE_TOO_SMALL }, { status: 422 });
+    }
     const relative = [project.id, "refs", `${asset.kind}-${asset.id}-original${ext}`];
     const saved = await storeGeneratedFile({
       project,

@@ -11,6 +11,7 @@ import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { WhopPay } from "@/components/WhopPay";
+import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { PLANS } from "@/lib/plans";
 
 function assetSrc(publicPath?: string) {
@@ -39,6 +40,10 @@ async function prepareImageFile(file: File) {
       throw new Error("Use a JPG, PNG, WEBP, or GIF photo.");
     }
     return file;
+  }
+  if (bitmap.width * bitmap.height < MIN_IMAGE_PIXELS) {
+    bitmap.close();
+    throw new Error(IMAGE_TOO_SMALL);
   }
   const max = 2048;
   const scale = Math.min(1, max / Math.max(bitmap.width, bitmap.height));
@@ -562,6 +567,22 @@ export function StudioApp() {
     setStatus("");
     setPane("studio");
     setSidebarOpen(false);
+  }
+
+  async function createSong() {
+    const created = await fetch("/api/projects", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ style: project?.style || "pixar", aspectRatio: project?.aspectRatio || "16:9" }),
+    });
+    const next = (await created.json()) as Project;
+    remember(next);
+    setScriptDraft("");
+    setScenesDraft([]);
+    setStatus("");
+    setPane("studio");
+    setSidebarOpen(false);
+    await patchProject({ workflowStep: "song" });
   }
 
   async function patchProject(payload: Record<string, unknown>) {
@@ -1156,6 +1177,16 @@ export function StudioApp() {
             <VideosIcon />
             Your videos
           </button>
+          <button
+            type="button"
+            onClick={() => void createSong()}
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm ${
+              pane === "studio" && step === "song" ? "bg-white shadow-sm" : "hover:bg-white/70"
+            }`}
+          >
+            <SongNavIcon />
+            Make suno video
+          </button>
         </nav>
 
         <div className="p-3">
@@ -1270,7 +1301,6 @@ export function StudioApp() {
               onChange={setScriptDraft}
               onPickFile={() => fileRef.current?.click()}
               onClearFile={() => void clearScriptFile()}
-              onSong={() => void patchProject({ workflowStep: "song" })}
               onContinue={() => void continueFromScript()}
             />
           ) : null}
@@ -1711,7 +1741,6 @@ function ScriptStep({
   onChange,
   onPickFile,
   onClearFile,
-  onSong,
   onContinue,
 }: {
   scriptName: string;
@@ -1722,7 +1751,6 @@ function ScriptStep({
   onChange: (value: string) => void;
   onPickFile: () => void;
   onClearFile: () => void;
-  onSong: () => void;
   onContinue: () => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
@@ -1808,10 +1836,7 @@ function ScriptStep({
         className="mt-1.5 min-h-[120px] max-h-[220px] w-full resize-none overflow-y-auto rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
       />
 
-      <div className="mt-auto flex items-center justify-between pt-6">
-        <button type="button" disabled={busy} onClick={onSong} className="text-sm font-medium text-[var(--muted)] hover:text-[var(--ink)]">
-          Make a song video
-        </button>
+      <div className="mt-auto flex justify-end pt-6">
         <button
           type="button"
           disabled={busy || !canContinue}
@@ -1880,7 +1905,7 @@ function SongStep({
 
       <p className="mb-2 mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product</p>
       <div className="max-w-xs">
-        <UploadTile label="Product photo" preview={productPreview} hint={productPreview ? "Replace" : "Required"} disabled={busy} onClick={onPickProduct} />
+        <UploadTile label="Product photo" preview={productPreview} hint={productPreview ? "Replace" : "Required · at least 300×300"} disabled={busy} onClick={onPickProduct} />
       </div>
 
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">What is this product about?</label>
@@ -1944,8 +1969,8 @@ function SetupStep({
         <h3 className="display text-2xl md:text-3xl">{project.song ? "Characters and places" : "Look and length"}</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {project.song
-            ? "The song sets the length. Add characters and places if you have them."
-            : "Photos are optional. Name a role if you restyle a real person."}
+            ? "The song sets the length. Add characters and places if you have them. Every photo needs at least 300×300 pixels."
+            : "Photos are optional. Every photo needs at least 300×300 pixels. Name a role if you restyle a real person."}
         </p>
       </div>
 
@@ -2690,6 +2715,16 @@ function PlusIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function SongNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M6 12.2V3.2l7-1.2v8.4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <circle cx="4.4" cy="12.2" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="11.4" cy="10.4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }
