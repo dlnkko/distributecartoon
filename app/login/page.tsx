@@ -13,10 +13,13 @@ export default function LoginPage() {
     const supabase = createClient();
     const next = new URLSearchParams(window.location.search).get("next") || "/";
     const safeNext = next.startsWith("/") && !next.startsWith("//") ? next : "/";
+    const host = window.location.hostname;
+    const local = host === "localhost" || host === "127.0.0.1";
+    const origin = local ? window.location.origin : "https://www.distribute.to";
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
+        redirectTo: `${origin}/auth/callback?next=${encodeURIComponent(safeNext)}`,
         queryParams: { prompt: "select_account" },
       },
     });
