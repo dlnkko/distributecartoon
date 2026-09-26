@@ -138,9 +138,10 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
       if (providerFile && storeFailureShouldRegenerate(batch.attempts || 0, message)) {
         delete batch.videoRemoteUrl;
         if (isOpenRouterContent(batch.videoPublicPath)) delete batch.videoPublicPath;
+        schedulePartRetry(project, batch, message);
         delete batch.kieVideoTaskId;
-        schedulePartRetry(batch, message);
       } else {
+        notePartFailure(project, batch, message);
         batch.error = message;
         batch.attempts = (batch.attempts || 0) + 1;
       }
@@ -368,6 +369,7 @@ function speakingLeads(project: Project) {
 
 // One non-blocking pass: start missing intros and collect finished ones.
 async function stepCharacterIntros(project: Project): Promise<StepResult> {
+  if (project.song) return { ready: true };
   for (const character of speakingLeads(project)) {
     if (hasFreshAnchor(character)) continue;
     const source = anchorSourceUrl(character);
@@ -437,6 +439,7 @@ function freshNarratorVoice(project: Project) {
 
 // A missing narrator reference never blocks the video: after the last attempt the story goes on without it.
 async function stepNarratorVoice(project: Project): Promise<StepResult> {
+  if (project.song) return { ready: true };
   const source = narratorVoiceSource(project);
   if (!source || freshNarratorVoice(project)) return { ready: true };
   if (project.narratorVoice?.source !== source) project.narratorVoice = { source, attempts: 0 };
@@ -494,7 +497,14 @@ async function narratorVoiceRef(project: Project, sceneIndexes: number[], abortS
 const PART_RETRY_MS = 2 * 60 * 1000;
 const PENDING_STALE_MS = 3 * 60 * 1000;
 
-function schedulePartRetry(batch: Batch, message: string) {
+function notePartFailure(project: Project, batch: Batch, message: string) {
+  const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
+  batch.failures = [...(batch.failures || []), { at: nowIso(), message, ...(taskId ? { taskId } : {}) }].slice(-8);
+  console.warn("part failure", project.id, batch.index, message, taskId || "");
+}
+
+function schedulePartRetry(project: Project, batch: Batch, message: string) {
+  notePartFailure(project, batch, message);
   batch.attempts = (batch.attempts || 0) + 1;
   batch.error = message;
   batch.status = "generating_video";
@@ -613,9 +623,8 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
         await saveSoon(project);
         return { ready: false };
       }
+      schedulePartRetry(project, batch, peek.error || `Couldn't generate part ${batch.index}.`);
       delete batch.kieVideoTaskId;
-      schedulePartRetry(batch, peek.error || `Couldn't generate part ${batch.index}.`);
-      console.warn("part failed, will retry", project.id, batch.index, batch.error);
       await saveSoon(project);
     }
     if (batch.nextRetryAt && Date.now() < new Date(batch.nextRetryAt).getTime()) return { ready: false };
@@ -625,9 +634,8 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       await submitStoryBatch(project, batch, () => undefined);
     } catch (error) {
       if (!realKieVideoTaskId(batch.kieVideoTaskId)) {
+        schedulePartRetry(project, batch, error instanceof Error ? error.message : "Couldn't start this part.");
         delete batch.kieVideoTaskId;
-        schedulePartRetry(batch, error instanceof Error ? error.message : "Couldn't start this part.");
-        console.warn("part submit failed, will retry", project.id, batch.index, batch.error);
       }
       await saveSoon(project);
     }
@@ -1243,11 +1251,14 @@ export function planSeedanceBatches(project: Project) {
     project.scenes = usable.map((scene, index) => ({ ...scene, index: index + 1 }));
   }
   const fallback = project.scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0) || 15;
-  const target = clampTotalDuration(project.targetDurationSeconds || fallback);
+  const target = project.song
+    ? Math.round(project.song.durationSeconds)
+    : clampTotalDuration(project.targetDurationSeconds || fallback);
   project.targetDurationSeconds = target;
   const parts = packScenesIntoParts(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     target,
+    project.song?.clips.map((clip) => clip.durationSeconds),
   );
   const capped = capPartSceneSeconds(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
@@ -1260,7 +1271,11 @@ export function planSeedanceBatches(project: Project) {
   const previous = project.batches;
   project.batches = parts.map((part, index) => {
     const duration = part.duration;
-    const sceneIndexes = part.sceneIndexes.length ? part.sceneIndexes : project.scenes.map((scene) => scene.index);
+    const sceneIndexes = part.sceneIndexes.length
+      ? part.sceneIndexes
+      : project.song
+        ? []
+        : project.scenes.map((scene) => scene.index);
     const scenes = sceneIndexes
       .map((sceneIndex) => project.scenes.find((scene) => scene.index === sceneIndex))
       .filter((scene): scene is Project["scenes"][number] => Boolean(scene));
@@ -1278,8 +1293,8 @@ export function planSeedanceBatches(project: Project) {
       sceneIndexes,
       characterNames: names,
       extraNames: [...new Set(scenes.flatMap((scene) => scene.extraNames || []))],
-      introducesNewLead: index === 0,
-      newLeadNames: index === 0 ? names : [],
+      introducesNewLead: project.song ? false : index === 0,
+      newLeadNames: project.song || index !== 0 ? [] : names,
       cameraPlan: scenes
         .map((scene) => scene.camera)
         .filter(Boolean)
@@ -1302,7 +1317,16 @@ export function planSeedanceBatches(project: Project) {
       kieVideoTaskId: prior?.kieVideoTaskId,
     };
   });
+  if (project.song && project.batches.length !== project.song.clips.length) {
+    console.warn("song parts", project.id, project.batches.length, project.song.clips.length);
+  }
   return project.batches;
+}
+
+async function songAudioUrl(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  const clip = project.song?.clips.find((item) => item.index === batch.index);
+  if (!clip?.publicPath) return undefined;
+  return resolveUploadUrl(undefined, clip.publicPath, abortSignal);
 }
 
 async function submitStoryBatch(project: Project, batch: Batch, onStatus: StatusFn, abortSignal?: AbortSignal) {
@@ -1319,12 +1343,14 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   delete batch.error;
   delete batch.nextRetryAt;
   await saveSoon(project);
+  const audioUrl = await songAudioUrl(project, batch, abortSignal);
   const taskId = await submitSeedance25ReferenceVideo({
     prompt: batch.videoPrompt,
     duration: batch.duration,
     aspectRatio: normalizeAspectRatio(project.aspectRatio),
     referenceImageUrls: imageEntries.map((item) => item.url),
     referenceVideoUrls: videoEntries.map((item) => item.url),
+    referenceAudioUrls: audioUrl ? [audioUrl] : undefined,
     generateAudio: true,
     resolution: "480p",
     seed: projectSeed(project),
@@ -1490,12 +1516,14 @@ async function runGenerateBatchVideo(
 
     onStatus("Generating your video…");
     const revised = await refineSeedancePrompt(labeled);
+    const audioUrl = await songAudioUrl(project, batch);
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,
       duration: batch.duration,
       aspectRatio: normalizeAspectRatio(project.aspectRatio),
       referenceImageUrls: imageEntries.map((item) => item.url),
       referenceVideoUrls: videoEntries.map((item) => item.url),
+      referenceAudioUrls: audioUrl ? [audioUrl] : undefined,
       generateAudio: true,
       resolution: "480p",
       seed: projectSeed(project),

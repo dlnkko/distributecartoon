@@ -12,6 +12,7 @@ export async function POST(request: Request) {
   const { project } = loaded;
   const nextText = body.text.trim();
   if (nextText !== project.scriptText) resetStoryboard(project);
+  delete project.song;
   project.scriptText = nextText;
   project.scriptName = body.name || project.scriptName || "pasted-script.txt";
   project.workflowStep = "setup";

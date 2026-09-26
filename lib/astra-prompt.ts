@@ -27,6 +27,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
         "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
+        "If the draft includes @Audio1, keep @Audio1. That is the song for this clip. Do not add spoken dialogue when the draft has none.",
         "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks.",
         "Name which way a screen or object faces the camera. Each character speaks only their own line.",
         "Before any gaze, state the camera position relative to the look target. Do not leave two competing face directions. If the eyes are not on the lens, say eyes NOT on camera. On an emotional close-up keep: gaze must not be directed at lens unless explicitly stated.",
@@ -43,6 +44,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (/@Video\d|@Image\d/.test(trimmed) && !/@Video\d|@Image\d/.test(revised)) return trimmed;
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
+    if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     return revised;
   } catch (error) {
     console.warn("astra prompt revise failed", error instanceof Error ? error.message : error);

@@ -352,6 +352,7 @@ export function StudioApp() {
   const [accountOpen, setAccountOpen] = useState(false);
   const [expanded, setExpanded] = useState<{ src: string; poster?: string; label?: string; downloadName?: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const songRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
   const projectsRef = useRef<Project[]>([]);
@@ -458,7 +459,9 @@ export function StudioApp() {
 
   useEffect(() => {
     if (!project) return;
-    setScriptDraft(readDraft(project.id) || (isFileScript(project.scriptName) ? "" : project.scriptText || ""));
+    setScriptDraft(
+      readDraft(project.id) || (isFileScript(project.scriptName) || project.song ? "" : project.scriptText || ""),
+    );
     setScenesDraft(project.scenes.map(cloneScene));
   }, [project?.id]);
 
@@ -766,16 +769,36 @@ export function StudioApp() {
     if (json.project) remember(json.project);
   }
 
+  async function onUploadSong(file: File) {
+    if (!project) return;
+    setBusy(true);
+    setStatus(`Reading ${file.name}…`);
+    const form = new FormData();
+    form.set("projectId", project.id);
+    form.set("file", file);
+    const res = await fetch("/api/song", { method: "POST", body: form });
+    const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+    if (json.project) {
+      remember(json.project);
+      setScriptDraft("");
+      setStatus("");
+    } else {
+      setStatus(json.error || "Couldn't read that song.");
+    }
+    setBusy(false);
+  }
+
   async function continueFromScript() {
     if (!project || busy) return;
     const text = scriptDraft.trim();
     const uploaded = isFileScript(project.scriptName) && Boolean(project.scriptText.trim());
-    if (!text && !uploaded) {
-      setStatus("Paste or upload a script first.");
+    const song = Boolean(project.song);
+    if (!text && !uploaded && !song) {
+      setStatus("Paste a script or upload a song first.");
       return;
     }
     setBusy(true);
-    if (uploaded && !text) {
+    if ((uploaded || song) && !text) {
       await patchProject({ workflowStep: "setup" });
       setBusy(false);
       return;
@@ -806,7 +829,8 @@ export function StudioApp() {
   async function continueFromSetup() {
     const current = projectRef.current;
     if (!current || busy) return;
-    await patchProject({ targetDurationSeconds: current.targetDurationSeconds || 15, workflowStep: "setup" });
+    if (current.song) await patchProject({ workflowStep: "setup" });
+    else await patchProject({ targetDurationSeconds: current.targetDurationSeconds || 15, workflowStep: "setup" });
     await run("plan");
   }
 
@@ -1185,7 +1209,9 @@ export function StudioApp() {
                 </span>
                 <p className="display mt-4 text-2xl">Writing your scenes</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-                  This takes a minute. The storyboard is being fitted to the length you picked.
+                  {project.song
+                    ? "This takes a minute. The scenes follow the song."
+                    : "This takes a minute. The storyboard is being fitted to the length you picked."}
                 </p>
               </div>
             </div>
@@ -1195,11 +1221,14 @@ export function StudioApp() {
               key={project.id}
               scriptName={project.scriptName}
               fileAttached={isFileScript(project.scriptName)}
+              songName={project.song?.fileName || ""}
+              songAttached={Boolean(project.song)}
               value={scriptDraft}
               busy={working}
               textareaRef={textareaRef}
               onChange={setScriptDraft}
               onPickFile={() => fileRef.current?.click()}
+              onPickSong={() => songRef.current?.click()}
               onClearFile={() => void clearScriptFile()}
               onContinue={() => void continueFromScript()}
             />
@@ -1273,11 +1302,23 @@ export function StudioApp() {
         ref={fileRef}
         type="file"
         accept=".pdf,.doc,.docx"
-        disabled={Boolean(scriptDraft.trim())}
+        disabled={Boolean(scriptDraft.trim()) || Boolean(project?.song)}
         className="hidden"
         onChange={(event) => {
           const file = event.target.files?.[0];
-          if (file && !scriptDraft.trim()) void onUploadScript(file);
+          if (file && !scriptDraft.trim() && !project?.song) void onUploadScript(file);
+          event.target.value = "";
+        }}
+      />
+      <input
+        ref={songRef}
+        type="file"
+        accept="audio/*,.mp3,.wav,.m4a,.aac,.ogg"
+        disabled={Boolean(scriptDraft.trim()) || isFileScript(project?.scriptName)}
+        className="hidden"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          if (file && !scriptDraft.trim() && !isFileScript(project?.scriptName)) void onUploadSong(file);
           event.target.value = "";
         }}
       />
@@ -1592,30 +1633,37 @@ function VideosDashboard({
 function ScriptStep({
   scriptName,
   fileAttached,
+  songName,
+  songAttached,
   value,
   busy,
   textareaRef,
   onChange,
   onPickFile,
+  onPickSong,
   onClearFile,
   onContinue,
 }: {
   scriptName: string;
   fileAttached: boolean;
+  songName: string;
+  songAttached: boolean;
   value: string;
   busy: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   onChange: (value: string) => void;
   onPickFile: () => void;
+  onPickSong: () => void;
   onClearFile: () => void;
   onContinue: () => void;
 }) {
   const [infoOpen, setInfoOpen] = useState(false);
   const infoRef = useRef<HTMLDivElement>(null);
   const typing = Boolean(value.trim());
-  const uploadLocked = busy || typing;
-  const pasteLocked = busy || fileAttached;
-  const canContinue = fileAttached || typing;
+  const uploadLocked = busy || typing || songAttached;
+  const songLocked = busy || typing || fileAttached;
+  const pasteLocked = busy || fileAttached || songAttached;
+  const canContinue = fileAttached || songAttached || typing;
 
   useEffect(() => {
     if (!infoOpen) return;
@@ -1647,7 +1695,10 @@ function ScriptStep({
         </div>
         {infoOpen ? (
           <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-4 text-sm leading-6 text-[var(--ink)] shadow-[0_18px_50px_rgba(28,25,23,0.12)]">
-            <p>You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.</p>
+            <p>
+              You can add the script in only one way: upload a PDF or Word file, type the text, or upload a Suno song
+              between 30 and 90 seconds.
+            </p>
             <button
               type="button"
               onClick={() => setInfoOpen(false)}
@@ -1658,7 +1709,7 @@ function ScriptStep({
           </div>
         ) : null}
       </div>
-      <p className="mt-1 text-sm text-[var(--muted)]">Upload a PDF or Word file, or type the script.</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Upload a PDF or Word file, type the script, or add a Suno song.</p>
 
       <button
         type="button"
@@ -1683,13 +1734,42 @@ function ScriptStep({
         </button>
       ) : null}
 
+      <button
+        type="button"
+        onClick={onPickSong}
+        disabled={songLocked}
+        title={typing ? "Clear the typed text to upload a song." : fileAttached ? "Remove the file to upload a song." : undefined}
+        className={`mt-3 flex min-h-[108px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-5 text-center ${
+          songLocked
+            ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400 opacity-60"
+            : "border-stone-300 bg-white hover:border-stone-400 hover:bg-stone-50 hover:shadow-[0_12px_32px_rgba(28,25,23,0.06)]"
+        }`}
+      >
+        <span className="grid size-9 place-items-center rounded-xl bg-stone-100 text-stone-500">
+          <SongIcon />
+        </span>
+        <span className="text-sm font-medium text-[var(--ink)]">{songAttached ? songName : "Upload a Suno song"}</span>
+        <span className="text-xs text-[var(--muted)]">{songAttached ? "Song attached · 30 to 90 seconds" : "30 to 90 seconds · mp3, wav, m4a"}</span>
+      </button>
+      {songAttached ? (
+        <button type="button" disabled={busy} onClick={onClearFile} className="btn-secondary mt-2 self-start rounded-full px-3 py-1.5 text-xs">
+          Remove song
+        </button>
+      ) : null}
+
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">or type it here</label>
       <textarea
         ref={textareaRef}
         value={value}
         disabled={pasteLocked}
         onChange={(event) => onChange(event.target.value)}
-        placeholder={fileAttached ? "Remove the file to type the script instead." : "Type or paste the full script or storyboard…"}
+        placeholder={
+          fileAttached
+            ? "Remove the file to type the script instead."
+            : songAttached
+              ? "Remove the song to type a script instead."
+              : "Type or paste the full script or storyboard…"
+        }
         className="mt-1.5 min-h-[120px] max-h-[220px] w-full resize-none overflow-y-auto rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
       />
 
@@ -1763,9 +1843,15 @@ function SetupStep({
         </div>
         <div className="mt-4">
           <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
-          <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
+          {project.song ? (
+            <p className="text-sm text-[var(--ink)]">This song is {Math.round(project.song.durationSeconds)} seconds.</p>
+          ) : (
+            <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
+          )}
           <p className="mt-2 text-xs text-[var(--muted)]">
-            Scenes are fitted to this length. Each take is at most 30s, and a scene is never split across takes.
+            {project.song
+              ? "The video matches the song. Each take is at most 30s, and a scene is never split across takes."
+              : "Scenes are fitted to this length. Each take is at most 30s, and a scene is never split across takes."}
           </p>
         </div>
       </section>
@@ -2487,6 +2573,16 @@ function VideosIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="2" y="3.5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M6.8 6.2 10 8l-3.2 1.8V6.2Z" fill="currentColor" />
+    </svg>
+  );
+}
+
+function SongIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M6 12.2V3.2l7-1.2v8.4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <circle cx="4.4" cy="12.2" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+      <circle cx="11.4" cy="10.4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }

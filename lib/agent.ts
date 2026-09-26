@@ -479,18 +479,24 @@ function uniqueList(names: string[]) {
 }
 
 function scaleScenesToTarget(project: Project) {
-  const target = clampTotalDuration(project.targetDurationSeconds);
+  const target = project.song ? Math.round(project.song.durationSeconds) : clampTotalDuration(project.targetDurationSeconds);
   project.targetDurationSeconds = target;
   if (!project.scenes.length) return;
   for (const scene of project.scenes) {
     const written = scene.estimatedSeconds || estimateSceneSeconds(scene);
-    const talk = (scene.dialogue || []).reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
-    const capped = talk > 3.2 ? Math.min(written, Math.max(3, Math.ceil(talk))) : Math.min(written, 3);
-    scene.estimatedSeconds = Math.max(2, Math.round(capped * 10) / 10);
+    if (project.song) {
+      scene.dialogue = [];
+      scene.estimatedSeconds = Math.max(2, Math.min(30, Math.round(written * 10) / 10));
+    } else {
+      const talk = (scene.dialogue || []).reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
+      const capped = talk > 3.2 ? Math.min(written, Math.max(3, Math.ceil(talk))) : Math.min(written, 3);
+      scene.estimatedSeconds = Math.max(2, Math.round(capped * 10) / 10);
+    }
   }
   const parts = packScenesIntoParts(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     target,
+    project.song?.clips.map((clip) => clip.durationSeconds),
   );
   const capped = capPartSceneSeconds(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
@@ -523,7 +529,7 @@ async function executeTool(
     case "set_style": {
       if (args.style === "pixar" || args.style === "claymation") project.style = args.style as VisualStyle;
       if (args.aspect_ratio) project.aspectRatio = normalizeAspectRatio(args.aspect_ratio);
-      if (args.target_seconds) {
+      if (args.target_seconds && !project.song) {
         project.targetDurationSeconds = clampTotalDuration(args.target_seconds);
         project.durationPending = false;
       }
@@ -567,10 +573,12 @@ async function executeTool(
       });
       const scenes = (args.scenes as Array<Record<string, unknown>>) || [];
       project.scenes = scenes.map((item) => {
-        const dialogue = ((item.dialogue as Array<{ speaker: string; line: string }>) || []).map((line) => ({
-          speaker: englishSpeakerName(line.speaker),
-          line: line.line,
-        }));
+        const dialogue = project.song
+          ? []
+          : ((item.dialogue as Array<{ speaker: string; line: string }>) || []).map((line) => ({
+              speaker: englishSpeakerName(line.speaker),
+              line: line.line,
+            }));
         const summary = String(item.summary || "");
         const computed = estimateSceneSeconds({ summary, dialogue });
         const raw = Number(item.estimated_seconds || 0);
@@ -600,17 +608,21 @@ async function executeTool(
         project.scenes = withStory.map((scene, index) => ({ ...scene, index: index + 1 }));
       }
       refineStoryLeads(project);
-      const cue =
-        typeof project.targetDurationSeconds === "number"
-          ? clampTotalDuration(project.targetDurationSeconds)
-          : parseDurationFromText(project.scriptText);
       project.durationPending = false;
       project.durationAuto = false;
-      if (cue) project.targetDurationSeconds = cue;
-      else {
-        project.targetDurationSeconds = clampTotalDuration(
-          project.scenes.reduce((sum, scene) => sum + scene.estimatedSeconds, 0),
-        );
+      if (project.song) {
+        project.targetDurationSeconds = Math.round(project.song.durationSeconds);
+      } else {
+        const cue =
+          typeof project.targetDurationSeconds === "number"
+            ? clampTotalDuration(project.targetDurationSeconds)
+            : parseDurationFromText(project.scriptText);
+        if (cue) project.targetDurationSeconds = cue;
+        else {
+          project.targetDurationSeconds = clampTotalDuration(
+            project.scenes.reduce((sum, scene) => sum + scene.estimatedSeconds, 0),
+          );
+        }
       }
       scaleScenesToTarget(project);
       project.pendingQuestions = (args.questions_for_user as string[]) || [];
@@ -745,6 +757,29 @@ function asRecord(value: string) {
   return JSON.parse(value) as Record<string, unknown>;
 }
 
+function planTask(project: Project) {
+  const styleLine = `Style: ${project.style}. Aspect: ${project.aspectRatio}. Call extract_storyboard once, then stop.`;
+  if (project.song) {
+    const parts = project.song.clips
+      .map(
+        (clip) =>
+          `part ${clip.index} covers the song from ${clip.startSeconds}s for ${clip.durationSeconds}s (max ${clip.durationSeconds}s)`,
+      )
+      .join("; ");
+    return `SONG VIDEO. The script is the lyrics of a ${Math.round(project.song.durationSeconds)} second song, in the order they are sung. Build visual scenes of what those lyrics show, in that same order. Every dialogue array stays empty. Nobody speaks and there is no narrator. Characters may appear, with closed mouths. The song is the only audio. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds. Write enough scenes that the seconds inside each part add up to that part. Do not invent events the lyrics do not show. ${styleLine}`;
+  }
+  const parts = seedancePartDurations(project.targetDurationSeconds || 15).map(
+    (duration, index) => `part ${index + 1} (max ${duration}s)`,
+  );
+  const ordered =
+    /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(project.scriptText) ||
+    /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(project.scriptText);
+  const opening = ordered
+    ? "The user already ordered this as a storyboard. Keep that scene order, those beats, and those characters. Do not merge, reorder, or replace a named person."
+    : "The user wrote a paragraph. Turn it into an ordered storyboard in the exact cause order they told, one beat per scene, naming each person once and reusing that name. Do not invent a different sequence.";
+  return `${opening} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+}
+
 export async function runAgent(options: {
   project: Project;
   userText?: string;
@@ -755,7 +790,9 @@ export async function runAgent(options: {
   const mode = options.mode;
   options.project.durationPending = false;
   options.project.durationAuto = false;
-  if (typeof options.project.targetDurationSeconds !== "number") {
+  if (options.project.song) {
+    options.project.targetDurationSeconds = Math.round(options.project.song.durationSeconds);
+  } else if (typeof options.project.targetDurationSeconds !== "number") {
     options.project.targetDurationSeconds = 15;
   } else {
     options.project.targetDurationSeconds = clampTotalDuration(options.project.targetDurationSeconds);
@@ -785,12 +822,7 @@ export async function runAgent(options: {
   const userText =
     options.userText?.trim() ||
     (mode === "plan"
-      ? `${
-          /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(options.project.scriptText) ||
-          /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(options.project.scriptText)
-            ? "The user already ordered this as a storyboard. Keep that scene order, those beats, and those characters. Do not merge, reorder, or replace a named person."
-            : "The user wrote a paragraph. Turn it into an ordered storyboard in the exact cause order they told, one beat per scene, naming each person once and reusing that name. Do not invent a different sequence."
-        } Target total duration: ${options.project.targetDurationSeconds}s, grouped as ${seedancePartDurations(options.project.targetDurationSeconds).map((duration, index) => `part ${index + 1} (max ${duration}s)`).join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. Style: ${options.project.style}. Aspect: ${options.project.aspectRatio}. Call extract_storyboard once, then stop.`
+      ? planTask(options.project)
       : `The storyboard is approved. Do not rewrite scenes. ${
           shouldGenerateOneShot(options.project.targetDurationSeconds, options.project.scenes)
             ? `Generate this ${options.project.targetDurationSeconds}s ${options.project.style} short in ONE Seedance 2.5 take covering every scene at 480p.`

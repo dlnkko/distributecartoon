@@ -1641,6 +1641,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const look = project.style === "claymation" ? "Claymation" : "Pixar";
   const locationTags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
   const seenTags = assetTags(swaps);
+  const song = Boolean(project.song);
   const narrated = scenes.some((scene) => (scene?.dialogue || []).some((line) => line.speaker && isVoiceoverSpeaker(project, line.speaker)));
   const continues = Boolean(project.scenes.length && sceneIndexes[0] !== project.scenes[0]?.index);
   const usedCameras: string[] = [];
@@ -1684,7 +1685,13 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     );
     const visual = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
-    const spoken = shotIndex === 0 ? sceneSays(project, scene, people, narratorTag) : sceneSays(project, scene, people, narratorTag) ? "The same line continues over this cut." : "";
+    const spoken = song
+      ? ""
+      : shotIndex === 0
+        ? sceneSays(project, scene, people, narratorTag)
+        : sceneSays(project, scene, people, narratorTag)
+          ? "The same line continues over this cut."
+          : "";
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
@@ -1698,17 +1705,29 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       .join(" ");
   });
 
-  const lead = [
-    `${look} style throughout the whole video.`,
-    tailLine,
-    "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
-    referenceLock(images),
-    tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
-    narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
-  ]
+  const lead = (
+    song
+      ? [
+          `${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds.`,
+          `${look} style throughout the whole video.`,
+          tailLine,
+          "Nobody speaks. Every mouth stays closed. The soundtrack is @Audio1, this slice of the uploaded song, for the whole clip. No other music and no dialogue.",
+          "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
+          referenceLock(images),
+          tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
+        ]
+      : [
+          `${look} style throughout the whole video.`,
+          tailLine,
+          "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
+          referenceLock(images),
+          tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
+          narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
+        ]
+  )
     .filter(Boolean)
     .join(" ");
-  return `${lead} ${blocks.join(" CUT. ")} No background music.`
+  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The soundtrack stays @Audio1." : "No background music."}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();

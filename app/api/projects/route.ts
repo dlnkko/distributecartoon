@@ -76,11 +76,12 @@ export async function PATCH(request: Request) {
     resetStoryboard(project);
     project.scriptText = "";
     project.scriptName = "";
+    delete project.song;
     project.workflowStep = "script";
   }
   if (body.style === "pixar" || body.style === "claymation") project.style = body.style;
   if (body.aspectRatio) project.aspectRatio = normalizeAspectRatio(body.aspectRatio);
-  if (typeof body.targetDurationSeconds === "number") {
+  if (typeof body.targetDurationSeconds === "number" && !project.song) {
     project.targetDurationSeconds = clampTotalDuration(body.targetDurationSeconds);
     project.durationAuto = false;
     project.durationPending = false;
@@ -121,13 +122,19 @@ export async function PATCH(request: Request) {
             .filter((shot) => shot.action || shot.camera)
         : undefined,
     }));
-    const scaled = scaleEstimatedSeconds(
-      project.scenes.map((scene) => scene.estimatedSeconds || 0),
-      project.targetDurationSeconds || 15,
-    );
-    project.scenes.forEach((scene, index) => {
-      scene.estimatedSeconds = scaled[index] ?? scene.estimatedSeconds;
-    });
+    if (project.song) {
+      project.scenes.forEach((scene) => {
+        scene.dialogue = [];
+      });
+    } else {
+      const scaled = scaleEstimatedSeconds(
+        project.scenes.map((scene) => scene.estimatedSeconds || 0),
+        project.targetDurationSeconds || 15,
+      );
+      project.scenes.forEach((scene, index) => {
+        scene.estimatedSeconds = scaled[index] ?? scene.estimatedSeconds;
+      });
+    }
     if (body.resetGeneration) {
       archiveReadyVideos(project);
       project.batches = [];

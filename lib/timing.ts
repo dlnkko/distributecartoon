@@ -107,13 +107,39 @@ function generationDurations(target: number) {
   return durations;
 }
 
+function fillEmptyGroups(groups: number[][]) {
+  let moved = true;
+  while (moved) {
+    moved = false;
+    for (let index = 1; index < groups.length; index += 1) {
+      if (groups[index].length) continue;
+      let donor = -1;
+      let most = 1;
+      for (let from = 0; from < index; from += 1) {
+        if (groups[from].length > most) {
+          most = groups[from].length;
+          donor = from;
+        }
+      }
+      if (donor < 0) continue;
+      const item = groups[donor].pop();
+      if (item === undefined) continue;
+      groups[index].unshift(item);
+      moved = true;
+    }
+  }
+}
+
 export function packScenesIntoParts(
   scenes: Array<{ index: number; estimatedSeconds: number }>,
   targetSeconds?: number,
+  fixedDurations?: number[],
 ): SeedancePartPlan[] {
   const summed = scenes.reduce((sum, scene) => sum + sceneSpan(scene.estimatedSeconds), 0);
   const target = Math.round(Number(targetSeconds)) > 0 ? Math.round(Number(targetSeconds)) : Math.round(summed) || 4;
-  const durations = generationDurations(target);
+  const durations = fixedDurations?.length
+    ? fixedDurations.map((value) => Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(value))))
+    : generationDurations(target);
   if (!scenes.length) return durations.map((duration) => ({ duration, sceneIndexes: [] }));
   if (durations.length === 1) return [{ duration: durations[0], sceneIndexes: scenes.map((scene) => scene.index) }];
 
@@ -133,12 +159,15 @@ export function packScenesIntoParts(
     groups[slot].push(scene.index);
     usedInPart[slot] += span;
   }
-  for (let index = 1; index < groups.length; index += 1) {
-    if (groups[index].length) continue;
-    const previous = groups[index - 1];
-    if (previous.length < 2) continue;
-    const moved = previous.pop();
-    if (moved !== undefined) groups[index].unshift(moved);
+  if (fixedDurations?.length) fillEmptyGroups(groups);
+  else {
+    for (let index = 1; index < groups.length; index += 1) {
+      if (groups[index].length) continue;
+      const previous = groups[index - 1];
+      if (previous.length < 2) continue;
+      const moved = previous.pop();
+      if (moved !== undefined) groups[index].unshift(moved);
+    }
   }
   return durations
     .map((duration, index) => ({ duration, sceneIndexes: groups[index] }))

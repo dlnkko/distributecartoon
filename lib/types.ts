@@ -109,6 +109,12 @@ export type BatchStatus =
   | "done"
   | "error";
 
+export type BatchFailure = {
+  at: string;
+  message: string;
+  taskId?: string;
+};
+
 export type Batch = {
   id: string;
   index: number;
@@ -125,6 +131,7 @@ export type Batch = {
   pacingNotes: string;
   status: BatchStatus;
   error?: string;
+  failures?: BatchFailure[];
   frameFileName?: string;
   framePublicPath?: string;
   frameRemoteUrl?: string;
@@ -172,6 +179,20 @@ export type LocationPlate = {
   remoteUrl: string;
 };
 
+export type SongClip = {
+  index: number;
+  startSeconds: number;
+  durationSeconds: number;
+  publicPath: string;
+};
+
+export type Song = {
+  fileName: string;
+  durationSeconds: number;
+  lyrics: string;
+  clips: SongClip[];
+};
+
 export type Project = {
   id: string;
   title: string;
@@ -179,6 +200,7 @@ export type Project = {
   aspectRatio: AspectRatio;
   scriptName: string;
   scriptText: string;
+  song?: Song;
   characters: Character[];
   scenes: Scene[];
   batches: Batch[];

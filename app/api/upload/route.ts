@@ -22,6 +22,7 @@ export async function POST(request: Request) {
   }
 
   if (text !== project.scriptText) resetStoryboard(project);
+  delete project.song;
   project.scriptName = file.name;
   project.scriptText = text;
   project.workflowStep = "script";

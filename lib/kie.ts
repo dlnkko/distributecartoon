@@ -136,6 +136,7 @@ type SeedanceRequest = {
   aspectRatio?: "16:9" | "9:16" | "1:1" | "adaptive";
   referenceImageUrls?: string[];
   referenceVideoUrls?: string[];
+  referenceAudioUrls?: string[];
   generateAudio?: boolean;
   resolution?: "480p" | "720p" | "1080p";
   model?: "bytedance/seedance-2.5" | "bytedance/seedance-2.0-fast";
@@ -159,6 +160,9 @@ export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
     }
     for (const url of (options.referenceVideoUrls || []).slice(0, 7)) {
       input_references.push({ type: "video_url", video_url: { url } });
+    }
+    for (const url of (options.referenceAudioUrls || []).slice(0, 3)) {
+      input_references.push({ type: "audio_url", audio_url: { url } });
     }
     const response = await fetch(`${OPENROUTER_BASE}/videos`, {
       method: "POST",

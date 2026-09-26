@@ -21,6 +21,9 @@ function mimeFromName(name: string) {
   if (name.endsWith(".mp4")) return "video/mp4";
   if (name.endsWith(".webm")) return "video/webm";
   if (name.endsWith(".wav")) return "audio/wav";
+  if (name.endsWith(".mp3") || name.endsWith(".mpeg")) return "audio/mpeg";
+  if (name.endsWith(".m4a") || name.endsWith(".aac")) return "audio/mp4";
+  if (name.endsWith(".ogg")) return "audio/ogg";
   return "application/octet-stream";
 }
 
