@@ -1690,8 +1690,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     );
     const visual = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
+    const singsAlong =
+      song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
     const spoken = song
-      ? ""
+      ? singsAlong
+        ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
+        : ""
       : shotIndex === 0
         ? sceneSays(project, scene, people, narratorTag)
         : sceneSays(project, scene, people, narratorTag)
@@ -1719,7 +1723,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           continues
             ? "The last 5 seconds of the previous generation already play this song. Continue that music on the next beat. Do not restart it. @Audio2 is those 5 seconds, for the handoff only."
             : "",
-          "Nobody speaks. Every mouth stays closed. No other music and no dialogue.",
+          "Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the lyric already in @Audio1.",
           "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine,
