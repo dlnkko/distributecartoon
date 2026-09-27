@@ -27,12 +27,12 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
         "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
-        "If the draft includes @Audio1, keep @Audio1. That is the song for this clip and it plays from the first frame. If the draft includes @Audio2, keep @Audio2. That is the previous 5 seconds of the same song. Do not add a silent intro, a title card, or spoken dialogue when the draft has none. If a scene says a character sings along or mouths a lyric, keep it: that mouth matches @Audio1 only. Do not add a second voice and do not close that mouth.",
+        "If the draft includes @Audio1, keep @Audio1. That is this part's song slice and it plays from the first frame of this video. Do not add @Audio2. The previous ending is the video reference only: do not regenerate those 5 seconds. Do not add a silent intro, a title card, or spoken dialogue when the draft has none. If a scene says a character sings along or mouths a lyric, keep it: that mouth matches @Audio1 only. Do not add a second voice and do not close that mouth.",
         "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks.",
         "Name which way a screen or object faces the camera. Each character speaks only their own line.",
         "Before any gaze, state the camera position relative to the look target. Do not leave two competing face directions. If the eyes are not on the lens, say eyes NOT on camera. On an emotional close-up keep: gaze must not be directed at lens unless explicitly stated.",
         prior
-          ? "A previous part prompt is included. Continue from its last moment. Do not restart the story or repeat a finished action. The video tagged as the last 5 seconds is the end of that previous part. Use it for the clothes, anything in their hands, and a body change that still applies. This part may open in a new place."
+          ? "A previous part prompt is included. This clip is the next slice, not a replay of the previous ending. Do not regenerate the last 5 seconds. The video tagged as those 5 seconds is a reference so the cut is not abrupt. Use it for the clothes, anything in their hands, and a body change that still applies. This part may open in a new place."
           : "",
       ]
         .filter(Boolean)
@@ -45,7 +45,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     if (/@Video\d|@Image\d/.test(trimmed) && !/@Video\d|@Image\d/.test(revised)) return trimmed;
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
-    if (/@Audio2\b/.test(trimmed) && !/@Audio2\b/.test(revised)) return trimmed;
+    if (/@Audio2\b/.test(revised)) return trimmed;
     if (/\bsings along\b/i.test(trimmed) && !/\bsings along\b/i.test(revised)) return trimmed;
     return revised;
   } catch (error) {

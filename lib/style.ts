@@ -978,7 +978,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     else if (item.kind === "video")
       refs.push(
         project.song
-          ? `${tag} is the last 5 seconds of the previous generation, picture and music. The attached song is already playing there. Continue that same music on the next beat: no restart, no gap, no drop, and no new intro. Use the picture for clothes, anything in their hands, and a body change that still applies. If this part opens in a new place, bring those details into the new place.`
+          ? `${tag} is a reference only: the last 5 seconds of the previous part, picture and the music already playing. Do not generate those 5 seconds again. This video is the next slice and starts on the moment after that ending. Use the reference so the cut is not abrupt, matching clothes, anything in their hands, and the music at that ending. If this part opens in a new place, bring those details into the new place.`
           : `${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. Keep the camera cinematic.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
@@ -1719,10 +1719,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       ? [
           `${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds.`,
           `${look} style throughout the whole video.`,
-          "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
           continues
-            ? "The last 5 seconds of the previous generation already play this song. Continue that music on the next beat. Do not restart it. @Audio2 is those 5 seconds, for the handoff only."
-            : "",
+            ? `This video is the next ${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds, the slice that belongs to this part. Do not regenerate the previous 5 seconds. The video reference is that ending, picture and music, only so the cut is not abrupt. @Audio1 is this slice and plays from 00:00 of this video. No title card, no logo sting, no black frame, and no new intro.`
+            : "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
           "Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the lyric already in @Audio1.",
           "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),

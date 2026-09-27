@@ -576,7 +576,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       previous &&
       !realKieVideoTaskId(batch.kieVideoTaskId) &&
       batch.kieVideoTaskId !== "pending" &&
-      !/last 5 seconds/i.test(batch.videoPrompt || "")
+      (!/last 5 seconds/i.test(batch.videoPrompt || "") || /@Audio2\b/.test(batch.videoPrompt || ""))
     ) {
       batch.promptReady = false;
     }
@@ -1330,10 +1330,6 @@ async function songAudioUrls(project: Project, batch: Batch, abortSignal?: Abort
   const urls: string[] = [];
   const main = await resolveUploadUrl(undefined, clip.publicPath, abortSignal);
   if (main) urls.push(main);
-  if (batch.index > 1 && clip.bridgePublicPath) {
-    const bridge = await resolveUploadUrl(undefined, clip.bridgePublicPath, abortSignal);
-    if (bridge) urls.push(bridge);
-  }
   return urls;
 }
 
