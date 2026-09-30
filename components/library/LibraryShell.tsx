@@ -99,41 +99,41 @@ export function LibraryShell({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <aside className={`hidden shrink-0 flex-col border-r border-[var(--cf-line)] bg-[rgba(20,20,23,0.72)] backdrop-blur-xl lg:flex ${narrow ? "w-[84px]" : "w-[248px]"}`}>
-        <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-4">
-          <Brand word={!narrow} tone="accent" />
-          <button type="button" onClick={() => setNarrow((value) => !value)} className="no-press grid h-11 w-11 shrink-0 place-items-center rounded-xl text-[var(--cf-muted)] hover:bg-white/5" aria-label={narrow ? "Expand sidebar" : "Collapse sidebar"}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <aside className={`hidden shrink-0 flex-col border-r border-[var(--cf-line)] bg-[rgba(20,20,23,0.72)] backdrop-blur-xl lg:flex ${narrow ? "w-[72px]" : "w-[248px]"}`}>
+        <div className={`flex items-center pb-3 pt-4 ${narrow ? "flex-col gap-2 px-2" : "justify-between gap-2 px-3"}`}>
+          <Brand word={!narrow} tone="accent" compact={narrow} />
+          <button type="button" onClick={() => setNarrow((value) => !value)} className={`no-press grid shrink-0 place-items-center rounded-lg text-[var(--cf-muted)] hover:bg-white/5 ${narrow ? "h-7 w-7" : "h-11 w-11 rounded-xl"}`} aria-label={narrow ? "Expand sidebar" : "Collapse sidebar"}>
+            <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
               <path d={narrow ? "M6 3.5 10.5 8 6 12.5" : "M10 3.5 5.5 8 10 12.5"} stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
-        <div className="px-3">
-          <button type="button" onClick={onCreate} className="btn-primary cf-create flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)]">
+        <div className={`flex flex-col gap-2 ${narrow ? "items-center px-2" : "px-3"}`}>
+          <button type="button" onClick={onCreate} aria-label="Create a video" className={`btn-primary cf-create flex items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)] ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
             <span className="cf-plus">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className={narrow ? "h-3.5 w-3.5" : ""}>
                 <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
               </svg>
             </span>
             {narrow ? null : "Create a video"}
           </button>
+          <button type="button" onClick={onCreateSong} aria-label="Create a suno video" className={`no-press flex items-center rounded-xl border border-white/10 bg-white/5 text-sm font-medium text-white hover:bg-white/10 ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
+            <SongIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
+            {narrow ? null : "Create a suno video"}
+          </button>
         </div>
-        <nav className="mt-3 flex flex-1 flex-col gap-1 px-3" aria-label="Studio">
-          <button type="button" className="no-press flex min-h-11 items-center gap-3 rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] px-3 text-sm font-medium text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]" aria-current="page">
-            <FilmIcon />
+        <nav className={`mt-4 flex flex-1 flex-col gap-1 border-t border-[var(--cf-line)] pt-3 ${narrow ? "items-center px-2" : "px-3"}`} aria-label="Studio">
+          <button type="button" aria-label="Your videos" className={`no-press flex items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-sm font-medium text-white shadow-[0_0_24px_rgba(255,138,61,0.16)] ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`} aria-current="page">
+            <FilmIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Your videos"}
           </button>
-          <button type="button" onClick={onCreateSong} className="no-press flex min-h-11 items-center gap-3 rounded-xl px-3 text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white">
-            <SongIcon />
-            {narrow ? null : "Make suno video"}
-          </button>
         </nav>
-        <div className="px-3 pb-2">
+        <div className={narrow ? "px-2 pb-2" : "px-3 pb-2"}>
           <CreditsWidget credits={credits} compact={narrow} />
         </div>
-        <div className="relative p-3" data-account-menu>
-          <button type="button" onClick={() => setMenu((open) => !open)} className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-white/5" aria-expanded={menu} aria-haspopup="menu">
-            <Avatar profile={profile} />
+        <div className={`relative ${narrow ? "p-2" : "p-3"}`} data-account-menu>
+          <button type="button" onClick={() => setMenu((open) => !open)} className={`no-press flex items-center rounded-xl text-left hover:bg-white/5 ${narrow ? "mx-auto size-9 justify-center" : "min-h-11 w-full gap-3 px-2"}`} aria-expanded={menu} aria-haspopup="menu" aria-label="Account menu">
+            <Avatar profile={profile} compact={narrow} />
             {narrow ? null : (
               <span className="min-w-0">
                 <span className="block truncate text-sm font-medium">{profile?.displayName || "Your account"}</span>
@@ -142,11 +142,15 @@ export function LibraryShell({
             )}
           </button>
           {menu ? (
-            <div role="menu" className="absolute bottom-16 left-3 right-3 overflow-hidden rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] py-1 shadow-2xl">
-              <button type="button" role="menuitem" onClick={onAccount} className="no-press block min-h-11 w-full px-3 text-left text-sm hover:bg-white/5">
+            <div role="menu" className={`absolute z-30 w-56 overflow-hidden rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] py-1 shadow-2xl ${narrow ? "bottom-0 left-[calc(100%+8px)]" : "right-3 bottom-16 left-3 w-auto"}`}>
+              <div className="border-b border-[var(--cf-line)] px-3 py-2.5">
+                <p className="truncate text-sm font-medium">{profile?.displayName || "Your account"}</p>
+                <p className="truncate text-[11px] text-[var(--cf-muted)]">{profile?.email || "Account"}</p>
+              </div>
+              <button type="button" role="menuitem" onClick={onAccount} className="no-press block min-h-10 w-full whitespace-nowrap px-3 text-left text-sm hover:bg-white/5">
                 Account
               </button>
-              <button type="button" role="menuitem" onClick={onLogout} className="no-press block min-h-11 w-full px-3 text-left text-sm hover:bg-white/5">
+              <button type="button" role="menuitem" onClick={onLogout} className="no-press block min-h-10 w-full whitespace-nowrap px-3 text-left text-sm hover:bg-white/5">
                 Sign out
               </button>
             </div>
@@ -255,9 +259,9 @@ export function LibraryShell({
   );
 }
 
-function Avatar({ profile }: { profile?: LibraryProfile | null }) {
+function Avatar({ profile, compact = false }: { profile?: LibraryProfile | null; compact?: boolean }) {
   return (
-    <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-full bg-white/10 text-sm">
+    <span className={`grid shrink-0 place-items-center overflow-hidden rounded-full bg-white/10 ${compact ? "h-7 w-7 text-xs" : "h-9 w-9 text-sm"}`}>
       {profile?.avatarUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={profile.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -268,18 +272,18 @@ function Avatar({ profile }: { profile?: LibraryProfile | null }) {
   );
 }
 
-function FilmIcon() {
+function FilmIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <rect x="2" y="3.5" width="12" height="9" rx="2" stroke="currentColor" strokeWidth="1.5" />
       <path d="M6.8 6.2 10 8l-3.2 1.8V6.2Z" fill="currentColor" />
     </svg>
   );
 }
 
-function SongIcon() {
+function SongIcon({ className = "h-4 w-4" }: { className?: string }) {
   return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M6 12.2V3.2l7-1.2v8.4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       <circle cx="4.4" cy="12.2" r="1.6" stroke="currentColor" strokeWidth="1.4" />
       <circle cx="11.4" cy="10.4" r="1.6" stroke="currentColor" strokeWidth="1.4" />

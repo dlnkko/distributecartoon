@@ -165,6 +165,7 @@ export async function createProject(
   style: VisualStyle = "pixar",
   aspectRatio: AspectRatio = "16:9",
   ownerId?: string,
+  workflowStep: WorkflowStep = "script",
 ): Promise<Project> {
   const stamp = nowIso();
   const project: Project = {
@@ -184,7 +185,7 @@ export async function createProject(
     durationAuto: false,
     targetDurationSeconds: 15,
     durationPending: false,
-    workflowStep: "script",
+    workflowStep,
     pendingQuestions: [],
     ownerId,
     messages: [],

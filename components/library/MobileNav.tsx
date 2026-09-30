@@ -12,9 +12,9 @@ export function MobileNav({
   onAccount: () => void;
 }) {
   const items = [
-    { label: "Your videos", onClick: onVideos, icon: VideosGlyph, active: true },
     { label: "Create", onClick: onCreate, icon: PlusGlyph, active: false },
     { label: "Suno video", onClick: onSong, icon: SongGlyph, active: false },
+    { label: "Your videos", onClick: onVideos, icon: VideosGlyph, active: true },
     { label: "Account", onClick: onAccount, icon: AccountGlyph, active: false },
   ];
   return (

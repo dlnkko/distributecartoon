@@ -18,9 +18,9 @@ export function CreditsWidget({
   const circ = 2 * Math.PI * radius;
 
   return (
-    <div className={`rounded-[20px] border bg-[var(--cf-surface-2)] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${low ? "border-[#FF8A3D]/50" : "border-[var(--cf-line)]"}`}>
+    <div className={`border bg-[var(--cf-surface-2)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${compact ? "rounded-2xl px-1.5 py-2" : "rounded-[20px] p-3"} ${low ? "border-[#FF8A3D]/50" : "border-[var(--cf-line)]"}`}>
       <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
-        <svg viewBox="0 0 48 48" className="h-12 w-12 shrink-0" aria-hidden="true">
+        <svg viewBox="0 0 48 48" className={`shrink-0 ${compact ? "h-8 w-8" : "h-12 w-12"}`} aria-hidden="true">
           <circle cx="24" cy="24" r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
           <circle
             cx="24"
@@ -49,7 +49,7 @@ export function CreditsWidget({
         )}
       </div>
       {compact ? (
-        <p className="mt-1 text-center text-sm font-medium tabular-nums">{credits}</p>
+        <p className="mt-0.5 text-center text-xs font-medium tabular-nums">{credits}</p>
       ) : (
         <>
           <p className="mt-2 text-[11px] leading-4 text-[var(--cf-muted)]">credits = seconds of video</p>

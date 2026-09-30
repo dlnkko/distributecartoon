@@ -11,6 +11,7 @@ import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
+import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
@@ -565,16 +566,20 @@ export function StudioApp() {
     const created = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ style: project?.style || "pixar", aspectRatio: project?.aspectRatio || "16:9" }),
+      body: JSON.stringify({
+        style: project?.style || "pixar",
+        aspectRatio: project?.aspectRatio || "16:9",
+        workflowStep: "song",
+      }),
     });
     const next = (await created.json()) as Project;
+    next.workflowStep = "song";
     remember(next);
     setScriptDraft("");
     setScenesDraft([]);
     setStatus("");
     setPane("studio");
     setSidebarOpen(false);
-    await patchProject({ workflowStep: "song" });
   }
 
   async function patchProject(payload: Record<string, unknown>) {
@@ -1122,7 +1127,7 @@ export function StudioApp() {
   const allSlots = [...charactersSlots, ...products, ...locations, ...logos];
 
   return (
-    <div className={`relative flex h-dvh overflow-hidden ${pane === "library" ? "library-shell" : ""}`} data-style={project.style}>
+    <div className="library-shell relative flex h-dvh overflow-hidden" data-style={project.style}>
       {pane === "library" ? (
         <LibraryShell
           videos={history}
@@ -1150,81 +1155,78 @@ export function StudioApp() {
           downloadName={(item) => videoDownloadName(item.title, item.index, item.parts)}
         />
       ) : (
-      <>
+      <div className="studio-dark relative flex min-h-0 min-w-0 flex-1">
       {sidebarOpen ? (
         <button
           type="button"
-          className="no-press fixed inset-0 z-30 bg-stone-900/20 md:hidden"
+          className="no-press fixed inset-0 z-30 bg-black/60 md:hidden"
           aria-label="Close menu"
           onClick={() => setSidebarOpen(false)}
         />
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[var(--line)] bg-white transition-transform duration-300 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[var(--cf-line)] bg-[rgba(20,20,23,0.92)] backdrop-blur-xl transition-transform duration-300 md:static md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between px-4 pb-4 pt-5">
-          <Brand />
-          <button type="button" className="rounded-xl px-2 py-1 text-sm md:hidden" onClick={() => setSidebarOpen(false)}>
+        <div className="flex items-center justify-between gap-2 px-3 pb-3 pt-4">
+          <Brand tone="accent" />
+          <button type="button" className="no-press rounded-xl px-2 py-1 text-sm text-[var(--cf-muted)] md:hidden" onClick={() => setSidebarOpen(false)}>
             Close
           </button>
         </div>
 
-        <div className="px-3 pb-3">
+        <div className="flex flex-col gap-2 px-3">
           <button
             type="button"
             onClick={() => void createNew()}
-            className="btn-primary flex w-full items-center justify-center gap-2 rounded-2xl bg-[var(--ink)] px-4 py-3 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(28,25,23,0.16)]"
+            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)]"
           >
-            <PlusIcon />
+            <span className="cf-plus">
+              <PlusIcon />
+            </span>
             Create a video
+          </button>
+          <button
+            type="button"
+            onClick={() => void createSong()}
+            className={`no-press flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-sm font-medium ${
+              step === "song" || project.song
+                ? "border-[#FF8A3D]/40 bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]"
+                : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+            }`}
+          >
+            <SongNavIcon />
+            Create a suno video
           </button>
         </div>
 
-        <nav className="flex min-h-0 flex-1 flex-col gap-1 px-3">
+        <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 border-t border-[var(--cf-line)] px-3 pt-3" aria-label="Studio">
           <button
             type="button"
             onClick={() => {
               setPane("library");
               setSidebarOpen(false);
             }}
-            className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--bg)]"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
           >
             <VideosIcon />
             Your videos
           </button>
-          <button
-            type="button"
-            onClick={() => void createSong()}
-            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors ${
-              pane === "studio" && step === "song" ? "bg-[var(--bg)] font-medium" : "hover:bg-[var(--bg)]"
-            }`}
-          >
-            <SongNavIcon />
-            Make suno video
-          </button>
         </nav>
 
-        <div className={`mx-3 mb-2 rounded-2xl border p-3 ${credits < 15 ? "border-[var(--warn)] bg-amber-50" : "border-[var(--line)] bg-[var(--bg)]"}`}>
-          <div className="flex items-end justify-between gap-2">
-            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Credits</p>
-            <p className="display text-[1.7rem] leading-none">{credits}</p>
-          </div>
-          <p className="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">One credit is one second of video.</p>
-          <a href="/checkout/pro" className="btn-primary mt-3 flex w-full items-center justify-center rounded-xl bg-[var(--ink)] px-3 py-2 text-xs font-medium text-white">
-            Buy credits
-          </a>
+        <div className="px-3 pb-2">
+          <CreditsWidget credits={credits} />
         </div>
 
         <div className="p-3">
           <button
             type="button"
             onClick={() => setAccountOpen(true)}
-            className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-[var(--bg)]"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-white/5"
           >
-            <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-[var(--ink)] text-sm text-white">
+            <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-white/10 text-sm">
               {profile?.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -1233,29 +1235,33 @@ export function StudioApp() {
               )}
             </span>
             <span className="min-w-0">
-              <span className="block truncate text-sm font-medium">Your account</span>
-              <span className="block truncate text-[11px] text-[var(--muted)]">{profile?.email || "Account"}</span>
+              <span className="block truncate text-sm font-medium">{profile?.displayName || "Your account"}</span>
+              <span className="block truncate text-[11px] text-[var(--cf-muted)]">{profile?.email || "Account"}</span>
             </span>
           </button>
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg)]">
-        <header className="flex items-center gap-2 px-3 py-3 md:gap-3 md:px-6">
-          <button type="button" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white md:hidden" aria-label="Open menu" onClick={() => setSidebarOpen(true)}>
-            <MenuIcon />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="display truncate text-lg md:text-2xl">{project.title}</h2>
+      <section className="flex min-w-0 flex-1 flex-col bg-[var(--cf-bg)]">
+        <header className="sticky top-0 z-20 border-b border-[var(--cf-line)] bg-[rgba(11,11,13,0.78)] px-3 py-4 backdrop-blur-xl md:px-6">
+          <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(255,138,61,0.22),transparent_68%)] blur-3xl" />
+          <div className="relative flex items-center gap-2 md:gap-3">
+            <button type="button" className="no-press grid size-11 shrink-0 place-items-center rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] md:hidden" aria-label="Open menu" onClick={() => setSidebarOpen(true)}>
+              <MenuIcon />
+            </button>
+            <div className="min-w-0 flex-1">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--cf-muted)]">New video</p>
+              <h2 className="display truncate text-2xl leading-none font-semibold tracking-[-0.045em] md:text-[32px]">{project.title}</h2>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPane("library")}
+              className="no-press shrink-0 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 py-2 text-sm hover:bg-white/5"
+            >
+              <span className="sm:hidden">Library</span>
+              <span className="hidden sm:inline">Your videos</span>
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={() => setPane("library")}
-            className="shrink-0 rounded-xl border border-[var(--line)] bg-white px-3 py-2 text-sm"
-          >
-            <span className="sm:hidden">Library</span>
-            <span className="hidden sm:inline">Your videos</span>
-          </button>
         </header>
             <StepBar
               steps={stepsFor(project)}
@@ -1390,7 +1396,7 @@ export function StudioApp() {
           {!working && status && step !== "produce" ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
         </div>
       </section>
-      </>
+      </div>
       )}
 
       <input
@@ -1434,8 +1440,8 @@ export function StudioApp() {
       ))}
 
       {accountOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-stone-900/25 p-3">
-          <div className="w-full max-w-md rounded-3xl bg-white p-5 shadow-2xl">
+        <div className="studio-dark fixed inset-0 z-50 grid place-items-center bg-black/60 p-3">
+          <div className="w-full max-w-md rounded-3xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-5 shadow-2xl">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">Account</p>
@@ -1541,7 +1547,11 @@ function StepBar({
           <>
             <span
               className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium ${
-                active ? "bg-[var(--ink)] text-white" : done ? "bg-[var(--accent)] text-white" : "bg-stone-200 text-stone-500"
+                active
+                  ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_0_16px_rgba(255,138,61,0.45)]"
+                  : done
+                    ? "bg-[var(--accent)] text-white"
+                    : "bg-white/10 text-[var(--cf-muted)]"
               }`}
             >
               {i + 1}
@@ -1564,7 +1574,7 @@ function StepBar({
             ) : (
               content
             )}
-            {i < steps.length - 1 ? <span className="hidden h-px flex-1 bg-stone-200 sm:block" /> : null}
+            {i < steps.length - 1 ? <span className={`hidden h-px flex-1 sm:block ${done ? "bg-[linear-gradient(90deg,#FF8A3D,#FF5E62)]" : "bg-white/10"}`} /> : null}
           </li>
         );
       })}
@@ -1611,26 +1621,26 @@ function ScriptStep({
   }, [infoOpen]);
 
   return (
-    <div className="flex flex-1 flex-col">
+    <div className="rise-in flex flex-1 flex-col">
       <div ref={infoRef}>
         <div className="flex flex-wrap items-center gap-3">
-          <h3 className="display text-2xl md:text-3xl">Add the script</h3>
+          <h3 className="display text-3xl md:text-4xl">Add the script</h3>
           <button
             type="button"
             aria-label="Script input info"
             aria-expanded={infoOpen}
             onClick={() => setInfoOpen((open) => !open)}
-            className={`grid size-7 place-items-center rounded-full text-[13px] font-semibold shadow-sm ${
+            className={`grid size-7 place-items-center rounded-full text-[13px] font-semibold ${
               infoOpen
-                ? "bg-[var(--ink)] text-white"
-                : "border border-stone-300 bg-white text-stone-500 hover:border-stone-400 hover:bg-stone-50 hover:text-[var(--ink)]"
+                ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white"
+                : "border border-white/15 bg-white/5 text-[var(--cf-muted)] hover:border-[#FF8A3D]/70 hover:text-white"
             }`}
           >
             <InfoIcon />
           </button>
         </div>
         {infoOpen ? (
-          <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--line)] bg-white p-4 text-sm leading-6 text-[var(--ink)] shadow-[0_18px_50px_rgba(28,25,23,0.12)]">
+          <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] p-4 text-sm leading-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
             <p>You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.</p>
             <button
               type="button"
@@ -1649,16 +1659,16 @@ function ScriptStep({
         onClick={onPickFile}
         disabled={uploadLocked}
         title={typing ? "Clear the typed text to upload a file." : undefined}
-        className={`mt-4 flex min-h-[108px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed px-5 text-center ${
+        className={`mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed px-5 text-center transition-colors ${
           uploadLocked
-            ? "cursor-not-allowed border-stone-200 bg-stone-50 text-stone-400 opacity-60"
-            : "border-stone-300 bg-white hover:border-stone-400 hover:bg-stone-50 hover:shadow-[0_12px_32px_rgba(28,25,23,0.06)]"
+            ? "cursor-not-allowed border-white/10 bg-[var(--cf-surface)] text-[var(--cf-muted)] opacity-60"
+            : "border-white/15 bg-[var(--cf-surface)] hover:bg-[var(--cf-surface-2)]"
         }`}
       >
-        <span className="grid size-9 place-items-center rounded-xl bg-stone-100 text-stone-500">
+        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
           <ScriptIcon />
         </span>
-        <span className="text-sm font-medium text-[var(--ink)]">{fileAttached ? scriptName : "Upload PDF or Word"}</span>
+        <span className="text-sm font-medium">{fileAttached ? scriptName : "Upload PDF or Word"}</span>
         <span className="text-xs text-[var(--muted)]">{fileAttached ? "File attached" : ".pdf, .doc, .docx"}</span>
       </button>
       {fileAttached ? (
@@ -1674,7 +1684,7 @@ function ScriptStep({
         disabled={pasteLocked}
         onChange={(event) => onChange(event.target.value)}
         placeholder={fileAttached ? "Remove the file to type the script instead." : "Type or paste the full script or storyboard…"}
-        className="mt-1.5 min-h-[120px] max-h-[220px] w-full resize-none overflow-y-auto rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400 disabled:cursor-not-allowed disabled:bg-stone-50 disabled:text-stone-400"
+        className="mt-1.5 min-h-[140px] max-h-[220px] w-full resize-none overflow-y-auto rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] px-4 py-3 text-sm leading-6 outline-none placeholder:text-[var(--cf-muted)] disabled:cursor-not-allowed disabled:opacity-50"
       />
 
       <div className="mt-auto flex justify-end pt-6">
@@ -1682,7 +1692,7 @@ function ScriptStep({
           type="button"
           disabled={busy || !canContinue}
           onClick={onContinue}
-          className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -1720,20 +1730,20 @@ function SongStep({
   const ready = songAttached && Boolean(productPreview) && text.trim().length >= 8;
 
   return (
-    <div className="flex flex-1 flex-col">
-      <h3 className="display text-2xl md:text-3xl">Song video</h3>
+    <div className="rise-in flex flex-1 flex-col">
+      <h3 className="display text-3xl md:text-4xl">Song video</h3>
       <p className="mt-1 text-sm text-[var(--muted)]">Upload a Suno song, the product, and what it is about. Scenes come after the next step.</p>
 
       <button
         type="button"
         onClick={onPickSong}
         disabled={busy}
-        className="mt-4 flex min-h-[108px] flex-col items-center justify-center gap-1.5 rounded-2xl border border-dashed border-stone-300 bg-white px-5 text-center hover:border-stone-400 hover:bg-stone-50"
+        className="mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed border-white/15 bg-[var(--cf-surface)] px-5 text-center hover:bg-[var(--cf-surface-2)]"
       >
-        <span className="grid size-9 place-items-center rounded-xl bg-stone-100 text-stone-500">
+        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
           <SongIcon />
         </span>
-        <span className="text-sm font-medium text-[var(--ink)]">{songAttached ? songName : "Upload a Suno song"}</span>
+        <span className="text-sm font-medium">{songAttached ? songName : "Upload a Suno song"}</span>
         <span className="text-xs text-[var(--muted)]">
           {songAttached && durationSeconds ? `${Math.round(durationSeconds)} seconds` : "30 to 90 seconds · mp3, wav, m4a"}
         </span>
@@ -1755,7 +1765,7 @@ function SongStep({
         disabled={busy}
         onChange={(event) => setText(event.target.value)}
         placeholder="The brand, who it is for, and what the song should show."
-        className="mt-1.5 min-h-[120px] w-full resize-none rounded-2xl border border-[var(--line)] bg-white px-3 py-2.5 text-sm leading-6 outline-none placeholder:text-stone-400"
+        className="mt-1.5 min-h-[140px] w-full resize-none rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] px-4 py-3 text-sm leading-6 outline-none placeholder:text-[var(--cf-muted)]"
       />
 
       <div className="mt-auto flex items-center justify-between pt-6">
@@ -1766,7 +1776,7 @@ function SongStep({
           type="button"
           disabled={busy || !ready}
           onClick={() => onContinue(text)}
-          className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -1805,7 +1815,7 @@ function SetupStep({
   onContinue: () => void;
 }) {
   return (
-    <div className="flex flex-1 flex-col gap-3">
+    <div className="rise-in flex flex-1 flex-col gap-3">
       <div>
         <h3 className="display text-2xl md:text-3xl">{project.song ? "Characters and places" : "Look and length"}</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -1917,7 +1927,7 @@ function SetupStep({
           type="button"
           disabled={busy}
           onClick={onContinue}
-          className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2003,7 +2013,7 @@ function ReviewStep({
     : [{ key: "all", label: "Scenes", max: targetSeconds, indexes: scenes.map((_, index) => index) }];
 
   return (
-    <div className="flex flex-1 flex-col gap-3">
+    <div className="rise-in flex flex-1 flex-col gap-3">
       <div className="flex flex-wrap items-end justify-between gap-2">
         <div>
           <h3 className="display text-xl">Scenes</h3>
@@ -2029,7 +2039,7 @@ function ReviewStep({
                 <article key={scene.id} className={`overflow-hidden rounded-xl border bg-white ${empty ? "border-amber-200" : "border-[var(--line)]"}`}>
                   <div className="flex items-center gap-2 border-b border-[var(--line)] bg-stone-50/80 px-3 py-1.5">
                     <span className="text-xs font-semibold tabular-nums">Scene {scene.index || index + 1}</span>
-                    {empty ? <span className="text-[11px] text-amber-700">Empty</span> : null}
+                    {empty ? <span className="text-[11px] text-amber-300">Empty</span> : null}
                     <label className="ml-auto flex items-center gap-1 text-[11px] text-[var(--muted)]">
                       <input
                         type="number"
@@ -2051,7 +2061,7 @@ function ReviewStep({
                       disabled={busy || scenes.length <= 1}
                       aria-label={`Delete scene ${scene.index || index + 1}`}
                       onClick={() => remove(index)}
-                      className="rounded-md px-1.5 py-0.5 text-[11px] text-stone-400 hover:bg-red-50 hover:text-[var(--danger)] disabled:opacity-30"
+                      className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--cf-muted)] hover:bg-red-500/10 hover:text-[var(--danger)] disabled:opacity-30"
                     >
                       Delete
                     </button>
@@ -2140,7 +2150,7 @@ function ReviewStep({
           type="button"
           disabled={busy || !canContinue}
           onClick={onContinue}
-          className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
           {hasVideo ? "Generate" : "Continue"}
         </button>
@@ -2166,7 +2176,7 @@ function CastStep({
   const ready = characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
 
   return (
-    <div className="flex flex-1 flex-col gap-3">
+    <div className="rise-in flex flex-1 flex-col gap-3">
       <div>
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
@@ -2242,7 +2252,7 @@ function CastStep({
           type="button"
           disabled={busy || !ready}
           onClick={onContinue}
-          className="btn-primary rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white disabled:bg-stone-300"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2298,7 +2308,7 @@ function ProduceStep({
               type="button"
               onClick={onNotifyMe}
               disabled={notifyReady}
-              className="rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-sm font-medium disabled:opacity-70"
+              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-sm font-medium disabled:opacity-70"
             >
               {notifyReady ? "Notifications on" : "Notify me when ready"}
             </button>
@@ -2338,7 +2348,7 @@ function ProduceStep({
         <button
           type="button"
           onClick={onEditScenes}
-          className="btn-primary w-full rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white sm:w-auto"
+          className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] sm:w-auto"
         >
           Edit scenes
         </button>
@@ -2369,7 +2379,9 @@ function DurationControl({
           aria-pressed={selected === seconds}
           onClick={() => onChange(seconds)}
           className={`rounded-full px-3 py-1.5 text-sm font-medium tabular-nums ${
-            selected === seconds ? "bg-[var(--ink)] text-white" : "bg-stone-100 text-[var(--ink)] hover:bg-stone-200"
+            selected === seconds
+              ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]"
+              : "bg-white/5 text-[var(--ink)] hover:bg-white/10"
           } disabled:opacity-40`}
         >
           {seconds}s
@@ -2381,12 +2393,12 @@ function DurationControl({
 
 function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (value: AspectRatio) => void }) {
   return (
-    <div className="flex w-full items-center rounded-xl bg-stone-100 p-[3px]">
+    <div className="flex w-full items-center rounded-xl bg-white/5 p-[3px]">
       <button
         type="button"
         onClick={() => onChange("16:9")}
         className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
-          value === "16:9" ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
+          value === "16:9" ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
         }`}
       >
         <LandscapeIcon />
@@ -2399,7 +2411,7 @@ function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (valu
         type="button"
         onClick={() => onChange("9:16")}
         className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
-          value === "9:16" ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
+          value === "9:16" ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
         }`}
       >
         <PortraitIcon />
@@ -2422,14 +2434,14 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex h-11 w-full items-center rounded-full bg-stone-100 p-[3px]">
+    <div className="flex h-11 w-full items-center rounded-full bg-white/5 p-[3px]">
       {options.map((option) => (
         <button
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
           className={`h-full flex-1 rounded-full px-4 text-[13px] font-medium leading-none ${
-            value === option.id ? "bg-white text-[var(--ink)] shadow-sm" : "text-stone-500 hover:text-[var(--ink)]"
+            value === option.id ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
           }`}
         >
           {option.label}
@@ -2496,13 +2508,13 @@ function UploadTile({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="flex min-h-[64px] w-full items-center gap-2.5 rounded-xl border border-dashed border-stone-300 bg-stone-50/70 px-2.5 py-1.5 text-left hover:border-stone-400 hover:bg-white disabled:opacity-50"
+      className="flex min-h-[72px] w-full items-center gap-2.5 rounded-xl border border-dashed border-white/15 bg-[var(--cf-surface)] px-2.5 py-1.5 text-left hover:bg-[var(--cf-surface-2)] disabled:opacity-50"
     >
       {preview ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img src={preview} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
       ) : (
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-stone-50 text-stone-400">
+        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
           <PlusIcon />
         </span>
       )}

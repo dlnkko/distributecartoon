@@ -53,8 +53,17 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
-  const body = (await request.json().catch(() => ({}))) as { style?: VisualStyle; aspectRatio?: AspectRatio };
-  const project = await createProject(body.style || "pixar", normalizeAspectRatio(body.aspectRatio), user.id);
+  const body = (await request.json().catch(() => ({}))) as {
+    style?: VisualStyle;
+    aspectRatio?: AspectRatio;
+    workflowStep?: WorkflowStep;
+  };
+  const project = await createProject(
+    body.style || "pixar",
+    normalizeAspectRatio(body.aspectRatio),
+    user.id,
+    body.workflowStep === "song" ? "song" : "script",
+  );
   return NextResponse.json(project);
 }
 
