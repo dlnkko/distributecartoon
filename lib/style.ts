@@ -1688,7 +1688,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project)),
       locationTags,
     );
-    const visual = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
+    const pictured = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
+    const visual = song ? pictured.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : pictured;
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
@@ -1722,7 +1723,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           continues
             ? `This video is the next ${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds, the slice that belongs to this part. Do not regenerate the previous 5 seconds. The video reference is that ending, picture and music, only so the cut is not abrupt. @Audio1 is this slice and plays from 00:00 of this video. No title card, no logo sting, no black frame, and no new intro.`
             : "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
-          "Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the lyric already in @Audio1.",
+          "Each scene shows the lyric quoted in it, while @Audio1 is singing that line. Do not show a different event during that line. Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the quoted lyric already in @Audio1.",
           "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine,
