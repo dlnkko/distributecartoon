@@ -1190,9 +1190,7 @@ export function StudioApp() {
               setPane("library");
               setSidebarOpen(false);
             }}
-            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors ${
-              pane === "library" ? "bg-[var(--bg)] font-medium" : "hover:bg-[var(--bg)]"
-            }`}
+            className="flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors hover:bg-[var(--bg)]"
           >
             <VideosIcon />
             Your videos
