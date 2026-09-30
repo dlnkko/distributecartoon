@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { CANONICAL_ORIGIN, isAliasHost } from "@/lib/site";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET(request: Request) {
@@ -9,7 +10,9 @@ export async function GET(request: Request) {
   const forwardedHost = request.headers.get("x-forwarded-host");
   const isLocal = process.env.NODE_ENV === "development";
   const base =
-    !isLocal && forwardedHost ? `https://${forwardedHost}` : origin;
+    !isLocal && forwardedHost
+      ? isAliasHost(forwardedHost) ? CANONICAL_ORIGIN : `https://${forwardedHost.split(",")[0].trim()}`
+      : origin;
 
   if (code) {
     const supabase = await createClient();

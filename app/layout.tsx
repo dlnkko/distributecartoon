@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit, Syne } from "next/font/google";
+import { CANONICAL_ORIGIN } from "@/lib/site";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -13,6 +14,7 @@ const syne = Syne({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL(CANONICAL_ORIGIN),
   title: "distribute.to",
   description: "Turn scripts into Pixar or claymation shorts.",
   manifest: "/manifest.webmanifest",

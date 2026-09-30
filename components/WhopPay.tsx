@@ -3,6 +3,7 @@
 import { WhopCheckoutEmbed } from "@whop/checkout/react";
 import { useEffect, useState } from "react";
 import type { Project } from "@/lib/types";
+import { CANONICAL_ORIGIN } from "@/lib/site";
 
 export function WhopPay({
   projectId,
@@ -74,7 +75,7 @@ export function WhopPay({
           <WhopCheckoutEmbed
             sessionId={sessionId}
             theme="light"
-            returnUrl="https://distribute.to"
+            returnUrl={CANONICAL_ORIGIN}
             prefill={email ? { email } : undefined}
             onComplete={(_planId, receiptId) => {
               void finish(typeof receiptId === "string" ? receiptId : undefined);

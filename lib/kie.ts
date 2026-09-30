@@ -1,4 +1,5 @@
 import { getSecrets } from "./config";
+import { CANONICAL_ORIGIN } from "./site";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { generateGptImage25Flare as generateFalGptImage25Flare, uploadLocalPublicPath } from "./fal";
 
@@ -21,7 +22,7 @@ function openrouterHeaders(json = true) {
   }
   return {
     Authorization: `Bearer ${openrouterApiKey}`,
-    "HTTP-Referer": "https://distribute.to",
+    "HTTP-Referer": CANONICAL_ORIGIN,
     "X-Title": "distribute.to",
     ...(json ? { "Content-Type": "application/json" } : {}),
   };

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadOwnedProject } from "@/lib/auth";
+import { CANONICAL_ORIGIN } from "@/lib/site";
 import { whopClient, whopConfig, whopReady } from "@/lib/whop";
 
 export const runtime = "nodejs";
@@ -29,7 +30,7 @@ export async function POST(request: Request) {
     plan_id: planId,
     mode: "payment",
     metadata: { project_id: project.id, user_id: user.id },
-    redirect_url: "https://distribute.to",
+    redirect_url: CANONICAL_ORIGIN,
   });
   return NextResponse.json({ sessionId: checkout.id });
 }

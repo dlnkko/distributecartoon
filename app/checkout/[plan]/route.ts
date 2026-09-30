@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
+import { CANONICAL_ORIGIN } from "@/lib/site";
 import { planById, planWhopId } from "@/lib/plans";
 import { whopClient, whopConfig } from "@/lib/whop";
 
@@ -23,7 +24,7 @@ export async function GET(request: Request, context: { params: Promise<{ plan: s
     plan_id: planWhop,
     mode: "payment",
     metadata: { user_id: user.id, plan: plan.id },
-    redirect_url: "https://distribute.to",
+    redirect_url: CANONICAL_ORIGIN,
   });
   if (!checkout.purchase_url) {
     return NextResponse.json({ error: "Whop did not return a checkout link." }, { status: 502 });
