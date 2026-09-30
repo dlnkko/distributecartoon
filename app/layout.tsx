@@ -15,7 +15,7 @@ const syne = Syne({
 
 export const metadata: Metadata = {
   metadataBase: new URL(CANONICAL_ORIGIN),
-  title: "distribute.to",
+  title: "Clickframes",
   description: "Turn scripts into Pixar or claymation shorts.",
   manifest: "/manifest.webmanifest",
 };

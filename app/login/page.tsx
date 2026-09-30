@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { Brand } from "@/components/Brand";
 import { CANONICAL_ORIGIN } from "@/lib/site";
 
 export default function LoginPage() {
@@ -33,8 +34,8 @@ export default function LoginPage() {
   return (
     <main className="grid min-h-full place-items-center px-4 py-10">
       <section className="w-full max-w-md rounded-3xl border border-[var(--line)] bg-white p-7 shadow-[0_20px_60px_rgba(28,25,23,0.08)]">
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-[var(--accent)]">distribute.to</p>
-        <h1 className="display mt-2 text-3xl text-[var(--ink)]">Studio</h1>
+        <Brand />
+        <h1 className="display mt-4 text-3xl text-[var(--ink)]">Studio</h1>
         <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
           Sign in with Google to save your shorts, credits, and generated videos.
         </p>

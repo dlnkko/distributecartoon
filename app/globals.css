@@ -103,6 +103,27 @@ a.btn-primary {
   to { transform: translateX(130%); }
 }
 
+@keyframes rise-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+
+.rise-in {
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.board-grid > * {
+  animation: rise-in 0.55s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.board-grid > *:nth-child(2) { animation-delay: 0.04s; }
+.board-grid > *:nth-child(3) { animation-delay: 0.08s; }
+.board-grid > *:nth-child(4) { animation-delay: 0.12s; }
+.board-grid > *:nth-child(5) { animation-delay: 0.16s; }
+.board-grid > *:nth-child(6) { animation-delay: 0.2s; }
+.board-grid > *:nth-child(7) { animation-delay: 0.24s; }
+.board-grid > *:nth-child(8) { animation-delay: 0.28s; }
+
 @keyframes theater-in {
   from { opacity: 0; transform: translateY(14px) scale(0.985); }
   to { opacity: 1; transform: translateY(0) scale(1); }
@@ -146,6 +167,18 @@ a.btn-primary {
   .setup-card:hover {
     border-color: rgba(28, 25, 23, 0.16);
     box-shadow: 0 8px 22px rgba(28, 25, 23, 0.05);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rise-in,
+  .board-grid > *,
+  .theater-in,
+  .theater-glow,
+  .shimmer,
+  .status-breathe,
+  .skeleton-scan {
+    animation: none;
   }
 }
 
@@ -212,3 +245,137 @@ a.btn-primary {
 }
 
 .msg-in { animation: fade-up 0.28s ease both; }
+
+.library-shell {
+  --cf-bg: #0b0b0d;
+  --cf-surface: #141417;
+  --cf-surface-2: #1b1b20;
+  --cf-line: rgba(255, 255, 255, 0.06);
+  --cf-ink: #f4f4f5;
+  --cf-muted: #a1a1aa;
+  --cf-accent-a: #ff8a3d;
+  --cf-accent-b: #ff5e62;
+  background: var(--cf-bg);
+  color: var(--cf-ink);
+}
+
+.library-shell::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  opacity: 0.03;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+.library-shell > * {
+  position: relative;
+  z-index: 1;
+}
+
+.library-shell button:focus-visible,
+.library-shell a:focus-visible,
+.library-shell input:focus-visible,
+.library-shell select:focus-visible {
+  outline: 2px solid var(--cf-accent-a);
+  outline-offset: 2px;
+}
+
+.cf-scroll {
+  scrollbar-width: none;
+}
+
+.cf-scroll::-webkit-scrollbar {
+  display: none;
+}
+
+.cf-card {
+  transition:
+    transform 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-color 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    box-shadow 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cf-media {
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .cf-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255, 255, 255, 0.16);
+    box-shadow:
+      0 18px 40px rgba(0, 0, 0, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+
+  .cf-card:hover .cf-media {
+    transform: scale(1.04);
+  }
+
+  .cf-create:hover .cf-plus {
+    transform: rotate(90deg);
+  }
+}
+
+.cf-plus {
+  transition: transform 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.cf-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (min-width: 480px) {
+  .cf-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+@media (min-width: 900px) {
+  .cf-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1024px) {
+  .cf-grid { gap: 24px; }
+}
+
+@media (min-width: 1280px) {
+  .cf-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+}
+
+@media (min-width: 1680px) {
+  .cf-grid { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+}
+
+.cf-grid > * {
+  animation: rise-in 0.5s cubic-bezier(0.22, 1, 0.36, 1) both;
+  content-visibility: auto;
+  contain-intrinsic-size: 220px;
+}
+
+.cf-grid > *:nth-child(2) { animation-delay: 0.04s; }
+.cf-grid > *:nth-child(3) { animation-delay: 0.08s; }
+.cf-grid > *:nth-child(4) { animation-delay: 0.12s; }
+.cf-grid > *:nth-child(5) { animation-delay: 0.16s; }
+.cf-grid > *:nth-child(6) { animation-delay: 0.2s; }
+.cf-grid > *:nth-child(7) { animation-delay: 0.24s; }
+.cf-grid > *:nth-child(8) { animation-delay: 0.28s; }
+
+.cf-list {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cf-grid > *,
+  .cf-card,
+  .cf-media,
+  .cf-plus,
+  .cf-chip-indicator {
+    animation: none;
+    transition: none;
+  }
+}

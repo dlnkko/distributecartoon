@@ -1,3 +1,4 @@
+import { Brand } from "@/components/Brand";
 import { PLANS } from "@/lib/plans";
 
 function money(price: number) {
@@ -8,7 +9,7 @@ export function Landing() {
   return (
     <main className="mx-auto flex min-h-full w-full max-w-6xl flex-col px-5 py-8 md:px-8">
       <header className="flex items-center justify-between">
-        <p className="text-[11px] font-medium uppercase tracking-[0.28em] text-[var(--accent)]">distribute.to</p>
+        <Brand />
         <a href="/login" className="rounded-full border border-[var(--line)] bg-white px-4 py-2 text-sm font-medium">
           Sign in
         </a>

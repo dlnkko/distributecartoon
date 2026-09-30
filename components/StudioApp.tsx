@@ -10,6 +10,8 @@ import { DURATION_CHOICES } from "@/lib/ids";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
+import { Brand } from "@/components/Brand";
+import { LibraryShell } from "@/components/library/LibraryShell";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { PLANS } from "@/lib/plans";
@@ -156,16 +158,6 @@ function writeDraft(projectId: string, text: string) {
   } catch {
     // Private mode or a full quota only loses the unsaved draft.
   }
-}
-
-function timeAgo(iso: string) {
-  const delta = Date.now() - new Date(iso || 0).getTime();
-  const mins = Math.max(1, Number.isFinite(delta) ? Math.round(delta / 60000) : 1);
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.round(hours / 24);
-  return days === 1 ? "1 day ago" : `${days} days ago`;
 }
 
 function batchVideoSrc(batch: { videoPublicPath?: string; videoRemoteUrl?: string }) {
@@ -1130,7 +1122,35 @@ export function StudioApp() {
   const allSlots = [...charactersSlots, ...products, ...locations, ...logos];
 
   return (
-    <div className="relative flex h-dvh overflow-hidden" data-style={project.style}>
+    <div className={`relative flex h-dvh overflow-hidden ${pane === "library" ? "library-shell" : ""}`} data-style={project.style}>
+      {pane === "library" ? (
+        <LibraryShell
+          videos={history}
+          generating={generating}
+          credits={credits}
+          profile={profile}
+          error={status && !busy && /couldn't|failed|error|stopped|request failed/i.test(status) ? status : ""}
+          onPlay={(item) =>
+            setExpanded({
+              src: assetSrc(item.src),
+              poster: item.poster ? assetSrc(item.poster) : undefined,
+              label: item.title,
+              downloadName: videoDownloadName(item.title, item.index, item.parts),
+            })
+          }
+          onEdit={(projectId) => {
+            const found = projects.find((entry) => entry.id === projectId);
+            if (found) void selectProject(found);
+          }}
+          onCreate={() => void createNew()}
+          onCreateSong={() => void createSong()}
+          onAccount={() => setAccountOpen(true)}
+          onLogout={() => void logout()}
+          resolveSrc={assetSrc}
+          downloadName={(item) => videoDownloadName(item.title, item.index, item.parts)}
+        />
+      ) : (
+      <>
       {sidebarOpen ? (
         <button
           type="button"
@@ -1141,12 +1161,12 @@ export function StudioApp() {
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[240px] flex-col border-r border-[var(--line)] bg-[#f3efe8] transition-transform md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[var(--line)] bg-white transition-transform duration-300 md:static md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
-        <div className="flex items-center justify-between px-5 pb-4 pt-5">
-          <h1 className="display text-2xl">distribute.to</h1>
+        <div className="flex items-center justify-between px-4 pb-4 pt-5">
+          <Brand />
           <button type="button" className="rounded-xl px-2 py-1 text-sm md:hidden" onClick={() => setSidebarOpen(false)}>
             Close
           </button>
@@ -1170,8 +1190,8 @@ export function StudioApp() {
               setPane("library");
               setSidebarOpen(false);
             }}
-            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm ${
-              pane === "library" ? "bg-white shadow-sm" : "hover:bg-white/70"
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors ${
+              pane === "library" ? "bg-[var(--bg)] font-medium" : "hover:bg-[var(--bg)]"
             }`}
           >
             <VideosIcon />
@@ -1180,8 +1200,8 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => void createSong()}
-            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm ${
-              pane === "studio" && step === "song" ? "bg-white shadow-sm" : "hover:bg-white/70"
+            className={`flex w-full items-center gap-3 rounded-2xl px-3 py-2.5 text-left text-sm transition-colors ${
+              pane === "studio" && step === "song" ? "bg-[var(--bg)] font-medium" : "hover:bg-[var(--bg)]"
             }`}
           >
             <SongNavIcon />
@@ -1189,11 +1209,22 @@ export function StudioApp() {
           </button>
         </nav>
 
+        <div className={`mx-3 mb-2 rounded-2xl border p-3 ${credits < 15 ? "border-[var(--warn)] bg-amber-50" : "border-[var(--line)] bg-[var(--bg)]"}`}>
+          <div className="flex items-end justify-between gap-2">
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Credits</p>
+            <p className="display text-[1.7rem] leading-none">{credits}</p>
+          </div>
+          <p className="mt-1.5 text-[11px] leading-4 text-[var(--muted)]">One credit is one second of video.</p>
+          <a href="/checkout/pro" className="btn-primary mt-3 flex w-full items-center justify-center rounded-xl bg-[var(--ink)] px-3 py-2 text-xs font-medium text-white">
+            Buy credits
+          </a>
+        </div>
+
         <div className="p-3">
           <button
             type="button"
             onClick={() => setAccountOpen(true)}
-            className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-white"
+            className="flex w-full items-center gap-3 rounded-2xl px-2 py-2 text-left hover:bg-[var(--bg)]"
           >
             <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-[var(--ink)] text-sm text-white">
               {profile?.avatarUrl ? (
@@ -1205,39 +1236,13 @@ export function StudioApp() {
             </span>
             <span className="min-w-0">
               <span className="block truncate text-sm font-medium">Your account</span>
-              <span className="block truncate text-[11px] text-[var(--muted)]">
-                {profile?.email || "Account"}
-                {profile ? ` · ${credits} credits left` : ""}
-              </span>
+              <span className="block truncate text-[11px] text-[var(--muted)]">{profile?.email || "Account"}</span>
             </span>
           </button>
         </div>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg)]">
-        {pane === "library" ? (
-          <VideosDashboard
-            videos={history}
-            generating={generating}
-            credits={credits}
-            error={pane === "library" && status && !busy && /couldn't|failed|error|stopped|request failed/i.test(status) ? status : ""}
-            onMenu={() => setSidebarOpen(true)}
-            onPlay={(item) =>
-              setExpanded({
-                src: assetSrc(item.src),
-                poster: item.poster ? assetSrc(item.poster) : undefined,
-                label: item.title,
-                downloadName: videoDownloadName(item.title, item.index, item.parts),
-              })
-            }
-            onOpenProject={(projectId) => {
-              const found = projects.find((entry) => entry.id === projectId);
-              if (found) void selectProject(found);
-            }}
-            onCreate={() => void createNew()}
-          />
-        ) : (
-          <>
         <header className="flex items-center gap-2 px-3 py-3 md:gap-3 md:px-6">
           <button type="button" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white md:hidden" aria-label="Open menu" onClick={() => setSidebarOpen(true)}>
             <MenuIcon />
@@ -1245,7 +1250,6 @@ export function StudioApp() {
           <div className="min-w-0 flex-1">
             <h2 className="display truncate text-lg md:text-2xl">{project.title}</h2>
           </div>
-          <span className="shrink-0 rounded-full border border-[var(--line)] bg-white px-3 py-1.5 text-xs font-medium">{credits} credits</span>
           <button
             type="button"
             onClick={() => setPane("library")}
@@ -1387,9 +1391,9 @@ export function StudioApp() {
           {taskLabel ? <p className="mt-4 text-sm text-[var(--muted)]">{taskLabel}</p> : null}
           {!working && status && step !== "produce" ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
         </div>
-          </>
-        )}
       </section>
+      </>
+      )}
 
       <input
         ref={fileRef}
@@ -1570,167 +1574,6 @@ function StepBar({
   );
 }
 
-function VideosDashboard({
-  videos,
-  generating,
-  credits,
-  error,
-  onMenu,
-  onPlay,
-  onOpenProject,
-  onCreate,
-}: {
-  videos: HistoryVideo[];
-  generating: Array<{ projectId: string; title: string; duration: number; aspectRatio: AspectRatio }>;
-  credits: number;
-  error?: string;
-  onMenu: () => void;
-  onPlay: (item: HistoryVideo) => void;
-  onOpenProject: (projectId: string) => void;
-  onCreate: () => void;
-}) {
-  const empty = videos.length === 0 && generating.length === 0;
-  const summary = empty
-    ? "Finished videos will appear here."
-    : generating.length
-      ? videos.length
-        ? `${generating.length} generating · ${videos.length} finished`
-        : "Generating your video"
-      : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`;
-  const low = credits < 15;
-  return (
-    <div className="scroll-thin flex-1 overflow-y-auto px-4 pb-16 sm:px-6 lg:px-8">
-      <div className="mx-auto w-full max-w-7xl">
-        <div className="flex items-center gap-3 pt-4 sm:pt-7">
-          <button type="button" className="grid size-10 shrink-0 place-items-center rounded-xl border border-[var(--line)] bg-white md:hidden" aria-label="Open menu" onClick={onMenu}>
-            <MenuIcon />
-          </button>
-          <div className="min-w-0 flex-1">
-            <h2 className="display text-[1.75rem] leading-none sm:text-[2.35rem]">Your videos</h2>
-            <p className="mt-1.5 text-sm text-[var(--muted)]">{summary}</p>
-          </div>
-          <button
-            type="button"
-            onClick={onCreate}
-            className="btn-primary hidden shrink-0 items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-5 py-3 text-sm font-semibold text-white shadow-[0_14px_32px_rgba(28,25,23,0.2)] sm:inline-flex"
-          >
-            <PlusIcon />
-            Create a video
-          </button>
-        </div>
-
-        <div className={`mt-4 flex flex-col gap-3 rounded-[24px] border bg-white p-4 sm:mt-6 sm:flex-row sm:items-center sm:justify-between sm:p-5 ${low ? "border-[var(--warn)]" : "border-[var(--line)]"}`}>
-          <div>
-            <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-[var(--muted)]">Credits left</p>
-            <p className="display mt-1 text-4xl leading-none">{credits}</p>
-            <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">
-              {low ? "Not enough for a 15s film. Buy a pack to generate." : "One credit is one second of video. A 30s film uses 30 credits."}
-            </p>
-          </div>
-          <a href="/checkout/pro" className="btn-primary inline-flex items-center justify-center rounded-full bg-[var(--ink)] px-5 py-2.5 text-sm font-medium text-white">
-            Buy credits
-          </a>
-        </div>
-
-        <button
-          type="button"
-          onClick={onCreate}
-          className="btn-primary mt-3 inline-flex w-full items-center justify-center gap-2 rounded-full bg-[var(--ink)] px-5 py-3 text-sm font-semibold text-white sm:hidden"
-        >
-          <PlusIcon />
-          Create a video
-        </button>
-
-        {error ? <p className="mt-4 text-sm text-[var(--danger)]">{error}</p> : null}
-
-        {empty ? (
-          <div className="mt-14 flex flex-col items-center rounded-[28px] border border-dashed border-[var(--line)] bg-white/75 px-6 py-20 text-center">
-            <p className="display text-2xl">No videos yet</p>
-            <p className="mt-2 max-w-sm text-sm text-[var(--muted)]">When a video finishes generating, it will show up on this board.</p>
-            <button
-              type="button"
-              onClick={onCreate}
-              className="btn-primary mt-7 inline-flex items-center gap-2 rounded-full bg-[var(--ink)] px-6 py-3 text-[15px] font-semibold text-white"
-            >
-              <PlusIcon />
-              Create a video
-            </button>
-          </div>
-        ) : (
-          <div className="mt-5 grid grid-cols-1 gap-3 min-[480px]:grid-cols-2 sm:mt-8 lg:grid-cols-3 xl:grid-cols-4">
-            {generating.map((item) => (
-              <article
-                key={`generating-${item.projectId}`}
-                className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white text-left shadow-[0_6px_18px_rgba(28,25,23,0.04)]"
-              >
-                <div className="relative aspect-video overflow-hidden bg-stone-900">
-                  <div className="shimmer absolute inset-0 opacity-40" />
-                  <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
-                  <div className="absolute inset-0 grid place-items-center px-3">
-                    <p className="status-breathe text-center text-[12px] font-medium tracking-wide text-white">
-                      <span className="status-dots">Generating your video</span>
-                    </p>
-                  </div>
-                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
-                    {item.duration}s
-                  </span>
-                </div>
-                <div className="px-2.5 py-2">
-                  <p className="truncate text-[13px] font-medium">{item.title}</p>
-                  <p className="mt-0.5 text-[11px] text-[var(--muted)]">Generating your video</p>
-                </div>
-              </article>
-            ))}
-            {videos.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => onPlay(item)}
-                className="group overflow-hidden rounded-2xl border border-[var(--line)] bg-white text-left shadow-[0_6px_18px_rgba(28,25,23,0.04)] hover:shadow-[0_12px_28px_rgba(28,25,23,0.08)]"
-              >
-                <div className="relative aspect-video overflow-hidden bg-stone-200">
-                  {item.poster ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={assetSrc(item.poster)} alt="" className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]" />
-                  ) : (
-                    <video src={assetSrc(item.src)} muted playsInline preload="metadata" className="h-full w-full object-cover" />
-                  )}
-                  <span className="absolute bottom-1.5 right-1.5 rounded-full bg-black/65 px-1.5 py-0.5 text-[10px] text-white">
-                    {item.parts > 1 ? `Part ${item.index} · ${item.duration}s` : `${item.duration}s`}
-                  </span>
-                </div>
-                <div className="flex items-start justify-between gap-2 px-2.5 py-2">
-                  <div className="min-w-0">
-                    <p className="truncate text-[13px] font-medium">{item.title || "Untitled video"}</p>
-                    <p className="mt-0.5 text-[11px] text-[var(--muted)]">{timeAgo(item.createdAt)}</p>
-                  </div>
-                  <span
-                    role="button"
-                    tabIndex={0}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onOpenProject(item.projectId);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        onOpenProject(item.projectId);
-                      }
-                    }}
-                    className="shrink-0 pt-0.5 text-[11px] text-[var(--muted)] hover:text-[var(--ink)]"
-                  >
-                    Edit
-                  </span>
-                </div>
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
 
 function ScriptStep({
   scriptName,
