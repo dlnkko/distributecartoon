@@ -1,4 +1,4 @@
-export type PlanId = "starter" | "creator" | "pro" | "scale" | "agency";
+export type PlanId = "starter" | "creator" | "pro" | "scale" | "agency" | "intro" | "dfy-studio" | "dfy-partner";
 
 export type Plan = {
   id: PlanId;
@@ -60,8 +60,40 @@ export const PLANS: Plan[] = [
   },
 ];
 
+export const INTRO_OFFER: Plan = {
+  id: "intro",
+  name: "First film",
+  price: 4.99,
+  seconds: 30,
+  blurb: "One 30 second video.",
+  whopPlanId: "plan_t88yM25i762LC",
+  purchaseUrl: "https://whop.com/checkout/plan_t88yM25i762LC",
+};
+
+export const DFY_PLANS: Plan[] = [
+  {
+    id: "dfy-studio",
+    name: "Studio",
+    price: 999,
+    seconds: 0,
+    blurb: "30 videos a month. You send the scripts. We adapt them and deliver the films.",
+    whopPlanId: "plan_eHG1CJDfkoyym",
+    purchaseUrl: "https://whop.com/checkout/plan_eHG1CJDfkoyym",
+  },
+  {
+    id: "dfy-partner",
+    name: "Partner",
+    price: 1999,
+    seconds: 0,
+    blurb: "50 videos a month. We write from what has worked, build the angles, and run the creative.",
+    featured: true,
+    whopPlanId: "plan_4rNKl2t1g0czP",
+    purchaseUrl: "https://whop.com/checkout/plan_4rNKl2t1g0czP",
+  },
+];
+
 export function planById(id: string) {
-  return PLANS.find((plan) => plan.id === id);
+  return [...PLANS, INTRO_OFFER, ...DFY_PLANS].find((plan) => plan.id === id);
 }
 
 export function planWhopId(plan: Plan) {

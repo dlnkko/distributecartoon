@@ -24,7 +24,7 @@ export async function GET(request: Request, context: { params: Promise<{ plan: s
     plan_id: planWhop,
     mode: "payment",
     metadata: { user_id: user.id, plan: plan.id },
-    redirect_url: CANONICAL_ORIGIN,
+    redirect_url: `${CANONICAL_ORIGIN}/`,
   });
   if (!checkout.purchase_url) {
     return NextResponse.json({ error: "Whop did not return a checkout link." }, { status: 502 });

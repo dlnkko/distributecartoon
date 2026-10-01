@@ -446,12 +446,56 @@ a.btn-primary {
   grid-template-columns: minmax(0, 1fr);
 }
 
+.cf-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.75rem;
+  background: linear-gradient(135deg, var(--cf-accent-a), var(--cf-accent-b));
+  box-shadow: 0 10px 28px rgba(255, 94, 98, 0.32);
+  color: #fff;
+}
+
+.cf-grad {
+  background: linear-gradient(135deg, var(--cf-accent-a), var(--cf-accent-b));
+}
+
+@keyframes land-drift {
+  0%, 100% { transform: translate3d(0, 0, 0); }
+  50% { transform: translate3d(28px, -20px, 0); }
+}
+
+.land-orb {
+  animation: land-drift 16s ease-in-out infinite;
+}
+
+@keyframes land-marquee {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+
+.land-marquee {
+  animation: land-marquee 32s linear infinite;
+}
+
+@keyframes land-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
+}
+
+.land-float {
+  animation: land-float 7s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cf-grid > *,
   .cf-card,
   .cf-media,
   .cf-plus,
-  .cf-chip-indicator {
+  .cf-chip-indicator,
+  .land-orb,
+  .land-marquee,
+  .land-float {
     animation: none;
     transition: none;
   }
