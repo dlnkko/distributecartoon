@@ -32,7 +32,7 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const path = request.nextUrl.pathname;
-  const isPublic = path === "/" || path === "/login" || path.startsWith("/auth/") || path.startsWith("/checkout/");
+  const isPublic = path === "/" || path === "/landing" || path === "/login" || path.startsWith("/auth/") || path.startsWith("/checkout/");
   const isApi = path.startsWith("/api/");
 
   if (!data?.claims && !isPublic && !isApi) {
@@ -40,6 +40,10 @@ export async function updateSession(request: NextRequest) {
     redirectUrl.pathname = "/login";
     redirectUrl.search = "";
     return copyCookies(supabaseResponse, NextResponse.redirect(redirectUrl));
+  }
+
+  if (process.env.NODE_ENV === "development" && path === "/login") {
+    return copyCookies(supabaseResponse, NextResponse.redirect(new URL("/", request.url)));
   }
 
   if (data?.claims && path === "/login") {
