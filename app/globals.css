@@ -274,6 +274,11 @@ a.btn-primary {
   z-index: 1;
 }
 
+.library-shell > .fixed {
+  position: fixed;
+  z-index: 80;
+}
+
 .studio-dark {
   --bg: #0b0b0d;
   --ink: #f4f4f5;

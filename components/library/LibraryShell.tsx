@@ -99,7 +99,7 @@ export function LibraryShell({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-      <aside className={`hidden shrink-0 flex-col border-r border-[var(--cf-line)] bg-[rgba(20,20,23,0.72)] backdrop-blur-xl lg:flex ${narrow ? "w-[72px]" : "w-[248px]"}`}>
+      <aside className={`relative z-40 hidden shrink-0 flex-col border-r border-[var(--cf-line)] bg-[rgba(20,20,23,0.72)] backdrop-blur-xl lg:flex ${narrow ? "w-[72px]" : "w-[248px]"}`}>
         <div className={`flex items-center pb-3 pt-4 ${narrow ? "flex-col gap-2 px-2" : "justify-between gap-2 px-3"}`}>
           <Brand word={!narrow} tone="accent" compact={narrow} />
           <button type="button" onClick={() => setNarrow((value) => !value)} className={`no-press grid shrink-0 place-items-center rounded-lg text-[var(--cf-muted)] hover:bg-white/5 ${narrow ? "h-7 w-7" : "h-11 w-11 rounded-xl"}`} aria-label={narrow ? "Expand sidebar" : "Collapse sidebar"}>
@@ -142,7 +142,7 @@ export function LibraryShell({
             )}
           </button>
           {menu ? (
-            <div role="menu" className={`absolute z-30 w-56 overflow-hidden rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] py-1 shadow-2xl ${narrow ? "bottom-0 left-[calc(100%+8px)]" : "right-3 bottom-16 left-3 w-auto"}`}>
+            <div role="menu" className={`absolute z-50 w-56 overflow-hidden rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] py-1 shadow-[0_24px_60px_rgba(0,0,0,0.55)] ${narrow ? "bottom-0 left-[calc(100%+10px)]" : "right-3 bottom-16 left-3 w-auto"}`}>
               <div className="border-b border-[var(--cf-line)] px-3 py-2.5">
                 <p className="truncate text-sm font-medium">{profile?.displayName || "Your account"}</p>
                 <p className="truncate text-[11px] text-[var(--cf-muted)]">{profile?.email || "Account"}</p>

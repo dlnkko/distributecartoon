@@ -1250,7 +1250,6 @@ export function StudioApp() {
               <MenuIcon />
             </button>
             <div className="min-w-0 flex-1">
-              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-[var(--cf-muted)]">New video</p>
               <h2 className="display truncate text-2xl leading-none font-semibold tracking-[-0.045em] md:text-[32px]">{project.title}</h2>
             </div>
             <button
@@ -1486,23 +1485,24 @@ export function StudioApp() {
 
       {expanded ? (
         <div
-          className="no-press fixed inset-0 z-50 grid place-items-center bg-stone-950/82 p-3 backdrop-blur-md sm:p-4"
+          className="no-press fixed inset-0 z-50 grid place-items-center bg-black/80 p-4 backdrop-blur-md sm:p-8"
           onClick={() => setExpanded(null)}
         >
-          <div className="theater-in flex max-h-full w-full max-w-[920px] flex-col items-center gap-3 sm:gap-4" onClick={(event) => event.stopPropagation()}>
+          <div className="theater-in flex max-h-full w-full max-w-5xl flex-col items-center gap-4" onClick={(event) => event.stopPropagation()}>
+            {expanded.label ? <p className="display w-full truncate text-center text-2xl text-white">{expanded.label}</p> : null}
             <video
               src={expanded.src}
               poster={expanded.poster}
               controls
               autoPlay
               playsInline
-              className="max-h-[min(72vh,820px)] w-full rounded-2xl bg-black object-contain shadow-[0_40px_80px_rgba(0,0,0,0.45)] sm:rounded-[28px]"
+              className="max-h-[min(78vh,860px)] w-full rounded-2xl bg-black object-contain shadow-[0_40px_80px_rgba(0,0,0,0.55)]"
             />
-            <div className="flex w-full max-w-md flex-col gap-2 sm:max-w-none sm:flex-row sm:flex-wrap sm:items-center sm:justify-center sm:gap-3">
+            <div className="flex w-full flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
               <a
                 href={expanded.src}
                 download={expanded.downloadName || "video.mp4"}
-                className="btn-primary inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-medium text-[var(--ink)] shadow-lg sm:w-auto"
+                className="btn-primary inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-medium text-[#111110] sm:w-auto"
               >
                 <DownloadIcon />
                 Download video
@@ -1510,7 +1510,7 @@ export function StudioApp() {
               <button
                 type="button"
                 onClick={() => setExpanded(null)}
-                className="w-full rounded-full border border-white/25 px-5 py-2.5 text-sm font-medium text-white sm:w-auto"
+                className="inline-flex min-h-11 w-full items-center justify-center rounded-xl border border-white/20 bg-white/10 px-5 text-sm font-medium text-white sm:w-auto"
               >
                 Close
               </button>
