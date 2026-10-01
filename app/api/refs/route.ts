@@ -46,7 +46,7 @@ export async function POST(request: Request) {
     if (!pixels || pixels < MIN_IMAGE_PIXELS) {
       return NextResponse.json({ error: IMAGE_TOO_SMALL }, { status: 422 });
     }
-    const relative = [project.id, "refs", `${asset.kind}-${asset.id}-original${ext}`];
+    const relative = [project.id, "refs", `${asset.kind}-${asset.id}-${Date.now().toString(36)}${ext}`];
     const saved = await storeGeneratedFile({
       project,
       buffer,
@@ -57,6 +57,10 @@ export async function POST(request: Request) {
     asset.originalFileName = saved.fileName;
     asset.originalPublicPath = saved.publicPath;
     if (/^https?:\/\//i.test(saved.publicPath)) asset.originalRemoteUrl = saved.publicPath;
+    else delete asset.originalRemoteUrl;
+    delete asset.stylizedFileName;
+    delete asset.stylizedPublicPath;
+    delete asset.stylizedRemoteUrl;
     asset.status = "ready";
     if (notes) asset.notes = notes;
     if (kind === "character") {
@@ -124,4 +128,36 @@ export async function PATCH(request: Request) {
   syncReferenceInclusion(project);
   await saveProject(project);
   return NextResponse.json({ project, asset });
+}
+
+export async function DELETE(request: Request) {
+  const { searchParams } = new URL(request.url);
+  const projectId = searchParams.get("projectId") || "";
+  const slotId = searchParams.get("slotId") || "";
+  if (!projectId || !slotId) return NextResponse.json({ error: "Missing project or image." }, { status: 400 });
+  const loaded = await loadOwnedProject(projectId);
+  if ("response" in loaded) return loaded.response;
+  const { project } = loaded;
+  const asset = project.references.find((item) => item.id === slotId);
+  if (!asset) return NextResponse.json({ error: "Slot not found" }, { status: 404 });
+  delete asset.originalFileName;
+  delete asset.originalPublicPath;
+  delete asset.originalRemoteUrl;
+  delete asset.stylizedFileName;
+  delete asset.stylizedPublicPath;
+  delete asset.stylizedRemoteUrl;
+  asset.status = "empty";
+  asset.includeInVideo = false;
+  for (const character of project.characters) {
+    if (character.sourceRefId !== asset.id) continue;
+    delete character.sourceRefId;
+    delete character.portraitFileName;
+    delete character.portraitPublicPath;
+    delete character.portraitRemoteUrl;
+    character.lookConfirmed = false;
+    character.lookRevisionUsed = false;
+  }
+  syncReferenceInclusion(project);
+  await saveProject(project);
+  return NextResponse.json({ project });
 }

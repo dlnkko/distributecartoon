@@ -1,4 +1,5 @@
 import { characterRole, continuityPass } from "./continuity";
+import { slugify } from "./ids";
 import { samePlace } from "./places";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
 import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
@@ -449,6 +450,91 @@ function toEnglishSpeaker(name: string, description = "") {
   return englishSpeakerName(name, description);
 }
 
+const INVENTED_WOMAN_NAMES = [
+  "Aria",
+  "Nora",
+  "Lena",
+  "Camille",
+  "Iris",
+  "June",
+  "Hana",
+  "Elise",
+  "Priya",
+  "Amara",
+  "Cleo",
+  "Noor",
+  "Freya",
+  "Maren",
+  "Tessa",
+  "Ines",
+  "Willa",
+  "Esme",
+  "Sable",
+];
+
+const INVENTED_SKIN = [
+  "fair skin",
+  "olive skin",
+  "tan skin",
+  "light brown skin",
+  "warm brown skin",
+  "deep brown skin",
+  "golden skin",
+  "freckled fair skin",
+];
+
+function pickUnused(pool: string[], used: Set<string>) {
+  const open = pool.filter((item) => !used.has(item.toLowerCase()));
+  const source = open.length ? open : pool;
+  return source[Math.floor(Math.random() * source.length)];
+}
+
+function renameCastMember(project: Project, from: string, to: string) {
+  const needle = from.trim().toLowerCase();
+  const pattern = new RegExp(`\\b${escapeRegExp(from)}\\b`, "g");
+  for (const scene of project.scenes || []) {
+    scene.characterNames = (scene.characterNames || []).map((name) => (name.trim().toLowerCase() === needle ? to : name));
+    scene.extraNames = (scene.extraNames || []).map((name) => (name.trim().toLowerCase() === needle ? to : name));
+    scene.dialogue = (scene.dialogue || []).map((line) =>
+      line.speaker.trim().toLowerCase() === needle ? { ...line, speaker: to } : line,
+    );
+    if (scene.summary) scene.summary = scene.summary.replace(pattern, to);
+    if (scene.title) scene.title = scene.title.replace(pattern, to);
+  }
+}
+
+/** Drop the model's repeated default woman. A photo, or a script that names her, stays. */
+export function diversifyInventedCast(project: Project) {
+  const script = `${project.scriptText || ""}\n${project.song?.productBrief || ""}`;
+  const wantsMaya = /\bmaya\b/i.test(script);
+  const wantsDark = /\b(dark\s*skin|black\s*skin|dark-skinned|piel oscura|piel negra)\b/i.test(script);
+  const used = new Set(project.characters.map((item) => item.name.trim().toLowerCase()));
+  for (const character of project.characters) {
+    if (character.sourceRefId || character.isExtra) continue;
+    const blob = `${character.name} ${character.description || ""}`;
+    const woman = /\b(woman|women|girl|female|lady|maya|mujer|niña|nina|señora|senora|chica)\b/i.test(blob);
+    if (!woman) continue;
+    if (/^maya$/i.test(character.name) && !wantsMaya) {
+      used.delete(character.name.toLowerCase());
+      const next = pickUnused(INVENTED_WOMAN_NAMES, used);
+      const previous = character.name;
+      character.name = next;
+      character.slug = slugify(next);
+      used.add(next.toLowerCase());
+      if (character.description) character.description = character.description.replace(/\bMaya\b/g, next);
+      renameCastMember(project, previous, next);
+    }
+    if (!wantsDark && character.description) {
+      const skin = pickUnused(INVENTED_SKIN, new Set());
+      character.description = character.description.replace(
+        /\b(?:dark-skinned|dark skin|black skin|dark complexion)\b/gi,
+        skin,
+      );
+    }
+  }
+  return project;
+}
+
 function scrubSpanishSpeakerPhrases(text: string) {
   return text
     .replace(
@@ -632,10 +718,25 @@ function ensurePhysicalLogic(summary: string, context = "") {
   return text;
 }
 
+function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: { label: string; notes?: string }) {
+  if (!scene) return false;
+  const blob = `${scene.summary || ""} ${scene.title || ""}`;
+  if (/\b(without the product|no product|product stays out|not in frame|before the product)\b/i.test(blob)) return false;
+  if (/\b(the attached product|the product|this product)\b/i.test(blob)) return true;
+  const brief = project.song?.productBrief?.trim() || "";
+  if (brief.length >= 3 && brief.length <= 80 && blob.toLowerCase().includes(brief.toLowerCase())) return true;
+  const label = asset.label.trim();
+  if (label && !/^product\s*\d+$/i.test(label) && blob.toLowerCase().includes(label.toLowerCase())) return true;
+  return false;
+}
+
 function scenePropCues(project: Project, sceneIndex: number) {
-  return promptReadyReferences(project, [sceneIndex], true).filter(
-    (item) => item.kind === "product" || item.kind === "logo" || item.kind === "location",
-  );
+  const scene = project.scenes.find((item) => item.index === sceneIndex);
+  return promptReadyReferences(project, [sceneIndex], true).filter((item) => {
+    if (item.kind !== "product" && item.kind !== "logo" && item.kind !== "location") return false;
+    if (project.song && item.kind === "product") return sceneShowsProduct(project, scene, item);
+    return true;
+  });
 }
 
 const YOUNG_MARK = /\b(baby|kitten|puppy|newborn|infant|toddler|chiquit|beb[eé])\b/i;
@@ -1723,7 +1824,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           continues
             ? `This video is the next ${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds, the slice that belongs to this part. Do not regenerate the previous 5 seconds. The video reference is that ending, picture and music, only so the cut is not abrupt. @Audio1 is this slice and plays from 00:00 of this video. No title card, no logo sting, no black frame, and no new intro.`
             : "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
-          "Each scene shows the lyric quoted in it, while @Audio1 is singing that line. Do not show a different event during that line. Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the quoted lyric already in @Audio1.",
+          "Each scene shows the lyric quoted in it, while @Audio1 is singing that line. Do not show a different event during that line. Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the quoted lyric already in @Audio1. The attached product stays out of frame until a scene already shows it as the solution. Do not add it to a problem scene.",
           "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine,

@@ -13,6 +13,7 @@ import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDel
 import { Brand } from "@/components/Brand";
 import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
+import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { PLANS } from "@/lib/plans";
@@ -369,8 +370,11 @@ export function StudioApp() {
   const [scenesDraft, setScenesDraft] = useState<Scene[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [songUploadName, setSongUploadName] = useState("");
+  const [uploadingSlotId, setUploadingSlotId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
+  const [membershipOpen, setMembershipOpen] = useState(false);
   const [expanded, setExpanded] = useState<{ src: string; poster?: string; label?: string; downloadName?: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const songRef = useRef<HTMLInputElement>(null);
@@ -772,8 +776,9 @@ export function StudioApp() {
 
   async function onUploadRef(slot: ReferenceAsset, file: File) {
     if (!project) return;
+    setUploadingSlotId(slot.id);
     setBusy(true);
-    setStatus(`Uploading ${slot.label}…`);
+    setStatus("");
     try {
       const image = await prepareImageFile(file);
       const form = new FormData();
@@ -795,7 +800,26 @@ export function StudioApp() {
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "Couldn't upload that image.");
     }
+    setUploadingSlotId("");
     setBusy(false);
+  }
+
+  async function onClearRef(slot: ReferenceAsset) {
+    if (!project) return;
+    setBusy(true);
+    setStatus("");
+    const res = await fetch(`/api/refs?projectId=${encodeURIComponent(project.id)}&slotId=${encodeURIComponent(slot.id)}`, { method: "DELETE" });
+    const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+    if (json.project) remember(json.project);
+    else setStatus(json.error || "Couldn't remove that image.");
+    setBusy(false);
+  }
+
+  function pickRef(slot: ReferenceAsset) {
+    const input = refInputs.current[slot.id];
+    if (!input) return;
+    input.value = "";
+    input.click();
   }
 
   async function onLabelRef(slot: ReferenceAsset, label: string) {
@@ -813,20 +837,26 @@ export function StudioApp() {
 
   async function onUploadSong(file: File) {
     if (!project) return;
+    setSongUploadName(file.name);
     setBusy(true);
-    setStatus(`Reading ${file.name}…`);
+    setStatus("");
     const form = new FormData();
     form.set("projectId", project.id);
     form.set("file", file);
-    const res = await fetch("/api/song", { method: "POST", body: form });
-    const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
-    if (json.project) {
-      remember(json.project);
-      setScriptDraft("");
-      setStatus("");
-    } else {
-      setStatus(json.error || "Couldn't read that song.");
+    try {
+      const res = await fetch("/api/song", { method: "POST", body: form });
+      const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+      if (json.project) {
+        remember(json.project);
+        setScriptDraft("");
+        setStatus("");
+      } else {
+        setStatus(json.error || "Couldn't read that song.");
+      }
+    } catch {
+      setStatus("Couldn't read that song.");
     }
+    setSongUploadName("");
     setBusy(false);
   }
 
@@ -1150,6 +1180,7 @@ export function StudioApp() {
           onCreate={() => void createNew()}
           onCreateSong={() => void createSong()}
           onAccount={() => setAccountOpen(true)}
+          onMembership={() => setMembershipOpen(true)}
           onLogout={() => void logout()}
           resolveSrc={assetSrc}
           downloadName={(item) => videoDownloadName(item.title, item.index, item.parts)}
@@ -1323,12 +1354,18 @@ export function StudioApp() {
                 products[0]?.originalPublicPath ? assetSrc(products[0].originalPublicPath) : ""
               }
               busy={working}
+              uploadingName={songUploadName}
               onPickSong={() => songRef.current?.click()}
               onClearSong={() => void patchProject({ clearSong: true })}
               onPickProduct={() => {
                 const slot = products[0];
-                if (slot) refInputs.current[slot.id]?.click();
+                if (slot) pickRef(slot);
               }}
+              onClearProduct={() => {
+                const slot = products[0];
+                if (slot) void onClearRef(slot);
+              }}
+              productUploading={Boolean(products[0] && uploadingSlotId === products[0].id)}
               onUseScript={() => void (project.song ? clearScriptFile() : patchProject({ workflowStep: "script" }))}
               onContinue={(brief) => void continueFromSong(brief)}
             />
@@ -1346,7 +1383,9 @@ export function StudioApp() {
               onStyle={changeStyle}
               onAspect={changeAspect}
               onDuration={(seconds) => void changeDuration(seconds)}
-              onPickSlot={(slot) => refInputs.current[slot.id]?.click()}
+              onPickSlot={(slot) => pickRef(slot)}
+              onClearSlot={(slot) => void onClearRef(slot)}
+              uploadingSlotId={uploadingSlotId}
               onLabelSlot={(slot, label) => void onLabelRef(slot, label)}
               onContinue={() => void continueFromSetup()}
             />
@@ -1437,6 +1476,8 @@ export function StudioApp() {
           }}
         />
       ))}
+
+      {membershipOpen ? <MembershipPanel onClose={() => setMembershipOpen(false)} /> : null}
 
       {accountOpen ? (
         <div className="studio-dark fixed inset-0 z-50 grid place-items-center bg-black/60 p-3">
@@ -1708,9 +1749,12 @@ function SongStep({
   brief,
   productPreview,
   busy,
+  uploadingName,
   onPickSong,
   onClearSong,
   onPickProduct,
+  onClearProduct,
+  productUploading,
   onUseScript,
   onContinue,
 }: {
@@ -1720,9 +1764,12 @@ function SongStep({
   brief: string;
   productPreview: string;
   busy: boolean;
+  uploadingName: string;
   onPickSong: () => void;
   onClearSong: () => void;
   onPickProduct: () => void;
+  onClearProduct: () => void;
+  productUploading: boolean;
   onUseScript: () => void;
   onContinue: (brief: string) => void;
 }) {
@@ -1740,12 +1787,16 @@ function SongStep({
         disabled={busy}
         className="mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed border-white/15 bg-[var(--cf-surface)] px-5 text-center hover:bg-[var(--cf-surface-2)]"
       >
-        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
-          <SongIcon />
-        </span>
-        <span className="text-sm font-medium">{songAttached ? songName : "Upload a Suno song"}</span>
+        {uploadingName ? (
+          <span className="size-7 animate-spin rounded-full border-2 border-white/20 border-t-[#FF8A3D]" />
+        ) : (
+          <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
+            <SongIcon />
+          </span>
+        )}
+        <span className="max-w-full truncate px-4 text-sm font-medium">{uploadingName ? `Uploading ${uploadingName}` : songAttached ? songName : "Upload a Suno song"}</span>
         <span className="text-xs text-[var(--muted)]">
-          {songAttached && durationSeconds ? `${Math.round(durationSeconds)} seconds` : "30 to 90 seconds · mp3, wav, m4a"}
+          {uploadingName ? "Reading the song. This can take a moment." : songAttached && durationSeconds ? `${Math.round(durationSeconds)} seconds` : "30 to 90 seconds · mp3, wav, m4a"}
         </span>
       </button>
       {songAttached ? (
@@ -1756,7 +1807,15 @@ function SongStep({
 
       <p className="mb-2 mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product</p>
       <div className="max-w-xs">
-        <UploadTile label="Product photo" preview={productPreview} hint={productPreview ? "Replace" : "Required · at least 300×300"} disabled={busy} onClick={onPickProduct} />
+        <UploadTile
+          label="Product photo"
+          preview={productPreview}
+          hint={productPreview ? "Replace" : "Required · at least 300×300"}
+          disabled={busy && !productUploading}
+          uploading={productUploading}
+          onClick={onPickProduct}
+          onRemove={productPreview ? onClearProduct : undefined}
+        />
       </div>
 
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">What is this product about?</label>
@@ -1797,6 +1856,8 @@ function SetupStep({
   onAspect,
   onDuration,
   onPickSlot,
+  onClearSlot,
+  uploadingSlotId,
   onLabelSlot,
   onContinue,
 }: {
@@ -1811,6 +1872,8 @@ function SetupStep({
   onAspect: (aspect: AspectRatio) => void;
   onDuration: (seconds: number) => void;
   onPickSlot: (slot: ReferenceAsset) => void;
+  onClearSlot: (slot: ReferenceAsset) => void;
+  uploadingSlotId: string;
   onLabelSlot: (slot: ReferenceAsset, label: string) => void;
   onContinue: () => void;
 }) {
@@ -1866,8 +1929,10 @@ function SetupStep({
               slot={slot}
               index={index}
               preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-              disabled={busy}
+              disabled={busy && uploadingSlotId !== slot.id}
+              uploading={uploadingSlotId === slot.id}
               onPick={() => onPickSlot(slot)}
+              onRemove={() => onClearSlot(slot)}
               onLabel={onLabelSlot}
             />
           ))}
@@ -1883,8 +1948,10 @@ function SetupStep({
                 key={slot.id}
                 label={slot.label}
                 preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-                disabled={busy}
+                disabled={busy && uploadingSlotId !== slot.id}
+                uploading={uploadingSlotId === slot.id}
                 onClick={() => onPickSlot(slot)}
+                onRemove={() => onClearSlot(slot)}
               />
             ))}
           </div>
@@ -1899,8 +1966,10 @@ function SetupStep({
               key={slot.id}
               label={slot.label}
               preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-              disabled={busy}
+              disabled={busy && uploadingSlotId !== slot.id}
+              uploading={uploadingSlotId === slot.id}
               onClick={() => onPickSlot(slot)}
+              onRemove={() => onClearSlot(slot)}
             />
           ))}
         </div>
@@ -1908,14 +1977,16 @@ function SetupStep({
 
       <section className="setup-card">
         <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Logo · 1</p>
-        <div className="grid grid-cols-1 gap-2 sm:max-w-[220px]">
+        <div className="grid grid-cols-1 gap-2 sm:max-w-[280px]">
           {logos.map((slot) => (
             <UploadTile
               key={slot.id}
               label={slot.label}
               preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-              disabled={busy}
+              disabled={busy && uploadingSlotId !== slot.id}
+              uploading={uploadingSlotId === slot.id}
               onClick={() => onPickSlot(slot)}
+              onRemove={() => onClearSlot(slot)}
             />
           ))}
         </div>
@@ -2456,14 +2527,18 @@ function CharacterSlot({
   index,
   preview,
   disabled,
+  uploading,
   onPick,
+  onRemove,
   onLabel,
 }: {
   slot: ReferenceAsset;
   index: number;
   preview: string;
   disabled?: boolean;
+  uploading?: boolean;
   onPick: () => void;
+  onRemove: () => void;
   onLabel: (slot: ReferenceAsset, label: string) => void;
 }) {
   const fallback = `Character ${index + 1}`;
@@ -2476,7 +2551,7 @@ function CharacterSlot({
 
   return (
     <div className="space-y-1.5">
-      <UploadTile label={name.trim() || fallback} preview={preview} disabled={disabled} onClick={onPick} />
+      <UploadTile label={name.trim() || fallback} preview={preview} disabled={disabled} uploading={uploading} onClick={onPick} onRemove={preview ? onRemove : undefined} />
       <input
         type="text"
         value={name}
@@ -2495,34 +2570,47 @@ function UploadTile({
   preview,
   hint,
   disabled,
+  uploading,
   onClick,
+  onRemove,
 }: {
   label: string;
   preview: string;
   hint?: string;
   disabled?: boolean;
+  uploading?: boolean;
   onClick: () => void;
+  onRemove?: () => void;
 }) {
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      className="flex min-h-[72px] w-full items-center gap-2.5 rounded-xl border border-dashed border-white/15 bg-[var(--cf-surface)] px-2.5 py-1.5 text-left hover:bg-[var(--cf-surface-2)] disabled:opacity-50"
-    >
-      {preview ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img src={preview} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
-      ) : (
-        <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
-          <PlusIcon />
+    <div className={`flex min-h-[72px] w-full items-center gap-1 rounded-xl border border-dashed border-white/15 bg-[var(--cf-surface)] px-2 py-1.5 ${disabled ? "opacity-50" : ""}`}>
+      <button type="button" disabled={disabled || uploading} onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2.5 px-0.5 text-left">
+        {uploading ? (
+          <span className="size-9 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-[#FF8A3D]" />
+        ) : preview ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={preview} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
+        ) : (
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
+            <PlusIcon />
+          </span>
+        )}
+        <span className="min-w-0">
+          <span className="block truncate text-[13px] font-medium text-[var(--ink)]">{uploading ? "Uploading…" : label}</span>
+          <span className="block text-[11px] text-[var(--muted)]">{uploading ? "This can take a moment." : hint || (preview ? "Replace" : "Optional")}</span>
         </span>
-      )}
-      <span className="min-w-0">
-        <span className="block truncate text-[13px] font-medium text-[var(--ink)]">{label}</span>
-        <span className="block text-[11px] text-[var(--muted)]">{hint || (preview ? "Replace" : "Optional")}</span>
-      </span>
-    </button>
+      </button>
+      {preview && onRemove && !uploading ? (
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={onRemove}
+          className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-white/5 hover:text-white"
+        >
+          Remove
+        </button>
+      ) : null}
+    </div>
   );
 }
 

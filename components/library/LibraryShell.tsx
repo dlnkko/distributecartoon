@@ -25,6 +25,7 @@ export function LibraryShell({
   onCreate,
   onCreateSong,
   onAccount,
+  onMembership,
   onLogout,
   resolveSrc,
   downloadName,
@@ -39,6 +40,7 @@ export function LibraryShell({
   onCreate: () => void;
   onCreateSong: () => void;
   onAccount: () => void;
+  onMembership: () => void;
   onLogout: () => void;
   resolveSrc: (path?: string) => string;
   downloadName: (item: LibraryVideo) => string;
@@ -149,6 +151,17 @@ export function LibraryShell({
               </div>
               <button type="button" role="menuitem" onClick={onAccount} className="no-press block min-h-10 w-full whitespace-nowrap px-3 text-left text-sm hover:bg-white/5">
                 Account
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  setMenu(false);
+                  onMembership();
+                }}
+                className="no-press block min-h-10 w-full whitespace-nowrap px-3 text-left text-sm hover:bg-white/5"
+              >
+                Membership
               </button>
               <button type="button" role="menuitem" onClick={onLogout} className="no-press block min-h-10 w-full whitespace-nowrap px-3 text-left text-sm hover:bg-white/5">
                 Sign out
