@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Brand } from "@/components/Brand";
 import { DFY_PLANS, INTRO_OFFER, PLANS, type Plan } from "@/lib/plans";
 import { createClient } from "@/lib/supabase/client";
 import { CANONICAL_ORIGIN } from "@/lib/site";
@@ -14,25 +15,15 @@ const COPY = {
   personal: {
     label: "Personal",
     eyebrow: "For anyone",
-    title: "A finished film. Nothing left to edit.",
-    lead: "Built with the latest video technology. It comes out ready to post. It does not look like a throwaway AI clip.",
-    points: [
-      "No edit after the render",
-      "The latest video models on the market",
-      "A real short, not a generic AI clip",
-    ],
+    title: "A million-dollar look, in one shot.",
+    lead: "A finished animation. Nothing left to edit.",
     cta: "Buy credits",
   },
   brands: {
     label: "Brands",
-    eyebrow: "For brands",
-    title: "The first render is the one you ship.",
-    lead: "You will not need an editor to rescue it. 99% of the time it lands on the first try. The more detail you put in the script or storyboard, the better it looks. We still push for the best result every time.",
-    points: [
-      "Built on the latest AI models on the market",
-      "The person watching will not think it is AI",
-      "If they do, it will not matter. It is made well",
-    ],
+    eyebrow: "For your brand",
+    title: "A million-dollar ad, in one shot.",
+    lead: "For your brand. Nothing left to edit.",
     cta: "See plans",
   },
 } as const;
@@ -101,26 +92,20 @@ export function Landing() {
           style={{ animationDelay: "-6s" }}
         />
 
-        <header className="sticky top-0 z-30 -mx-6 flex items-center justify-between bg-[#0b0b0d]/80 px-6 py-4 backdrop-blur-md">
-          <div className="flex items-center gap-2.5">
-            <span className="cf-grad grid h-8 w-8 place-items-center rounded-lg text-sm font-bold text-white">C</span>
-            <span className="display text-lg tracking-tight">Clickframes</span>
-          </div>
-          <nav className="flex items-center gap-5 text-sm text-[var(--cf-muted)]">
-            <a href="#films" className="hidden hover:text-white sm:inline">
-              Films
-            </a>
-            <a href="#pricing" className="hover:text-white">
+        <header className="sticky top-0 z-30 flex items-center justify-between gap-4 py-3">
+          <Brand tone="accent" />
+          <nav className="flex items-center gap-2.5">
+            <a href="#pricing" className="inline-flex items-center rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold text-white">
               Pricing
             </a>
-            <a href="/login" className="cf-btn btn-primary px-4 py-2 text-sm font-semibold">
+            <a href="/login" className="cf-btn btn-primary inline-flex items-center px-4 py-2 text-sm font-semibold">
               Sign in
             </a>
           </nav>
         </header>
 
-        <section className="grid items-center gap-14 py-16 lg:grid-cols-[1.05fr_0.95fr] lg:py-24">
-          <div key={audience} className="rise-in">
+        <section className="grid items-start gap-8 pb-8 pt-2 lg:grid-cols-[1.05fr_0.95fr]">
+          <div>
             <div className="inline-flex rounded-xl bg-white/5 p-1">
               {(["personal", "brands"] as const).map((item) => (
                 <button
@@ -135,44 +120,32 @@ export function Landing() {
                 </button>
               ))}
             </div>
-            <p className="mt-6 text-sm font-medium text-[#ffb089]">{copy.eyebrow}</p>
-            <h1 className="display mt-3 max-w-xl text-5xl leading-[0.95] tracking-tight sm:text-6xl">{copy.title}</h1>
-            <p className="mt-5 max-w-lg text-lg leading-relaxed text-[var(--cf-muted)]">{copy.lead}</p>
-            <p className="mt-5 max-w-lg text-base font-medium">
-              It looks like an animation from a studio with a huge budget. It costs a few dollars.
-            </p>
-            <ul className="mt-6 space-y-2 text-sm">
-              {copy.points.map((point) => (
-                <li key={point} className="flex gap-2">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-[#ff8a3d]" />
-                  {point}
-                </li>
-              ))}
-            </ul>
-            <div className="mt-8 flex flex-wrap gap-3">
-              <a href="#pricing" className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
-                {copy.cta}
-              </a>
-              <a href="/login" className="rounded-xl border border-white/15 px-5 py-3 text-sm font-medium">
-                Open the studio
-              </a>
+            <div key={audience} className="rise-in">
+              <p className="mt-5 text-sm font-medium text-[#ffb089]">{copy.eyebrow}</p>
+              <h1 className="display mt-2 min-h-[2.8em] max-w-xl text-4xl leading-[0.95] tracking-tight sm:text-6xl">
+                {copy.title}
+              </h1>
+              <p className="mt-4 min-h-12 max-w-sm text-lg text-[var(--cf-muted)]">{copy.lead}</p>
+              <div className="mt-5">
+                <a href="#pricing" className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
+                  {copy.cta}
+                </a>
+              </div>
             </div>
           </div>
-          <div className="land-float">
-            <FilmSlot
-              id="hero"
-              label="Hero film"
-              note="Drop your flagship short here."
-              ratio="aspect-[4/5]"
-            />
-          </div>
+          <FilmSlot
+            id="hero"
+            label="Hero"
+            note="Your animation goes here."
+            ratio="aspect-[4/5] max-h-[calc(100vh-6.5rem)]"
+          />
         </section>
 
         <div className="overflow-hidden border-y border-white/10 py-4">
           <div className="land-marquee flex w-max gap-8 text-xs uppercase tracking-[0.22em] text-[var(--cf-muted)]">
             {Array.from({ length: 2 }).map((_, copyIndex) => (
               <p key={copyIndex} className="flex gap-8">
-                {["Pixar", "Claymation", "A gift", "Ready to post", "First try", "A few dollars"].map((word) => (
+                {["One shot", "For your brand", "Pixar", "Claymation", "A gift", "First try"].map((word) => (
                   <span key={`${copyIndex}-${word}`}>{word}</span>
                 ))}
               </p>
@@ -184,10 +157,10 @@ export function Landing() {
           <div>
             <p className="text-sm font-medium text-[#ffb089]">The look</p>
             <h2 className="display mt-3 text-4xl leading-none tracking-tight sm:text-5xl">
-              Studio animation. A few dollars.
+              A million-dollar look. A few dollars.
             </h2>
             <p className="mt-5 max-w-md text-lg leading-relaxed text-[var(--cf-muted)]">
-              The picture has the weight of a film from a studio with a huge budget. The price does not. Same promise for a person and for a brand.
+              It looks like a production with a huge budget, and it costs a few dollars. One shot, for a person or for your brand.
             </p>
           </div>
           <FilmSlot id="studio" label="Studio look" note="A finished frame, the kind you would expect from a big production." />
@@ -195,10 +168,10 @@ export function Landing() {
 
         {audience === "personal" ? <PersonalStory onBuy={(id) => void startCheckout(id)} busy={busyPlan} /> : <BrandStory />}
 
-        <section id="films" className="py-8">
+        <section id="animations" className="py-8">
           <Reveal>
-            <p className="text-sm font-medium text-[#ffb089]">Films</p>
-            <h2 className="display mt-3 max-w-xl text-4xl tracking-tight">Your videos live here.</h2>
+            <p className="text-sm font-medium text-[#ffb089]">Animations</p>
+            <h2 className="display mt-3 max-w-xl text-4xl tracking-tight">Your animations live here.</h2>
             <p className="mt-3 max-w-lg text-[var(--cf-muted)]">
               Three slots, ready for the shorts you want on this page.
             </p>
@@ -212,9 +185,9 @@ export function Landing() {
 
         <section className="grid gap-4 py-16 sm:grid-cols-3">
           {[
-            ["01", "Paste the script", "Or drop in a Suno song. We read the story before anything renders."],
+            ["01", "Paste the script", "Or drop in a Suno song. We read the story before anything is generated."],
             ["02", "Lock the look", "Characters, products, places, and logos stay the same from shot to shot."],
-            ["03", "Ship the film", "Pixar or claymation, cut to length, with the voices already in the picture."],
+            ["03", "Ship the animation", "Pixar or claymation, cut to length, with the voices already in the picture."],
           ].map(([step, title, body]) => (
             <Reveal key={step} className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
               <p className="text-xs font-medium text-[#ffb089]">{step}</p>
@@ -233,7 +206,7 @@ export function Landing() {
                 Run the studio on credits, or hand us the month. Click a plan, create your account with Google, pay on Whop, and land in the studio.
               </p>
               <h3 className="mt-12 text-sm font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted)]">DIY. Do it yourself</h3>
-              <p className="mt-2 text-sm text-[var(--cf-muted)]">The credit packs. You make the films.</p>
+              <p className="mt-2 text-sm text-[var(--cf-muted)]">The credit packs. You make the animations.</p>
               <PlanGrid plans={PLANS} busy={busyPlan} onBuy={(id) => void startCheckout(id)} />
               <h3 className="mt-14 text-sm font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted)]">DFY. Done for you</h3>
               <p className="mt-2 text-sm text-[var(--cf-muted)]">A monthly crew. Billed every 30 days.</p>
@@ -267,7 +240,7 @@ export function Landing() {
           ) : (
             <>
               <p className="text-sm font-medium text-[#ffb089]">Credits</p>
-              <h2 className="display mt-2 text-4xl tracking-tight sm:text-5xl">Buy the minutes. Keep the film.</h2>
+              <h2 className="display mt-2 text-4xl tracking-tight sm:text-5xl">Buy the minutes. Keep the animation.</h2>
               <p className="mt-3 max-w-lg text-[var(--cf-muted)]">
                 One payment on Whop. Create your account with Google, pay, and you are in the studio.
               </p>
@@ -330,15 +303,15 @@ function PersonalStory({ onBuy, busy }: { onBuy: (id: string) => void; busy: str
       <StoryRow
         eyebrow="No edit"
         title="It comes out finished."
-        body="You do not open a timeline after this. The short is already a film, built with the latest video technology, and it does not look like a throwaway AI clip."
-        film={{ id: "personal-finish", label: "Finished cut", note: "A short that needs nothing after the render." }}
+        body="The latest video models do the work. It does not look like a cheap AI clip, and you do not open an editor after it."
+        film={{ id: "personal-finish", label: "Finished cut", note: "A short that needs nothing after the generation." }}
       />
       <StoryRow
         flip
         eyebrow="A gift"
-        title="Put someone in the film."
-        body="Add a photo of them and we place that person in any style. Pixar, clay, or the look you describe. A film they can keep."
-        film={{ id: "personal-gift", label: "Gift film", note: "Their photo, adapted to the style you choose." }}
+        title="Make it a gift."
+        body="Add a photo of someone and we put them in any style. Pixar, clay, or the look you describe. An animation they can keep."
+        film={{ id: "personal-gift", label: "Gift", note: "Their photo, adapted to the style you choose." }}
       />
       <Reveal className="mb-16 rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:p-8">
         <p className="text-sm font-medium text-[#ffb089]">Start with one</p>
@@ -356,16 +329,16 @@ function PersonalStory({ onBuy, busy }: { onBuy: (id: string) => void; busy: str
 
 function BrandStory() {
   const cards = [
-    ["No editor on the back end", "The render is the cut you publish. You do not hire someone to rescue it."],
-    ["99% on the first try", "It lands the first time, almost every time."],
-    ["Detail makes it better", "The more you put in the script or storyboard, the better the film looks. We still chase the best result."],
-    ["They will not clock it", "Built on the latest models on the market. The person watching will not think it is AI. If they do, it will not matter. It is made well."],
+    ["Ready to run as an ad", "For your brand, the first generation is the spot you publish. You do not hire an editor to save it."],
+    ["It lands the first time", "About 99% of the time there is no second pass. You are not stuck making it again."],
+    ["More detail, a better picture", "The more you put in the script or storyboard, the better it looks. We still go for the best result."],
+    ["It does not read as AI", "Built on the latest models. If someone notices, it will not matter. It is made well."],
   ];
   return (
     <section className="py-8">
       <Reveal>
         <p className="text-sm font-medium text-[#ffb089]">For a brand</p>
-        <h2 className="display mt-3 max-w-2xl text-4xl tracking-tight sm:text-5xl">Ship the first render.</h2>
+        <h2 className="display mt-3 max-w-2xl text-4xl tracking-tight sm:text-5xl">For your brand, the first generation is ready to run.</h2>
       </Reveal>
       <div className="mt-8 grid gap-4 md:grid-cols-2">
         {cards.map(([title, body]) => (
@@ -376,7 +349,7 @@ function BrandStory() {
         ))}
       </div>
       <div className="mt-4">
-        <FilmSlot id="brand-spot" label="Brand film" note="A product spot that looks finished on the first render." ratio="aspect-[16/7]" />
+        <FilmSlot id="brand-spot" label="Brand" note="A product spot that looks finished on the first generation." ratio="aspect-[16/7]" />
       </div>
     </section>
   );
@@ -432,7 +405,7 @@ function FilmSlot({
         <div className="relative flex h-full flex-col justify-between p-5">
           <div className="flex items-center justify-between text-[11px] uppercase tracking-[0.16em] text-[var(--cf-muted)]">
             <span>{label}</span>
-            <span>Your video</span>
+            <span>Your animation</span>
           </div>
           <span className="grid h-14 w-14 place-items-center rounded-full border border-white/15 bg-black/40">
             <span className="ml-1 block h-0 w-0 border-y-8 border-l-[14px] border-y-transparent border-l-white" />
