@@ -15,7 +15,6 @@ export async function POST(request: Request) {
   delete project.song;
   project.scriptText = nextText;
   project.scriptName = body.name || project.scriptName || "pasted-script.txt";
-  project.workflowStep = "setup";
   await saveProject(project);
   return NextResponse.json({ project });
 }

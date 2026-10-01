@@ -826,7 +826,7 @@ async function createCharacterLook(
     prompt: revisionNotes
       ? characterLookRevisionPrompt(character, project.style, revisionNotes)
       : fromPhoto
-        ? characterLookFromPhotoPrompt(character, project.style, photo?.label)
+        ? characterLookFromPhotoPrompt(character, project.style, photo?.lookNotes || "")
         : characterLookPrompt(character, project.style),
     aspectRatio: "1:1",
     resolution: "2K",

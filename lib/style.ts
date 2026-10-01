@@ -144,12 +144,14 @@ export function characterLookPrompt(character: Character, style: VisualStyle) {
   return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
-export function characterLookFromPhotoPrompt(_character: Character, style: VisualStyle, _role = "") {
+export function characterLookFromPhotoPrompt(_character: Character, style: VisualStyle, lookNote = "") {
   const craft =
     style === "claymation"
       ? "Same person as the photo, rebuilt as a hand-sculpted clay puppet. Fingerprints, tool marks, matte clay. Not smooth skin with a clay texture."
       : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
-  return `${imageStyleLead(style)} portrait from the attached photo. ${craft} One character, plain gray background.`;
+  const note = lookNote.trim().slice(0, 180);
+  const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
+  return `${imageStyleLead(style)} portrait from the attached photo. ${craft}${extra} One character, plain gray background.`;
 }
 
 export function characterAnchorPrompt(name: string, style: VisualStyle) {
@@ -511,6 +513,10 @@ export function diversifyInventedCast(project: Project) {
   const used = new Set(project.characters.map((item) => item.name.trim().toLowerCase()));
   for (const character of project.characters) {
     if (character.sourceRefId || character.isExtra) continue;
+    const assigned = project.references.some(
+      (item) => item.kind === "character" && item.label.trim().toLowerCase() === character.name.trim().toLowerCase() && item.lookNotes?.trim(),
+    );
+    if (assigned) continue;
     const blob = `${character.name} ${character.description || ""}`;
     const woman = /\b(woman|women|girl|female|lady|maya|mujer|niña|nina|señora|senora|chica)\b/i.test(blob);
     if (!woman) continue;

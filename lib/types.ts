@@ -77,6 +77,11 @@ export type Character = {
   clips: CharacterClip[];
 };
 
+export type ScriptCastMember = {
+  name: string;
+  role: string;
+};
+
 export type ReferenceKind = "character" | "product" | "logo" | "location" | "other";
 
 export type ScriptRefCue = {
@@ -90,6 +95,7 @@ export type ReferenceAsset = {
   kind: ReferenceKind;
   label: string;
   notes: string;
+  lookNotes?: string;
   includeInVideo: boolean;
   originalFileName?: string;
   originalPublicPath?: string;
@@ -203,6 +209,7 @@ export type Project = {
   aspectRatio: AspectRatio;
   scriptName: string;
   scriptText: string;
+  scriptCast?: ScriptCastMember[];
   song?: Song;
   characters: Character[];
   scenes: Scene[];

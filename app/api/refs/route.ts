@@ -95,6 +95,7 @@ export async function PATCH(request: Request) {
     includeInVideo?: boolean;
     skipAll?: boolean;
     label?: string;
+    lookNotes?: string;
   };
   if (!body.projectId) return NextResponse.json({ error: "Missing project" }, { status: 400 });
   const loaded = await loadOwnedProject(body.projectId);
@@ -111,6 +112,7 @@ export async function PATCH(request: Request) {
   if (!asset) return NextResponse.json({ error: "Slot not found" }, { status: 404 });
   if (typeof body.notes === "string") asset.notes = body.notes;
   if (typeof body.label === "string") asset.label = body.label;
+  if (typeof body.lookNotes === "string") asset.lookNotes = body.lookNotes.trim();
   if (typeof body.includeInVideo === "boolean") {
     if (body.includeInVideo) {
       project.scriptRefCues = [

@@ -3,6 +3,7 @@ import { getSecrets, TEXT_MODEL } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
 import { driveProduce } from "./produce";
+import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { capPartSceneSeconds, estimateDialogueSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, seedancePartDurations, shouldGenerateOneShot } from "./timing";
 import { ensureSceneShots } from "./shots";
@@ -610,6 +611,7 @@ async function executeTool(
       }
       refineStoryLeads(project);
       diversifyInventedCast(project);
+      applyScriptLooks(project);
       project.durationPending = false;
       project.durationAuto = false;
       if (project.song) {
@@ -784,7 +786,8 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const opening = ordered
     ? "The user already ordered this as a storyboard. Keep that scene order, those beats, and those characters. Do not merge, reorder, or replace a named person."
     : "The user wrote a paragraph. Turn it into an ordered storyboard in the exact cause order they told, one beat per scene, naming each person once and reusing that name. Do not invent a different sequence.";
-  return `${opening} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+  const known = castBrief(project);
+  return `${opening} ${known} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 
 export async function runAgent(options: {

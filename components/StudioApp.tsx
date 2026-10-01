@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
+import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, ScriptCastMember, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
@@ -835,6 +835,19 @@ export function StudioApp() {
     if (json.project) remember(json.project);
   }
 
+  async function onLookRef(slot: ReferenceAsset, lookNotes: string) {
+    if (!project) return;
+    const next = lookNotes.trim();
+    if (next === (slot.lookNotes || "").trim()) return;
+    const res = await fetch("/api/refs", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, slotId: slot.id, lookNotes: next }),
+    });
+    const json = (await res.json()) as { project?: Project; error?: string };
+    if (json.project) remember(json.project);
+  }
+
   async function onUploadSong(file: File) {
     if (!project) return;
     setSongUploadName(file.name);
@@ -888,22 +901,30 @@ export function StudioApp() {
       return;
     }
     setBusy(true);
-    if (uploaded && !text) {
-      await patchProject({ workflowStep: "setup" });
-      setBusy(false);
-      return;
+    if (!uploaded || text) {
+      const saved = await fetch("/api/script", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: project.id, text, name: "pasted-script.txt" }),
+      });
+      const json = (await saved.json()) as { project?: Project; error?: string };
+      if (!json.project) {
+        setStatus(json.error || "Couldn't save that script.");
+        setBusy(false);
+        return;
+      }
+      writeDraft(json.project.id, "");
     }
-    const saved = await fetch("/api/script", {
+    const roster = await fetch("/api/cast-roster", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId: project.id, text, name: "pasted-script.txt" }),
+      body: JSON.stringify({ projectId: project.id }),
     });
-    const json = (await saved.json()) as { project?: Project; error?: string };
-    if (json.project) {
-      writeDraft(json.project.id, "");
-      remember(json.project);
-    } else {
-      setStatus(json.error || "Couldn't save that script.");
+    const found = (await roster.json()) as { project?: Project; error?: string };
+    if (found.project) remember(found.project);
+    else {
+      setStatus(found.error || "Couldn't read the characters.");
+      await patchProject({ workflowStep: "setup" });
     }
     setBusy(false);
   }
@@ -1386,7 +1407,9 @@ export function StudioApp() {
               onPickSlot={(slot) => pickRef(slot)}
               onClearSlot={(slot) => void onClearRef(slot)}
               uploadingSlotId={uploadingSlotId}
+              castOptions={project.song ? [] : project.scriptCast || []}
               onLabelSlot={(slot, label) => void onLabelRef(slot, label)}
+              onLookSlot={(slot, look) => void onLookRef(slot, look)}
               onContinue={() => void continueFromSetup()}
             />
           ) : null}
@@ -1735,7 +1758,7 @@ function ScriptStep({
           onClick={onContinue}
           className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
-          Continue
+          {busy ? "Working…" : "Continue"}
         </button>
       </div>
     </div>
@@ -1858,7 +1881,9 @@ function SetupStep({
   onPickSlot,
   onClearSlot,
   uploadingSlotId,
+  castOptions,
   onLabelSlot,
+  onLookSlot,
   onContinue,
 }: {
   project: Project;
@@ -1874,7 +1899,9 @@ function SetupStep({
   onPickSlot: (slot: ReferenceAsset) => void;
   onClearSlot: (slot: ReferenceAsset) => void;
   uploadingSlotId: string;
+  castOptions: ScriptCastMember[];
   onLabelSlot: (slot: ReferenceAsset, label: string) => void;
+  onLookSlot: (slot: ReferenceAsset, look: string) => void;
   onContinue: () => void;
 }) {
   return (
@@ -1884,7 +1911,7 @@ function SetupStep({
         <p className="mt-1 text-sm text-[var(--muted)]">
           {project.song
             ? "The song sets the length. Add characters and places if you have them. Every photo needs at least 300×300 pixels."
-            : "Photos are optional. Every photo needs at least 300×300 pixels. Name a role if you restyle a real person."}
+            : "Photos are optional. Every photo needs at least 300×300 pixels. Pick a character from the script and describe the look."}
         </p>
       </div>
 
@@ -1921,7 +1948,11 @@ function SetupStep({
         <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
           Characters · up to 4
         </p>
-        <p className="mt-1 mb-3 text-xs text-[var(--muted)]">One photo per role from the script. Leave empty if you do not have one.</p>
+        <p className="mt-1 mb-3 text-xs text-[var(--muted)]">
+          {castOptions.length
+            ? "Choose who the slot is for, describe the look, and add a photo if you have one."
+            : "One photo per role from the script. Leave empty if you do not have one."}
+        </p>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {characters.map((slot, index) => (
             <CharacterSlot
@@ -1931,9 +1962,14 @@ function SetupStep({
               preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
               disabled={busy && uploadingSlotId !== slot.id}
               uploading={uploadingSlotId === slot.id}
+              options={castOptions}
+              taken={characters
+                .filter((item) => item.id !== slot.id)
+                .map((item) => item.label.trim().toLowerCase())}
               onPick={() => onPickSlot(slot)}
               onRemove={() => onClearSlot(slot)}
               onLabel={onLabelSlot}
+              onLook={onLookSlot}
             />
           ))}
         </div>
@@ -2288,9 +2324,6 @@ function CastStep({
                 )}
               </div>
               <p className="mt-2 text-sm font-medium">{character.name}</p>
-              {character.description ? (
-                <p className="mt-0.5 line-clamp-2 text-[11px] text-[var(--muted)]">{character.description}</p>
-              ) : null}
               {character.lookRevisionUsed ? (
                 <p className="mt-2 text-[11px] text-[var(--muted)]">This look can only be changed once.</p>
               ) : (
@@ -2528,39 +2561,95 @@ function CharacterSlot({
   preview,
   disabled,
   uploading,
+  options,
+  taken,
   onPick,
   onRemove,
   onLabel,
+  onLook,
 }: {
   slot: ReferenceAsset;
   index: number;
   preview: string;
   disabled?: boolean;
   uploading?: boolean;
+  options: ScriptCastMember[];
+  taken: string[];
   onPick: () => void;
   onRemove: () => void;
   onLabel: (slot: ReferenceAsset, label: string) => void;
+  onLook: (slot: ReferenceAsset, look: string) => void;
 }) {
   const fallback = `Character ${index + 1}`;
   const named = Boolean(slot.label.trim() && !/^character\s*\d+$/i.test(slot.label.trim()));
   const [name, setName] = useState(named ? slot.label : "");
+  const [look, setLook] = useState(slot.lookNotes || "");
 
   useEffect(() => {
     setName(named ? slot.label : "");
   }, [named, slot.label]);
 
+  useEffect(() => {
+    setLook(slot.lookNotes || "");
+  }, [slot.lookNotes]);
+
+  const selected = slot.label.trim().toLowerCase();
+
   return (
     <div className="space-y-1.5">
-      <UploadTile label={name.trim() || fallback} preview={preview} disabled={disabled} uploading={uploading} onClick={onPick} onRemove={preview ? onRemove : undefined} />
-      <input
-        type="text"
-        value={name}
+      <UploadTile
+        label={named ? slot.label : fallback}
+        preview={preview}
+        hint={preview ? "Replace photo" : "Photo optional"}
         disabled={disabled}
-        placeholder="Role in the script (e.g. Cat)"
-        onChange={(event) => setName(event.target.value)}
-        onBlur={() => onLabel(slot, name.trim() || fallback)}
-        className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
+        uploading={uploading}
+        onClick={onPick}
+        onRemove={preview ? onRemove : undefined}
       />
+      <textarea
+        value={look}
+        disabled={disabled}
+        rows={2}
+        placeholder="How they should look"
+        onChange={(event) => setLook(event.target.value)}
+        onBlur={() => onLook(slot, look)}
+        className="min-h-[52px] w-full resize-none rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
+      />
+      {options.length ? (
+        <div className="flex flex-wrap gap-1.5">
+          {options.map((option) => {
+            const key = option.name.trim().toLowerCase();
+            const active = selected === key;
+            const used = !active && taken.includes(key);
+            return (
+              <button
+                key={option.name}
+                type="button"
+                disabled={disabled || used}
+                aria-pressed={active}
+                onClick={() => onLabel(slot, active ? fallback : option.name)}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium disabled:opacity-40 ${
+                  active
+                    ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white"
+                    : "bg-white/5 text-[var(--ink)] hover:bg-white/10"
+                }`}
+              >
+                {option.name} ({option.role})
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={name}
+          disabled={disabled}
+          placeholder="Role in the script (e.g. Cat)"
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => onLabel(slot, name.trim() || fallback)}
+          className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
+        />
+      )}
     </div>
   );
 }

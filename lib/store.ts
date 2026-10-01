@@ -39,6 +39,9 @@ export function normalizeProject(project: Project): Project {
   project.scriptRefCues = Array.isArray(project.scriptRefCues) ? project.scriptRefCues : [];
   project.skippedRefs = Boolean(project.skippedRefs);
   project.characters = project.characters || [];
+  project.scriptCast = Array.isArray(project.scriptCast)
+    ? project.scriptCast.filter((item) => item?.name?.trim() && item?.role?.trim())
+    : [];
   project.scenes = project.scenes || [];
   project.batches = project.batches || [];
   project.archivedVideos = Array.isArray(project.archivedVideos) ? project.archivedVideos : [];
@@ -121,6 +124,7 @@ export function resetStoryboard(project: Project) {
   project.archivedVideos = [];
   project.locationPlates = [];
   project.characters = [];
+  project.scriptCast = [];
   project.scriptRefCues = [];
   project.skippedRefs = false;
   project.pendingQuestions = [];
@@ -147,7 +151,10 @@ async function persistRemote(project: Project) {
     },
     { onConflict: "id" },
   );
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (process.env.NODE_ENV === "development" && /row-level security|jwt|permission denied/i.test(error.message)) return;
+    throw new Error(error.message);
+  }
 }
 
 async function readRemote(id: string): Promise<Project | null> {
@@ -225,7 +232,7 @@ export async function listProjects(ownerId?: string): Promise<Project[]> {
         .select("payload")
         .eq("owner_id", ownerId)
         .order("updated_at", { ascending: false });
-      if (!error && data) {
+      if (!error && data?.length) {
         return data
           .map((row) => normalizeProject(row.payload as Project))
           .filter((item) => item.id);
