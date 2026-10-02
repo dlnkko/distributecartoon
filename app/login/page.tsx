@@ -32,24 +32,28 @@ export default function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-full place-items-center px-4 py-10">
-      <section className="w-full max-w-md rounded-3xl border border-[var(--line)] bg-white p-7 shadow-[0_20px_60px_rgba(28,25,23,0.08)]">
-        <Brand />
-        <h1 className="display mt-4 text-3xl text-[var(--ink)]">Studio</h1>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
-          Sign in with Google to save your shorts, credits, and generated videos.
-        </p>
-        {status ? <p className="mt-4 text-sm text-[var(--danger)]">{status}</p> : null}
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void signInWithGoogle()}
-          className="btn-primary mt-6 flex w-full items-center justify-center gap-3 rounded-2xl border border-[var(--line)] bg-white px-4 py-3 text-sm font-medium text-[var(--ink)] disabled:opacity-50"
-        >
-          <GoogleIcon />
-          {busy ? "Redirecting…" : "Continue with Google"}
-        </button>
-      </section>
+    <main className="library-shell relative min-h-screen overflow-hidden">
+      <div className="relative grid min-h-screen place-items-center px-4 py-10">
+        <div className="pointer-events-none absolute -left-16 top-16 h-64 w-64 rounded-full bg-[#ff8a3d]/25 blur-3xl" />
+        <div className="pointer-events-none absolute -right-10 bottom-10 h-56 w-56 rounded-full bg-[#ff5e62]/20 blur-3xl" />
+        <section className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-7 shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
+          <Brand tone="accent" />
+          <h1 className="land-display mt-6 text-4xl text-white">Studio</h1>
+          <p className="mt-3 text-sm leading-6 text-[var(--cf-muted)]">
+            Sign in with Google to save your shorts, credits, and generated videos.
+          </p>
+          {status ? <p className="mt-4 text-sm text-red-300">{status}</p> : null}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void signInWithGoogle()}
+            className="btn-primary mt-6 flex w-full items-center justify-center gap-3 rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-[#141417] disabled:opacity-50"
+          >
+            <GoogleIcon />
+            {busy ? "Redirecting…" : "Continue with Google"}
+          </button>
+        </section>
+      </div>
     </main>
   );
 }

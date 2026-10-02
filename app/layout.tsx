@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Outfit, Syne } from "next/font/google";
+import { Fraunces, Outfit, Syne } from "next/font/google";
 import { CANONICAL_ORIGIN } from "@/lib/site";
 import "./globals.css";
 
@@ -13,6 +13,11 @@ const syne = Syne({
   subsets: ["latin"],
 });
 
+const fraunces = Fraunces({
+  variable: "--font-fraunces",
+  subsets: ["latin"],
+});
+
 export const metadata: Metadata = {
   metadataBase: new URL(CANONICAL_ORIGIN),
   title: "Clickframes",
@@ -22,7 +27,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="en" className={`${outfit.variable} ${syne.variable} h-full antialiased`}>
+    <html lang="en" className={`${outfit.variable} ${syne.variable} ${fraunces.variable} h-full antialiased`}>
       <body className="h-full bg-[var(--bg)] text-[var(--ink)]">{children}</body>
     </html>
   );

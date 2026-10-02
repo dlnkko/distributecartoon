@@ -487,6 +487,57 @@ a.btn-primary {
   animation: land-float 7s ease-in-out infinite;
 }
 
+.land-display {
+  font-family: var(--font-fraunces), Palatino, "Palatino Linotype", serif;
+  letter-spacing: -0.03em;
+}
+
+.film-frame {
+  border-radius: 1.25rem;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    inset 0 0 0 10px #0c0c0f,
+    0 24px 60px rgba(0, 0, 0, 0.35);
+}
+
+.land-link {
+  background-image: linear-gradient(90deg, #ff8a3d, #ff5e62);
+  background-position: 0 100%;
+  background-repeat: no-repeat;
+  background-size: 0 2px;
+}
+
+.land-clapper {
+  overflow: hidden;
+  border-radius: 0.75rem;
+  background: #16161a;
+}
+
+.land-clapper-sticks {
+  height: 14px;
+  background: repeating-linear-gradient(
+    -32deg,
+    #141417 0 8px,
+    #f4f4f5 8px 14px
+  );
+}
+
+@keyframes land-sticks {
+  from { background-position: 0 0; }
+  to { background-position: 28px 0; }
+}
+
+.land-clapper-sticks {
+  animation: land-sticks 0.8s linear infinite;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .land-link:hover {
+    background-size: 100% 2px;
+    transition: background-size 0.35s ease;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .cf-grid > *,
   .cf-card,
@@ -495,7 +546,8 @@ a.btn-primary {
   .cf-chip-indicator,
   .land-orb,
   .land-marquee,
-  .land-float {
+  .land-float,
+  .land-clapper-sticks {
     animation: none;
     transition: none;
   }
