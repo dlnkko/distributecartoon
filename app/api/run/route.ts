@@ -9,6 +9,8 @@ import { activeTask } from "@/lib/tasks";
 import type { AgentMode, Project, StudioEvent } from "@/lib/types";
 import { projectDeliveredSrc } from "@/lib/video-jobs";
 import { activeMembership } from "@/lib/billing";
+import { generationCreditCost } from "@/lib/credits";
+import { spendCredits } from "@/lib/spend-credits";
 import { whopReady } from "@/lib/whop";
 
 export const runtime = "nodejs";
@@ -116,6 +118,14 @@ export async function POST(request: Request) {
   }
   if (body.mode === "produce" && whopReady() && !project.paidAt && !(await activeMembership())) {
     return new Response(JSON.stringify({ error: "Subscribe on the pricing page before generating." }), { status: 402 });
+  }
+
+  if (body.mode === "produce" && !project.keepGenerating && !projectDeliveredSrc(project)) {
+    const cost = generationCreditCost(project);
+    const spent = await spendCredits(cost);
+    if (!spent.ok) {
+      return new Response(JSON.stringify({ error: spent.error }), { status: 402 });
+    }
   }
 
   if (body.mode === "produce") {

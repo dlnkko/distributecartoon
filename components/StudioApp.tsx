@@ -12,6 +12,7 @@ import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
+import { generationCreditCost } from "@/lib/credits";
 import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
@@ -619,6 +620,11 @@ export function StudioApp() {
     return merged;
   }
 
+  async function refreshProfile() {
+    const meRes = await fetch("/api/me");
+    if (meRes.ok) setProfile((await meRes.json()) as Profile);
+  }
+
   async function run(mode: AgentMode) {
     if (!project || busy) return;
     setBusy(true);
@@ -641,6 +647,17 @@ export function StudioApp() {
         body: JSON.stringify({ projectId: project.id, mode }),
         signal: controller?.signal,
       });
+      if (!res.ok) {
+        const json = (await res.json().catch(() => null)) as { error?: string } | null;
+        if (mode === "produce") {
+          markGenerating(project.id, false);
+          setPane("studio");
+        }
+        setStatus(json?.error || "Couldn't start that.");
+        await refreshProfile();
+        return;
+      }
+      if (mode === "produce") void refreshProfile();
       if (!res.body) {
         if (mode === "produce") {
           markGenerating(project.id, true);
@@ -1435,6 +1452,8 @@ export function StudioApp() {
             <CastStep
               characters={project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character))}
               busy={working}
+              creditCost={generationCreditCost(project)}
+              credits={credits}
               onBack={() => void patchProject({ workflowStep: "review" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
               onContinue={() => void continueFromCast()}
@@ -2270,18 +2289,23 @@ function ReviewStep({
 function CastStep({
   characters,
   busy,
+  creditCost,
+  credits,
   onBack,
   onRevise,
   onContinue,
 }: {
   characters: Character[];
   busy: boolean;
+  creditCost: number;
+  credits: number;
   onBack: () => void;
   onRevise: (characterId: string, notes: string) => void;
   onContinue: () => void;
 }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const ready = characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
+  const affordable = credits >= creditCost;
 
   return (
     <div className="rise-in flex flex-1 flex-col gap-3">
@@ -2353,14 +2377,17 @@ function CastStep({
 
       <div className="mt-auto flex items-center justify-between pt-2">
         <BackButton disabled={busy} onClick={onBack} />
-        <button
-          type="button"
-          disabled={busy || !ready}
-          onClick={onContinue}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
-        >
-          Continue
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            disabled={busy || !ready || !affordable}
+            onClick={onContinue}
+            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+          >
+            {`Generate - ${creditCost} credits`}
+          </button>
+          {affordable ? null : <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p>}
+        </div>
       </div>
     </div>
   );
