@@ -11,6 +11,7 @@ import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
+import { downloadHref } from "@/components/library/download";
 import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
@@ -1564,7 +1565,7 @@ export function StudioApp() {
             />
             <div className="flex w-full flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
               <a
-                href={expanded.src}
+                href={downloadHref(expanded.src, expanded.downloadName || "video.mp4")}
                 download={expanded.downloadName || "video.mp4"}
                 className="btn-primary inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-white px-5 text-sm font-medium text-[#111110] sm:w-auto"
               >
@@ -2945,7 +2946,7 @@ function VideoStage({
             {ready ? (
               <>
                 <a
-                  href={src}
+                  href={downloadHref(src || "", downloadName || "video.mp4")}
                   download={downloadName || "video.mp4"}
                   className="btn-primary inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-medium text-[var(--ink)] shadow-[0_10px_30px_rgba(0,0,0,0.25)] sm:w-auto"
                 >

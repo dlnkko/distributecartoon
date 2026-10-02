@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { downloadHref } from "@/components/library/download";
 import type { LibraryGenerating, LibraryVideo, LibraryView } from "@/components/library/types";
 
 function timeAgo(iso: string) {
@@ -118,7 +119,7 @@ export function VideoCard({
         <button type="button" onClick={onEdit} className="no-press inline-flex h-11 items-center rounded-xl border border-white/10 bg-black/50 px-3 text-xs text-white backdrop-blur-md" aria-label={`Edit ${title}`}>
           Edit
         </button>
-        <a href={src} download={downloadName} className="no-press inline-flex h-11 items-center rounded-xl border border-white/10 bg-black/50 px-3 text-xs text-white backdrop-blur-md" aria-label={`Download ${title}`}>
+        <a href={downloadHref(src, downloadName)} download={downloadName} className="no-press inline-flex h-11 items-center rounded-xl border border-white/10 bg-black/50 px-3 text-xs text-white backdrop-blur-md" aria-label={`Download ${title}`}>
           Download
         </a>
         <button
@@ -135,7 +136,7 @@ export function VideoCard({
             <button type="button" role="menuitem" onClick={onEdit} className="no-press block min-h-11 w-full px-3 text-left text-sm hover:bg-white/5">
               Edit
             </button>
-            <a role="menuitem" href={src} download={downloadName} className="block min-h-11 px-3 py-3 text-sm hover:bg-white/5">
+            <a role="menuitem" href={downloadHref(src, downloadName)} download={downloadName} className="block min-h-11 px-3 py-3 text-sm hover:bg-white/5">
               Download
             </a>
           </div>
