@@ -5,7 +5,7 @@ import { Brand } from "@/components/Brand";
 import { CreditsPill, CreditsWidget } from "@/components/library/CreditsWidget";
 import { FilterChips } from "@/components/library/FilterChips";
 import { MobileNav } from "@/components/library/MobileNav";
-import type { LibraryFilter, LibraryGenerating, LibraryProfile, LibrarySort, LibraryVideo, LibraryView } from "@/components/library/types";
+import type { LibraryDraft, LibraryFilter, LibraryGenerating, LibraryProfile, LibrarySort, LibraryVideo, LibraryView, LibraryZone } from "@/components/library/types";
 import { VideoGrid } from "@/components/library/VideoGrid";
 
 function matchesDuration(duration: number, filter: LibraryFilter) {
@@ -15,13 +15,17 @@ function matchesDuration(duration: number, filter: LibraryFilter) {
 }
 
 export function LibraryShell({
+  zone,
   videos,
+  drafts,
   generating,
   credits,
   profile,
   error,
+  onZone,
   onPlay,
   onEdit,
+  onOpenDraft,
   onCreate,
   onCreateSong,
   onAccount,
@@ -30,13 +34,17 @@ export function LibraryShell({
   resolveSrc,
   downloadName,
 }: {
+  zone: LibraryZone;
   videos: LibraryVideo[];
+  drafts: LibraryDraft[];
   generating: LibraryGenerating[];
   credits: number;
   profile?: LibraryProfile | null;
   error?: string;
+  onZone: (zone: LibraryZone) => void;
   onPlay: (item: LibraryVideo) => void;
   onEdit: (projectId: string) => void;
+  onOpenDraft: (projectId: string) => void;
   onCreate: () => void;
   onCreateSong: () => void;
   onAccount: () => void;
@@ -55,6 +63,15 @@ export function LibraryShell({
   const [creditsOpen, setCreditsOpen] = useState(false);
 
   const needle = query.trim().toLowerCase();
+  const shownDrafts = useMemo(() => {
+    const next = drafts.filter((item) => !needle || item.title.toLowerCase().includes(needle));
+    next.sort((a, b) => {
+      const left = new Date(a.updatedAt || 0).getTime();
+      const right = new Date(b.updatedAt || 0).getTime();
+      return sort === "oldest" ? left - right : right - left;
+    });
+    return next;
+  }, [drafts, needle, sort]);
   const finished = useMemo(() => {
     const next = videos.filter((item) => {
       if (needle && !(item.title || "untitled video").toLowerCase().includes(needle)) return false;
@@ -82,12 +99,17 @@ export function LibraryShell({
 
   const total = videos.length + generating.length;
   const shown = finished.length + pending.length;
-  const empty = total === 0;
-  const summary = empty
-    ? "Finished videos will appear here."
-    : generating.length
-      ? `${generating.length} processing, ${videos.length} ready`
-      : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`;
+  const empty = zone === "drafts" ? drafts.length === 0 : total === 0;
+  const summary =
+    zone === "drafts"
+      ? drafts.length
+        ? `${drafts.length} unfinished ${drafts.length === 1 ? "video" : "videos"}`
+        : "Unfinished videos land here."
+      : empty
+        ? "Finished videos will appear here."
+        : generating.length
+          ? `${generating.length} processing, ${videos.length} ready`
+          : `${videos.length} finished ${videos.length === 1 ? "video" : "videos"}`;
 
   useEffect(() => {
     if (!menu) return;
@@ -125,9 +147,13 @@ export function LibraryShell({
           </button>
         </div>
         <nav className={`mt-4 flex flex-1 flex-col gap-1 border-t border-[var(--cf-line)] pt-3 ${narrow ? "items-center px-2" : "px-3"}`} aria-label="Studio">
-          <button type="button" aria-label="Your videos" className={`no-press flex items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-sm font-medium text-white shadow-[0_0_24px_rgba(255,138,61,0.16)] ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`} aria-current="page">
+          <button type="button" aria-label="Your videos" aria-current={zone === "videos" ? "page" : undefined} onClick={() => onZone("videos")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "videos" ? "bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
             <FilmIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Your videos"}
+          </button>
+          <button type="button" aria-label="Drafts" aria-current={zone === "drafts" ? "page" : undefined} onClick={() => onZone("drafts")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "drafts" ? "bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
+            <DraftIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
+            {narrow ? null : "Drafts"}
           </button>
         </nav>
         <div className={narrow ? "px-2 pb-2" : "px-3 pb-2"}>
@@ -176,7 +202,7 @@ export function LibraryShell({
           <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(255,138,61,0.22),transparent_68%)] blur-3xl" />
           <div className="relative flex items-end gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="display text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-5xl">Your videos</h2>
+              <h2 className="display text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-5xl">{zone === "drafts" ? "Drafts" : "Your videos"}</h2>
               <p className="mt-2 text-sm text-[var(--cf-muted)]">{summary}</p>
             </div>
             <div className="flex items-center gap-2 lg:hidden">
@@ -196,38 +222,70 @@ export function LibraryShell({
               <input
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
-                placeholder="Search videos"
+                placeholder={zone === "drafts" ? "Search drafts" : "Search videos"}
                 className="h-11 w-full rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] pr-3 pl-10 text-sm outline-none placeholder:text-[var(--cf-muted)]"
               />
             </label>
             <label className="sr-only" htmlFor="video-sort">Sort videos</label>
             <select
               id="video-sort"
-              value={sort}
+              value={zone === "drafts" && sort === "longest" ? "newest" : sort}
               onChange={(event) => setSort(event.target.value as LibrarySort)}
               className="h-11 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 text-sm"
             >
               <option value="newest">Newest</option>
               <option value="oldest">Oldest</option>
-              <option value="longest">Longest</option>
+              {zone === "videos" ? <option value="longest">Longest</option> : null}
             </select>
-            <div className="flex h-11 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-1">
+            {zone === "videos" ? <div className="flex h-11 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-1">
               <button type="button" aria-label="Grid view" aria-pressed={view === "grid"} onClick={() => setView("grid")} className={`no-press grid h-9 w-11 place-items-center rounded-lg ${view === "grid" ? "bg-white/10 text-white" : "text-[var(--cf-muted)]"}`}>
                 <GridIcon />
               </button>
               <button type="button" aria-label="List view" aria-pressed={view === "list"} onClick={() => setView("list")} className={`no-press grid h-9 w-11 place-items-center rounded-lg ${view === "list" ? "bg-white/10 text-white" : "text-[var(--cf-muted)]"}`}>
                 <ListIcon />
               </button>
+            </div> : null}
+          </div>
+          {zone === "videos" ? (
+            <div className="relative mt-3">
+              <FilterChips value={filter} onChange={setFilter} />
             </div>
-          </div>
-          <div className="relative mt-3">
-            <FilterChips value={filter} onChange={setFilter} />
-          </div>
+          ) : null}
         </header>
 
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pt-5 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pb-10">
           {error ? <p className="mb-4 text-sm text-[#fb7185]">{error}</p> : null}
-          {empty ? (
+          {zone === "drafts" ? (
+            shownDrafts.length === 0 ? (
+              <div className="mx-auto mt-10 flex max-w-lg flex-col items-center rounded-[20px] border border-[var(--cf-line)] bg-[radial-gradient(circle_at_50%_0%,rgba(255,138,61,0.22),transparent_55%),var(--cf-surface)] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <p className="display text-3xl">{drafts.length ? "No drafts match" : "No drafts yet"}</p>
+                <p className="mt-2 max-w-sm text-sm text-[var(--cf-muted)]">
+                  {drafts.length
+                    ? "Try another search."
+                    : "Leave a script or song video before Generate and it shows up here."}
+                </p>
+              </div>
+            ) : (
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {shownDrafts.map((item) => (
+                  <article key={item.id} className="flex flex-col rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--cf-muted)]">
+                      {item.kind} · {item.step}
+                    </p>
+                    <h3 className="mt-2 truncate text-lg font-semibold">{item.title || "Untitled video"}</h3>
+                    <p className="mt-1 text-xs text-[var(--cf-muted)]">{timeAgo(item.updatedAt)}</p>
+                    <button
+                      type="button"
+                      onClick={() => onOpenDraft(item.id)}
+                      className="btn-primary mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-4 text-sm font-semibold text-white"
+                    >
+                      Continue
+                    </button>
+                  </article>
+                ))}
+              </div>
+            )
+          ) : empty ? (
             <div className="mx-auto mt-10 flex max-w-lg flex-col items-center rounded-[20px] border border-[var(--cf-line)] bg-[radial-gradient(circle_at_50%_0%,rgba(255,138,61,0.22),transparent_55%),var(--cf-surface)] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
               <p className="display text-3xl">No videos yet</p>
               <p className="mt-2 max-w-sm text-sm text-[var(--cf-muted)]">When a video finishes, it will show up on this board.</p>
@@ -252,7 +310,7 @@ export function LibraryShell({
         </div>
       </div>
 
-      <MobileNav onVideos={() => undefined} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} />
+      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} />
 
       {creditsOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -282,6 +340,25 @@ function Avatar({ profile, compact = false }: { profile?: LibraryProfile | null;
         (profile?.displayName || "A").slice(0, 1).toUpperCase()
       )}
     </span>
+  );
+}
+
+function timeAgo(iso: string) {
+  const delta = Date.now() - new Date(iso || 0).getTime();
+  const mins = Math.max(1, Number.isFinite(delta) ? Math.round(delta / 60000) : 1);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return days === 1 ? "1 day ago" : `${days} days ago`;
+}
+
+function DraftIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 2.5h5.2L12.5 5.8V13a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5v-10A.5.5 0 0 1 4 2.5Z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M9 2.8V6h3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }
 

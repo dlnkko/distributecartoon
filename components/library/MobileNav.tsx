@@ -1,20 +1,25 @@
 "use client";
 
 export function MobileNav({
+  zone,
   onVideos,
+  onDrafts,
   onCreate,
   onSong,
   onAccount,
 }: {
+  zone: "videos" | "drafts";
   onVideos: () => void;
+  onDrafts: () => void;
   onCreate: () => void;
   onSong: () => void;
   onAccount: () => void;
 }) {
   const items = [
     { label: "Create", onClick: onCreate, icon: PlusGlyph, active: false },
-    { label: "Suno video", onClick: onSong, icon: SongGlyph, active: false },
-    { label: "Your videos", onClick: onVideos, icon: VideosGlyph, active: true },
+    { label: "Suno", onClick: onSong, icon: SongGlyph, active: false },
+    { label: "Videos", onClick: onVideos, icon: VideosGlyph, active: zone === "videos" },
+    { label: "Drafts", onClick: onDrafts, icon: DraftGlyph, active: zone === "drafts" },
     { label: "Account", onClick: onAccount, icon: AccountGlyph, active: false },
   ];
   return (
@@ -23,7 +28,7 @@ export function MobileNav({
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Primary"
     >
-      <ul className="grid grid-cols-4">
+      <ul className="grid grid-cols-5">
         {items.map((item) => (
           <li key={item.label}>
             <button
@@ -64,6 +69,15 @@ function SongGlyph() {
       <path d="M6 12.2V3.2l7-1.2v8.4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       <circle cx="4.4" cy="12.2" r="1.6" stroke="currentColor" strokeWidth="1.4" />
       <circle cx="11.4" cy="10.4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function DraftGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 2.5h5.2L12.5 5.8V13a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5v-10A.5.5 0 0 1 4 2.5Z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M9 2.8V6h3.2M5.2 8.5h5.6M5.2 11h3.6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

@@ -7,6 +7,7 @@ import {
   leadCharacters,
   reviseCharacterLook,
 } from "@/lib/pipeline";
+import { applySongLooks } from "@/lib/cast-roster";
 import { refineStoryLeads } from "@/lib/refs";
 import { saveProject } from "@/lib/store";
 import { activeTask } from "@/lib/tasks";
@@ -48,6 +49,7 @@ export async function POST(request: Request) {
     characterId?: string;
     notes?: string;
     confirm?: boolean;
+    prepareSong?: boolean;
   };
   if (!body.projectId) return NextResponse.json({ error: "Missing project." }, { status: 400 });
   const loaded = await loadOwnedProject(body.projectId);
@@ -83,6 +85,16 @@ export async function POST(request: Request) {
 
   return castInBackground(project, async () => {
     refineStoryLeads(project);
+    if (project.song) applySongLooks(project);
+    if (body.prepareSong && project.song) {
+      for (const character of leadCharacters(project)) {
+        if (character.lookConfirmed) continue;
+        delete character.portraitFileName;
+        delete character.portraitPublicPath;
+        delete character.portraitRemoteUrl;
+        delete character.sourceRefId;
+      }
+    }
     await saveProject(project);
     if (leadCharacters(project).length) await ensureCharacterLooks(project, () => undefined);
   });

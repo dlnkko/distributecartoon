@@ -134,7 +134,7 @@ function shortLookAppearance(character: Character) {
     )
     .replace(/\s{2,}/g, " ")
     .trim();
-  const words = text.split(/\s+/).filter(Boolean).slice(0, 12);
+  const words = text.split(/\s+/).filter(Boolean).slice(0, 40);
   const look = words.join(" ");
   if (!look || look.toLowerCase() === name.toLowerCase()) return name;
   return `${name}, ${look}`;

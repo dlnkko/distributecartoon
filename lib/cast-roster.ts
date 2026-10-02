@@ -71,6 +71,18 @@ export function scriptLookFor(project: Project, name: string) {
 }
 
 /** The user's chosen name, role, and look replace whatever the storyboard invented. */
+/** After a song's scenes exist, the user's written look replaces the invented description. */
+export function applySongLooks(project: Project) {
+  if (!project.song) return project;
+  for (const character of project.characters) {
+    if (character.isExtra) continue;
+    const look = scriptLookFor(project, character.name);
+    if (!look) continue;
+    character.description = look;
+  }
+  return project;
+}
+
 export function applyScriptLooks(project: Project) {
   const cast = project.scriptCast || [];
   if (!cast.length) return project;

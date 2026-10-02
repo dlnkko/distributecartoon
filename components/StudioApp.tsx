@@ -13,8 +13,10 @@ import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDel
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
 import { generationCreditCost } from "@/lib/credits";
+import { draftKind, draftStepLabel, isDraftProject } from "@/lib/drafts";
 import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
+import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
@@ -132,7 +134,7 @@ function stepReachable(project: Project, step: WorkflowStep) {
     return Boolean(project.scriptText.trim());
   }
   if (step === "review") return project.scenes.length > 0;
-  if (step === "cast") return project.scenes.length > 0 && missingCastLooks(project).length === 0;
+  if (step === "cast") return project.scenes.length > 0 && (Boolean(project.song) || missingCastLooks(project).length === 0);
   return Boolean(projectDeliveredSrc(project));
 }
 
@@ -322,11 +324,26 @@ function missingCastLooks(project: Project) {
   );
 }
 
-async function fetchCast(projectId: string, signal: AbortSignal) {
+function songLookPairs(project: Project) {
+  const leads = project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character));
+  const slots = slotsOf(project, "character");
+  const used = new Set<string>();
+  return leads.flatMap((character) => {
+    const name = character.name.trim().toLowerCase();
+    let slot = slots.find((item) => !used.has(item.id) && item.label.trim().toLowerCase() === name);
+    if (!slot) slot = slots.find((item) => !used.has(item.id) && /^character\s*\d+$/i.test(item.label.trim()));
+    if (!slot) slot = slots.find((item) => !used.has(item.id));
+    if (!slot) return [];
+    used.add(slot.id);
+    return [{ character, slot }];
+  });
+}
+
+async function fetchCast(projectId: string, signal: AbortSignal, prepareSong = false) {
   const res = await fetch("/api/cast", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId }),
+    body: JSON.stringify(prepareSong ? { projectId, prepareSong: true } : { projectId }),
     signal,
   });
   return (await res.json()) as { project?: Project; error?: string };
@@ -339,10 +356,10 @@ async function loadProjectById(projectId: string, signal: AbortSignal) {
   return null;
 }
 
-async function requestCastLooks(projectId: string, signal: AbortSignal) {
+async function requestCastLooks(projectId: string, signal: AbortSignal, prepareSong = false) {
   let json: { project?: Project; error?: string };
   try {
-    json = await fetchCast(projectId, signal);
+    json = await fetchCast(projectId, signal, prepareSong);
   } catch (error) {
     if ((error as Error).name === "AbortError") throw error;
     const recovered = await loadProjectById(projectId, signal);
@@ -390,6 +407,7 @@ export function StudioApp() {
   const [notifyReady, setNotifyReady] = useState(false);
   const [notifyHint, setNotifyHint] = useState("");
   const [pane, setPane] = useState<"library" | "studio">("library");
+  const [libraryZone, setLibraryZone] = useState<LibraryZone>("videos");
   const [payOpen, setPayOpen] = useState(false);
   const [generatingIds, setGeneratingIds] = useState<string[]>([]);
   const busyRef = useRef(false);
@@ -986,7 +1004,36 @@ export function StudioApp() {
       if (!saved) return;
       setScenesDraft(scenes);
       setPane("studio");
+      if (saved.song) {
+        setStatus("");
+        return;
+      }
       const json = await requestCastLooks(saved.id, controller.signal);
+      if (json.project) {
+        remember(json.project);
+        const missing = missingCastLooks(json.project);
+        setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
+      } else {
+        setStatus(json.error || "Couldn't cast those characters.");
+      }
+    } catch (error) {
+      if ((error as Error).name === "AbortError") setStatus("Stopped.");
+      else setStatus(error instanceof Error ? error.message : "Couldn't cast those characters.");
+    } finally {
+      if (abortRef.current === controller) abortRef.current = null;
+      setBusy(false);
+    }
+  }
+
+  async function continueFromSongLooks() {
+    if (!project || busy) return;
+    setBusy(true);
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    try {
+      setPane("studio");
+      const json = await requestCastLooks(project.id, controller.signal, true);
       if (json.project) {
         remember(json.project);
         const missing = missingCastLooks(json.project);
@@ -1122,6 +1169,28 @@ export function StudioApp() {
   }
 
   const history = useMemo(() => historyFromProjects(projects), [projects]);
+  const drafts = useMemo<LibraryDraft[]>(
+    () =>
+      projects
+        .filter(isDraftProject)
+        .map((item) => ({
+          id: item.id,
+          title: item.title || "Untitled video",
+          kind: draftKind(item),
+          step: draftStepLabel(item),
+          updatedAt: item.updatedAt || item.createdAt,
+        }))
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()),
+    [projects],
+  );
+
+  function leaveStudio(zone: LibraryZone) {
+    const current = projectRef.current;
+    const next = zone === "videos" && current && isDraftProject(current) ? "drafts" : zone;
+    setLibraryZone(next);
+    setPane("library");
+    setSidebarOpen(false);
+  }
   const generating = useMemo(
     () =>
       projects
@@ -1199,11 +1268,18 @@ export function StudioApp() {
     <div className="library-shell relative flex h-dvh overflow-hidden" data-style={project.style}>
       {pane === "library" ? (
         <LibraryShell
+          zone={libraryZone}
           videos={history}
+          drafts={drafts}
           generating={generating}
           credits={credits}
           profile={profile}
           error={status && !busy && /couldn't|failed|error|stopped|request failed/i.test(status) ? status : ""}
+          onZone={setLibraryZone}
+          onOpenDraft={(projectId) => {
+            const found = projects.find((entry) => entry.id === projectId);
+            if (found) void selectProject(found);
+          }}
           onPlay={(item) =>
             setExpanded({
               src: assetSrc(item.src),
@@ -1275,14 +1351,19 @@ export function StudioApp() {
         <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 border-t border-[var(--cf-line)] px-3 pt-3" aria-label="Studio">
           <button
             type="button"
-            onClick={() => {
-              setPane("library");
-              setSidebarOpen(false);
-            }}
+            onClick={() => leaveStudio("videos")}
             className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
           >
             <VideosIcon />
             Your videos
+          </button>
+          <button
+            type="button"
+            onClick={() => leaveStudio("drafts")}
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+          >
+            <DraftNavIcon />
+            Drafts
           </button>
         </nav>
 
@@ -1322,9 +1403,19 @@ export function StudioApp() {
             <div className="min-w-0 flex-1">
               <h2 className="display truncate text-2xl leading-none font-semibold tracking-[-0.045em] md:text-[32px]">{project.title}</h2>
             </div>
+            {stepIndex(project, step) >= 1 && isDraftProject(project) ? (
+              <button
+                type="button"
+                disabled={working}
+                onClick={() => leaveStudio("drafts")}
+                className="no-press shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40"
+              >
+                Save to drafts
+              </button>
+            ) : null}
             <button
               type="button"
-              onClick={() => setPane("library")}
+              onClick={() => leaveStudio("videos")}
               className="no-press shrink-0 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 py-2 text-sm hover:bg-white/5"
             >
               <span className="sm:hidden">Library</span>
@@ -1448,7 +1539,21 @@ export function StudioApp() {
             />
           ) : null}
 
-          {step === "cast" ? (
+          {step === "cast" && project.song && missingCastLooks(project).length > 0 && !working ? (
+            <SongLookStep
+              pairs={songLookPairs(project)}
+              busy={working}
+              uploadingSlotId={uploadingSlotId}
+              onBack={() => void patchProject({ workflowStep: "review" })}
+              onPick={(slot) => pickRef(slot)}
+              onClear={(slot) => void onClearRef(slot)}
+              onLabel={(slot, label) => onLabelRef(slot, label)}
+              onLook={(slot, look) => onLookRef(slot, look)}
+              onContinue={() => void continueFromSongLooks()}
+            />
+          ) : null}
+
+          {step === "cast" && !(project.song && missingCastLooks(project).length > 0 && !working) ? (
             <CastStep
               characters={project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character))}
               busy={working}
@@ -1822,7 +1927,7 @@ function SongStep({
   return (
     <div className="rise-in flex flex-1 flex-col">
       <h3 className="display text-3xl md:text-4xl">Song video</h3>
-      <p className="mt-1 text-sm text-[var(--muted)]">Upload a Suno song, the product, and what it is about. Scenes come after the next step.</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Upload a Suno song, the product, and what it is about. Characters are chosen after the scenes.</p>
 
       <button
         type="button"
@@ -1927,10 +2032,10 @@ function SetupStep({
   return (
     <div className="rise-in flex flex-1 flex-col gap-3">
       <div>
-        <h3 className="display text-2xl md:text-3xl">{project.song ? "Characters and places" : "Look and length"}</h3>
+        <h3 className="display text-2xl md:text-3xl">{project.song ? "Style and places" : "Look and length"}</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {project.song
-            ? "The song sets the length. Add characters and places if you have them. Every photo needs at least 300×300 pixels."
+            ? "The song sets the length. Characters come after the scenes, once the script exists. Every photo needs at least 300×300 pixels."
             : "Photos are optional. Every photo needs at least 300×300 pixels. Pick a character from the script and describe the look."}
         </p>
       </div>
@@ -1964,6 +2069,7 @@ function SetupStep({
         )}
       </section>
 
+      {project.song ? null : (
       <section className="setup-card">
         <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">
           Characters · up to 4
@@ -1994,6 +2100,7 @@ function SetupStep({
           ))}
         </div>
       </section>
+      )}
 
       {project.song ? null : (
         <section className="setup-card">
@@ -2280,6 +2387,103 @@ function ReviewStep({
           className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
         >
           {hasVideo ? "Generate" : "Continue"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SongLookStep({
+  pairs,
+  busy,
+  uploadingSlotId,
+  onBack,
+  onPick,
+  onClear,
+  onLabel,
+  onLook,
+  onContinue,
+}: {
+  pairs: Array<{ character: Character; slot: ReferenceAsset }>;
+  busy: boolean;
+  uploadingSlotId: string;
+  onBack: () => void;
+  onPick: (slot: ReferenceAsset) => void;
+  onClear: (slot: ReferenceAsset) => void;
+  onLabel: (slot: ReferenceAsset, label: string) => Promise<void> | void;
+  onLook: (slot: ReferenceAsset, look: string) => Promise<void> | void;
+  onContinue: () => void;
+}) {
+  const [looks, setLooks] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setLooks((current) => {
+      const next = { ...current };
+      for (const pair of pairs) {
+        if (next[pair.slot.id] === undefined) next[pair.slot.id] = pair.slot.lookNotes || "";
+      }
+      return next;
+    });
+  }, [pairs]);
+
+  return (
+    <div className="rise-in flex flex-1 flex-col gap-3">
+      <div>
+        <h3 className="display text-2xl md:text-3xl">How they look</h3>
+        <p className="mt-1 text-sm text-[var(--muted)]">
+          These characters are in the scenes. Describe how each one should look, and add a photo if you have one.
+        </p>
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2">
+        {pairs.map(({ character, slot }) => {
+          const preview = slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : "";
+          const look = looks[slot.id] ?? slot.lookNotes ?? "";
+          return (
+            <article key={character.id} className="space-y-2 rounded-2xl border border-[var(--line)] bg-white p-3">
+              <p className="text-sm font-medium">{character.name}</p>
+              <textarea
+                value={look}
+                disabled={busy}
+                rows={3}
+                placeholder="How they should look"
+                onChange={(event) => setLooks((current) => ({ ...current, [slot.id]: event.target.value }))}
+                onBlur={() => void onLook(slot, look)}
+                className="min-h-[72px] w-full resize-none rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
+              />
+              <UploadTile
+                label="Photo"
+                preview={preview}
+                hint={preview ? "Replace photo" : "Optional · at least 300×300"}
+                disabled={busy && uploadingSlotId !== slot.id}
+                uploading={uploadingSlotId === slot.id}
+                onClick={() => onPick(slot)}
+                onRemove={preview ? () => onClear(slot) : undefined}
+              />
+            </article>
+          );
+        })}
+      </div>
+
+      <div className="mt-auto flex items-center justify-between pt-2">
+        <BackButton disabled={busy} onClick={onBack} />
+        <button
+          type="button"
+          disabled={busy || pairs.length === 0}
+          onClick={() => {
+            void (async () => {
+              for (const pair of pairs) {
+                if (pair.slot.label.trim().toLowerCase() !== pair.character.name.trim().toLowerCase()) {
+                  await onLabel(pair.slot, pair.character.name);
+                }
+                await onLook(pair.slot, looks[pair.slot.id] ?? pair.slot.lookNotes ?? "");
+              }
+              onContinue();
+            })();
+          }}
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+        >
+          Continue
         </button>
       </div>
     </div>
@@ -2783,6 +2987,15 @@ function SongNavIcon() {
       <path d="M6 12.2V3.2l7-1.2v8.4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       <circle cx="4.4" cy="12.2" r="1.6" stroke="currentColor" strokeWidth="1.4" />
       <circle cx="11.4" cy="10.4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function DraftNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M4 2.5h5.2L12.5 5.8V13a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5v-10A.5.5 0 0 1 4 2.5Z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M9 2.8V6h3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

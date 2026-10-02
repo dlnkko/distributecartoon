@@ -19,6 +19,15 @@ export type LibraryGenerating = {
 export type LibraryFilter = "all" | "60" | "120" | "processing";
 export type LibrarySort = "newest" | "oldest" | "longest";
 export type LibraryView = "grid" | "list";
+export type LibraryZone = "videos" | "drafts";
+
+export type LibraryDraft = {
+  id: string;
+  title: string;
+  kind: "Script" | "Song";
+  step: string;
+  updatedAt: string;
+};
 
 export type LibraryProfile = {
   email: string;
