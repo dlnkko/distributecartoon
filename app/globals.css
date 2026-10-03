@@ -572,6 +572,55 @@ a.btn-primary {
   animation: land-sticks 0.8s linear infinite;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .land-reveal {
+    opacity: 0;
+    transform: translateY(28px);
+    transition:
+      opacity 0.75s cubic-bezier(0.22, 1, 0.36, 1),
+      transform 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .land-reveal.is-in {
+    opacity: 1;
+    transform: none;
+  }
+
+  .land-swap {
+    animation: land-swap 0.5s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes land-swap {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes land-veil-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes land-veil-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes land-offer-in {
+  from { opacity: 0; transform: translateY(18px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+@keyframes land-offer-out {
+  from { opacity: 1; transform: none; }
+  to { opacity: 0; transform: translateY(12px) scale(0.98); }
+}
+
+.land-veil-in { animation: land-veil-in 0.35s ease both; }
+.land-veil-out { animation: land-veil-out 0.32s ease both; }
+.land-offer-in { animation: land-offer-in 0.48s cubic-bezier(0.22, 1, 0.36, 1) both; }
+.land-offer-out { animation: land-offer-out 0.32s ease both; }
+
 @media (hover: hover) and (pointer: fine) {
   .land-link:hover {
     background-size: 100% 2px;
@@ -588,7 +637,13 @@ a.btn-primary {
   .land-orb,
   .land-marquee,
   .land-float,
-  .land-clapper-sticks {
+  .land-clapper-sticks,
+  .land-reveal,
+  .land-swap,
+  .land-veil-in,
+  .land-veil-out,
+  .land-offer-in,
+  .land-offer-out {
     animation: none;
     transition: none;
   }

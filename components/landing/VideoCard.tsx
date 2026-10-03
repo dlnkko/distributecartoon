@@ -7,7 +7,7 @@ type Clip = { mp4: string; webm: string; poster: string; label: string };
 export function VideoCard({
   clip,
   ratio = "aspect-video",
-  play = "hover",
+  play = "view",
   frame = "01",
   className = "",
 }: {
@@ -42,7 +42,7 @@ export function VideoCard({
 
   function hover(on: boolean) {
     const video = ref.current;
-    if (!video || failed || play === "always") return;
+    if (!video || failed || play !== "hover") return;
     const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     if (!fine) return;
     if (on) void video.play().catch(() => undefined);
