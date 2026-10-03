@@ -454,7 +454,18 @@ export function StudioApp() {
         setProjects(list);
         const currentId = projectRef.current?.id;
         const latest = currentId ? list.find((item) => item.id === currentId) : undefined;
-        if (!latest) return;
+        if (!latest) {
+          const watching = projectRef.current;
+          if (
+            currentId &&
+            watching?.id === currentId &&
+            (projectIsGenerating(watching) || projectAwaitingVideo(watching))
+          ) {
+            const recovered = await loadProjectById(currentId, new AbortController().signal).catch(() => null);
+            if (recovered && !cancelled) remember(recovered);
+          }
+          return;
+        }
         const hadVideo = Boolean(projectDeliveredSrc(projectRef.current));
         const hadTask = Boolean(activeTask(projectRef.current));
         remember(latest);
@@ -2124,13 +2135,14 @@ function SetupStep({
 
       <section className="setup-card">
         <div className="grid gap-4 sm:grid-cols-2">
-          <div>
+          <div className="sm:col-span-2">
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Style</p>
             <Segmented
               value={project.style}
               options={[
                 { id: "pixar", label: "Pixar" },
                 { id: "claymation", label: "Claymation" },
+                { id: "realistic", label: "Realistic" },
               ]}
               onChange={(value) => onStyle(value as VisualStyle)}
             />
@@ -2858,7 +2870,7 @@ function Segmented({
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
-          className={`h-full flex-1 rounded-full px-4 text-[13px] font-medium leading-none ${
+          className={`h-full flex-1 rounded-full px-2 text-[12px] font-medium leading-none sm:px-3 sm:text-[13px] ${
             value === option.id ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
           }`}
         >

@@ -24,6 +24,11 @@
   --accent-2: #0f766e;
 }
 
+[data-style="realistic"] {
+  --accent: #334155;
+  --accent-2: #0f766e;
+}
+
 @theme inline {
   --font-sans: var(--font-outfit);
   --font-display: var(--font-syne);

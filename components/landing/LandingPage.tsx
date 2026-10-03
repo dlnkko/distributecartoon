@@ -298,7 +298,6 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
               <span className="text-5xl font-semibold text-white">{trial.now}</span>
               <span className="text-sm text-white/60">one time</span>
             </p>
-            <p className="relative mt-2 text-sm font-medium text-white">{INTRO_OFFER.seconds} credits</p>
             <div className="relative mt-6">
               <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">One time offer</p>
               <div className="mt-2 flex items-center gap-3">
@@ -584,7 +583,7 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
     <section id="pricing" className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
       <Reveal>
         <h2 className="land-display text-4xl sm:text-5xl">Pricing</h2>
-        <p className="mt-3 max-w-xl text-sm text-[var(--cf-muted)]">Monthly plans. 1 credit is 1 second of video. The month starts the day you pay.</p>
+        <p className="mt-3 max-w-xl text-sm text-[var(--cf-muted)]">1 credit = 1 second of video. Monthly plans. The month starts the day you pay.</p>
       </Reveal>
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
         {LEAD_PLANS.map((plan, index) => (

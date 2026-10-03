@@ -49,6 +49,7 @@ function isFailed(status?: string) {
 }
 
 const STATUS_TIMEOUT_MS = 20_000;
+const SUBMIT_TIMEOUT_MS = 120_000;
 
 async function readVideoJob(taskId: string, signal?: AbortSignal) {
   const timeout = AbortSignal.timeout(STATUS_TIMEOUT_MS);
@@ -165,9 +166,12 @@ export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
     for (const url of (options.referenceAudioUrls || []).slice(0, 3)) {
       input_references.push({ type: "audio_url", audio_url: { url } });
     }
+    const timeout = AbortSignal.timeout(SUBMIT_TIMEOUT_MS);
+    const signal = options.abortSignal ? AbortSignal.any([options.abortSignal, timeout]) : timeout;
     const response = await fetch(`${OPENROUTER_BASE}/videos`, {
       method: "POST",
       headers: openrouterHeaders(),
+      signal,
       body: JSON.stringify({
         model,
         prompt: options.prompt,

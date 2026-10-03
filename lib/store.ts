@@ -34,6 +34,36 @@ function readLocal(id: string): Project | null {
   }
 }
 
+function pickNewer(left: Project | null, right: Project | null) {
+  if (!left) return right;
+  if (!right) return left;
+  const leftAt = Date.parse(left.updatedAt || "");
+  const rightAt = Date.parse(right.updatedAt || "");
+  if (Number.isFinite(rightAt) && (!Number.isFinite(leftAt) || rightAt > leftAt)) return right;
+  return left;
+}
+
+function readLocalProjects(ownerId?: string) {
+  try {
+    ensureDir();
+    return readdirSync(projectsDir())
+      .filter((name) => name.endsWith(".json"))
+      .flatMap((name) => {
+        try {
+          const project = JSON.parse(readFileSync(path.join(projectsDir(), name), "utf8")) as Project;
+          normalizeProject(project);
+          return [project];
+        } catch {
+          return [];
+        }
+      })
+      .filter((item) => item.id && (!ownerId || !item.ownerId || item.ownerId === ownerId))
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  } catch {
+    return [];
+  }
+}
+
 export function normalizeProject(project: Project): Project {
   project.references = Array.isArray(project.references) ? project.references : [];
   project.scriptRefCues = Array.isArray(project.scriptRefCues) ? project.scriptRefCues : [];
@@ -152,6 +182,7 @@ async function persistRemote(project: Project) {
     { onConflict: "id" },
   );
   if (error) {
+    console.warn("project save skipped", project.id, error.message);
     if (process.env.NODE_ENV === "development" && /row-level security|jwt|permission denied/i.test(error.message)) return;
     throw new Error(error.message);
   }
@@ -214,7 +245,7 @@ export async function saveProject(project: Project) {
 
 export async function getProject(id: string): Promise<Project | null> {
   const remote = await readRemote(id);
-  const project = remote || readLocal(id);
+  const project = pickNewer(remote, readLocal(id));
   if (!project) return null;
   const missingSlots = !Array.isArray(project.references) || project.references.length === 0;
   normalizeProject(project);
@@ -232,31 +263,24 @@ export async function listProjects(ownerId?: string): Promise<Project[]> {
         .select("payload")
         .eq("owner_id", ownerId)
         .order("updated_at", { ascending: false });
-      if (!error && data?.length) {
-        return data
-          .map((row) => normalizeProject(row.payload as Project))
-          .filter((item) => item.id);
+      if (!error && data) {
+        const byId = new Map<string, Project>();
+        for (const row of data) {
+          const project = normalizeProject(row.payload as Project);
+          if (project.id) byId.set(project.id, project);
+        }
+        for (const local of readLocalProjects(ownerId)) {
+          const existing = byId.get(local.id);
+          if (!existing || local.updatedAt > existing.updatedAt) byId.set(local.id, local);
+        }
+        return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
       }
     } catch {
       // Fall through to local files in development.
     }
   }
 
-  try {
-    ensureDir();
-    const projects = readdirSync(projectsDir())
-      .filter((name) => name.endsWith(".json"))
-      .map((name) => {
-        const project = JSON.parse(readFileSync(path.join(projectsDir(), name), "utf8")) as Project;
-        normalizeProject(project);
-        return project;
-      })
-      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    if (!ownerId) return projects;
-    return projects.filter((item) => !item.ownerId || item.ownerId === ownerId);
-  } catch {
-    return [];
-  }
+  return readLocalProjects(ownerId);
 }
 
 export async function deleteProject(id: string) {

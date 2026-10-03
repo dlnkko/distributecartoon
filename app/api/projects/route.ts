@@ -19,7 +19,7 @@ function nudgeGenerations(projects: Project[]) {
   after(Promise.allSettled(live.map((project) => driveProduce(project.id, 40_000))));
 }
 import { createProject, deleteProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
-import type { AspectRatio, Scene, VisualStyle, WorkflowStep } from "@/lib/types";
+import { isVisualStyle, type AspectRatio, type Scene, type VisualStyle, type WorkflowStep } from "@/lib/types";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
@@ -93,7 +93,7 @@ export async function PATCH(request: Request) {
     if (body.clearSong) project.targetDurationSeconds = 15;
     project.workflowStep = body.clearSong ? "song" : "script";
   }
-  if (body.style === "pixar" || body.style === "claymation") project.style = body.style;
+  if (isVisualStyle(body.style)) project.style = body.style;
   if (body.aspectRatio) project.aspectRatio = normalizeAspectRatio(body.aspectRatio);
   if (typeof body.targetDurationSeconds === "number" && !project.song && !body.clearSong) {
     project.targetDurationSeconds = clampTotalDuration(body.targetDurationSeconds);

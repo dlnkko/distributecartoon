@@ -7,20 +7,43 @@ import { planShots } from "./shots";
 
 export type PromptRef = {
   url: string;
-  kind: "frame" | "logo" | "product" | "location" | "other" | "video" | "character" | "narrator";
+  kind: "frame" | "logo" | "product" | "location" | "other" | "video" | "character" | "narrator" | "previous";
   name: string;
   notes?: string;
 };
 
+export function styleLookName(style: VisualStyle) {
+  if (style === "claymation") return "Claymation";
+  if (style === "realistic") return "Realistic";
+  return "Pixar";
+}
+
 export function imageStyleLead(style: VisualStyle) {
-  return style === "claymation" ? "claymation style" : "pixar style";
+  if (style === "claymation") return "claymation style";
+  if (style === "realistic") return "photorealistic live-action";
+  return "pixar style";
 }
 
 function portraitCraft(style: VisualStyle) {
   if (style === "claymation") {
     return "Hand-sculpted stop-motion clay puppet. Lumpy handmade face, fingerprints, tool marks, matte clay. Not smooth skin with a clay texture on top.";
   }
+  if (style === "realistic") {
+    return "Real person in a real photograph. Real skin, real hair, real clothes, real proportions. Not illustrated, not 3D, not clay, and not a cartoon.";
+  }
   return "Original 3D face. Use a specific nose, brow, and jaw from the description, with uneven features. Not a generic big-eyed hero.";
+}
+
+function styleThroughout(style: VisualStyle) {
+  if (style === "realistic") {
+    return "Realistic live-action throughout the whole video. Real people, real places, real materials, and real light. Not a cartoon, not 3D animation, and not clay.";
+  }
+  return `${styleLookName(style)} style throughout the whole video.`;
+}
+
+function globalLookPhrase(style: VisualStyle) {
+  if (style === "realistic") return "Realistic live-action";
+  return `${styleLookName(style)} style`;
 }
 
 export function videoAudioLead() {
@@ -40,14 +63,14 @@ export function videoCloseLead() {
 }
 
 export function videoStyleLead(style: VisualStyle, aspect?: string) {
-  const look = style === "claymation" ? "Claymation" : "Pixar";
+  const lead = styleThroughout(style);
   const frame =
     aspect === "9:16"
       ? "Vertical 9:16 frame: one continuous space, and left and right stay consistent across cuts."
       : aspect
         ? "Horizontal 16:9 frame: the wide image is one place, so the extra width must not duplicate anyone or flip who is left, right, in front, or behind."
         : "";
-  return frame ? `${look} style throughout the whole video. ${frame}` : `${look} style throughout the whole video.`;
+  return frame ? `${lead} ${frame}` : lead;
 }
 
 export function styleGuide(style: VisualStyle) {
@@ -57,12 +80,16 @@ export function styleGuide(style: VisualStyle) {
 function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style(?: throughout the whole video)?\.?\s*/i, "")
+    .replace(
+      /^Realistic live-action throughout the whole video\.?\s*Real people, real places, real materials, and real light\.?\s*Not a cartoon, not 3D animation, and not clay\.?\s*/i,
+      "",
+    )
     .replace(/^(?:Horizontal 16:9|Vertical 9:16) frame:[^.]*\.\s*/i, "")
     .replace(/^@Image\d+\s+is the first frame of this shot(?:,[^.]+)?\.?\s*/i, "")
     .replace(/^Animate forward from that still\.?\s*/i, "")
     .replace(/^Hold the same cinematic camera until CUT\.?\s*/i, "")
     .replace(
-      /^Keep (?:the same )?(?:pixar|claymation) style(?: as seen in [@#]\s*Image\s*\d+)?(?: for (?:the entire video|every scene))?\.?\s*/i,
+      /^Keep (?:the same )?(?:pixar|claymation|realistic(?: live-action)?) style(?: as seen in [@#]\s*Image\s*\d+)?(?: for (?:the entire video|every scene))?\.?\s*/i,
       "",
     )
     .replace(/^Do not (?:switch look|change the look)\.?\s*/i, "")
@@ -112,7 +139,7 @@ function appearanceForLook(character: Character) {
   const name = character.name.trim();
   let text = (character.description || "").trim();
   text = text
-    .replace(/\b(claymation|pixar|stop-motion)\s+(style\s+)?/gi, "")
+    .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
     .replace(/\b(engaged in|involved in)\b[\s\S]*/gi, "")
     .replace(/\b(fight|fighting|scuffle|brawl|chase|chasing|wrestling|playing with|interacting)\b[\s\S]*/gi, "")
     .replace(/\b(?:with|and|versus|vs\.?)\s+(?:a|an|the)\s+[\w'-]+/gi, "")
@@ -148,7 +175,9 @@ export function characterLookFromPhotoPrompt(_character: Character, style: Visua
   const craft =
     style === "claymation"
       ? "Same person as the photo, rebuilt as a hand-sculpted clay puppet. Fingerprints, tool marks, matte clay. Not smooth skin with a clay texture."
-      : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
+      : style === "realistic"
+        ? "Same person as the photo, kept photoreal. Do not redraw them as a cartoon, a 3D character, or a clay puppet."
+        : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
   const note = lookNote.trim().slice(0, 180);
   const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
   return `${imageStyleLead(style)} portrait from the attached photo. ${craft}${extra} One character, plain gray background.`;
@@ -159,7 +188,9 @@ export function characterAnchorPrompt(name: string, style: VisualStyle) {
   const face =
     style === "claymation"
       ? "Keep the handmade clay face, fingerprints and all. Do not smooth it."
-      : "Keep this original face. Do not restyle it into a famous character.";
+      : style === "realistic"
+        ? "Keep this real face. Do not stylize it into a cartoon, a 3D character, or clay."
+        : "Keep this original face. Do not restyle it into a famous character.";
   return `${videoStyleLead(style)} @Image1 looks into the camera and says, "${line}" ${face} Distinct voice, not flat or robotic. Realistic lipsync. Plain background. ${sceneAudioClose()}`;
 }
 
@@ -168,10 +199,14 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
     "Wide three-quarter view of this exact place, about three quarters of the room or street in frame. Never a flat head-on photo and never a tight corner. Keep the same walls, furniture, and layout so a later scene can return here and match.";
   const look = imageStyleLead(style);
   const time = "Neutral lighting. Do not lock this place to day or night. The video will change the time of day.";
+  const real =
+    style === "realistic"
+      ? " A real place, photographed. Real architecture, real materials, real light. Not a cartoon set, not a miniature, and not a 3D render."
+      : "";
   if (fromPhoto) {
-    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} ${time} No people, no characters, no text.`;
+    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} ${time}${real} No people, no characters, no text.`;
   }
-  return `${look}. Empty view of ${name}. ${angle} ${time} No people, no characters, no text.`;
+  return `${look}. Empty view of ${name}. ${angle} ${time}${real} No people, no characters, no text.`;
 }
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
@@ -383,11 +418,12 @@ export function sceneFramePrompt(project: Project, batch: Batch) {
   const onlyShot = opening.length
     ? `Only ${opening.join(" and ")} in this opening frame. Do not add any other characters.`
     : "Do not add any character who is not in this opening beat.";
+  const drawn = project.style === "realistic" ? "kept photoreal" : `drawn in ${lead}`;
   const refs = promptReadyReferences(project, firstIndex ? [firstIndex] : [])
     .map((item) =>
       item.kind === "logo"
-        ? `${item.label} logo drawn in ${lead} from the reference, in the scene`
-        : `${item.label} drawn in ${lead} from the reference, in the scene`,
+        ? `${item.label} logo ${drawn} from the reference, in the scene`
+        : `${item.label} ${drawn} from the reference, in the scene`,
     )
     .join(", ");
   return joinPromptParts([
@@ -598,11 +634,12 @@ export function narratorVoiceSample(project: Project) {
 }
 
 export function narratorVoicePrompt(project: Project) {
-  const look = project.style === "claymation" ? "Claymation" : "Pixar";
   const language = spokenLanguage(project);
   return [
-    `4 seconds, one continuous shot. ${look} style.`,
-    "An empty, softly lit backdrop with gentle light drifting across a plain textured wall. The frame holds no people, no characters, no faces and no mouths.",
+    `4 seconds, one continuous shot. ${globalLookPhrase(project.style)}.${project.style === "realistic" ? " A real empty room. Not a cartoon set and not a miniature." : ""}`,
+    project.style === "realistic"
+      ? "An empty real room, softly lit, with a plain real wall. The frame holds no people, no characters, no faces and no mouths."
+      : "An empty, softly lit backdrop with gentle light drifting across a plain textured wall. The frame holds no people, no characters, no faces and no mouths.",
     `NARRATOR — off-screen voice-over, heard only, with no lipsync. Voice: ${narratorVoiceNotes(project)}. Spoken in ${language.speech}: {${narratorVoiceSample(project)}}`,
     "Audio: the narrator's voice over a quiet room tone. No music, no score, no instruments.",
   ].join("\n");
@@ -915,7 +952,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
       replacements.push({
         pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
         tag,
-        first: `${tag} which is the ${name} logo, same mark as the attached photo, drawn in ${look}`,
+        first: `${tag} which is the ${name} logo, same mark as the attached photo, ${style === "realistic" ? "kept photoreal" : `drawn in ${look}`}`,
       });
       return;
     }
@@ -923,7 +960,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
       replacements.push({
         pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
         tag,
-        first: `${tag} which is the ${name} location from the attached photo, drawn in ${look}`,
+        first: `${tag} which is the ${name} location from the attached photo, ${style === "realistic" ? "kept photoreal" : `drawn in ${look}`}`,
       });
       return;
     }
@@ -1082,6 +1119,10 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       narratorTag = tag;
       refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
     } else if (item.kind === "character" && key) people.set(key, tag);
+    else if (item.kind === "previous")
+      refs.push(
+        `${tag} is the previous generation in full. Match the people and their voices from it. Do not replay it. This part starts after that video.`,
+      );
     else if (item.kind === "video")
       refs.push(
         project.song
@@ -1242,6 +1283,20 @@ function dialogueBlock(project: Project, scene: Scene | undefined, people: Map<s
   return parts.length ? `Dialogue: ${parts.join(" / ")}` : "";
 }
 
+function addressesCamera(scene: Scene | undefined) {
+  return /\b(fourth wall|to camera|into the (?:camera|lens)|looks? (?:at|into) (?:the )?(?:camera|lens)|addresses the (?:camera|viewer|audience))\b/i.test(
+    `${scene?.summary || ""} ${scene?.title || ""}`,
+  );
+}
+
+function eyesOffCamera(scene: Scene | undefined, project: Project) {
+  if (addressesCamera(scene)) return "";
+  const names = sceneOnScreenNames(scene, project);
+  if (names.length >= 2) return "Eyes on another person in the shot, not on the camera.";
+  if (names.length === 1) return "Eyes off the camera, toward the person they address or react to.";
+  return "";
+}
+
 function stagingLines(scene: Scene | undefined, project: Project, camera: string) {
   const names = sceneOnScreenNames(scene, project);
   const lines: string[] = [];
@@ -1249,7 +1304,9 @@ function stagingLines(scene: Scene | undefined, project: Project, camera: string
     lines.push(`Camera over ${names[0]}'s shoulder, facing ${names[1]}.`);
   }
   const blob = `${scene?.summary || ""} ${scene?.title || ""}`;
-  if (names.length >= 2 && !/\b(fourth wall|to camera|into the (?:camera|lens)|looks? (?:at|into) (?:the )?(?:camera|lens))\b/i.test(blob)) {
+  const eyes = eyesOffCamera(scene, project);
+  if (eyes) lines.push(eyes);
+  if (names.length >= 2 && !addressesCamera(scene)) {
     const spoken = (scene?.dialogue || []).find(
       (line) => line.speaker && !isVoiceoverSpeaker(project, line.speaker) && names.some((name) => name.toLowerCase() === line.speaker.trim().toLowerCase()),
     );
@@ -1272,7 +1329,6 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
-  const look = project.style === "claymation" ? "Claymation" : "Pixar";
 
   const places: string[] = [];
   for (const scene of scenes) {
@@ -1319,7 +1375,7 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
   const extras = [...new Set(scenes.flatMap((scene) => (scene?.extraNames || []).map((name) => englishExtraName(name)).filter(Boolean)))];
 
   const header = [
-    `GLOBAL: ${look} style, ${aspectLabel(project.aspectRatio)}. ${setting}, consistent lighting and spatial orientation. Each character keeps the same face, outfit, and footwear in every shot. Audio: dialogue and natural ambient sound only; each scene's lines play inside that scene, after the speaker appears.`,
+    `GLOBAL: ${globalLookPhrase(project.style)}, ${aspectLabel(project.aspectRatio)}. ${setting}, consistent lighting and spatial orientation. Each character keeps the same face, outfit, and footwear in every shot. Audio: dialogue and natural ambient sound only; each scene's lines play inside that scene, after the speaker appears.`,
     realismRules(project, sceneIndexes, narrated),
     cast.length ? `CHARACTERS: ${cast.join("; ")}.${extras.length ? ` Background extras: ${extras.join(", ")}.` : ""}` : "",
     refs.length ? `REFERENCES: ${refs.join("; ")}.` : "",
@@ -1389,7 +1445,7 @@ function voiceDescription(project: Project, name: string) {
   const notes = (character?.voiceNotes || "").trim();
   if (notes) return notes.replace(/[. ]+$/, "");
   const who = (character?.description || "")
-    .replace(/\b(claymation|pixar|stop-motion)\s+(style\s+)?/gi, "")
+    .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
     .split(/[.;,]|\bwith\b|\bwearing\b/i)[0]
     .trim()
     .split(/\s+/)
@@ -1406,7 +1462,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const { durations, total } = exactSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
-  const look = project.style === "claymation" ? "Claymation" : "Pixar";
+  const look = styleLookName(project.style);
   const language = spokenLanguage(project);
   const tagOf = (name: string) => people.get(name.trim().toLowerCase());
   const nameWithTag = (name: string) => {
@@ -1507,7 +1563,9 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
   const lens =
     project.style === "claymation"
       ? "Stop-motion claymation throughout: hand-sculpted clay with visible fingerprints and tool marks, miniature sets with real-scale textures, soft practical lighting, the slight frame-to-frame shimmer of handmade animation, shallow miniature depth of field. Each shot keeps its location's palette and light."
-      : "Pixar-style 3D animation throughout: soft global illumination, subsurface skin, rounded appealing shapes, expressive eyes, clean readable silhouettes; filmic depth of field with soft round bokeh; gentle motion blur at a 180° shutter. Each shot keeps its location's palette and light.";
+      : project.style === "realistic"
+        ? "Photoreal live-action throughout: real locations, real materials, real skin, real scale, natural light and real depth of field. Not a cartoon, not 3D animation, not clay, and not a miniature. Each shot keeps its location's palette and light."
+        : "Pixar-style 3D animation throughout: soft global illumination, subsurface skin, rounded appealing shapes, expressive eyes, clean readable silhouettes; filmic depth of field with soft round bokeh; gentle motion blur at a 180° shutter. Each shot keeps its location's palette and light.";
 
   const usedCameras: string[] = [];
   let lastPlace = "";
@@ -1578,7 +1636,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
   const constraints = [
     `CONSTRAINTS — hold for the entire ${Math.round(total)} seconds`,
     [
-      `${look} style throughout.`,
+      `${project.style === "realistic" ? "Realistic live-action throughout." : `${look} style throughout.`}`,
       cuts.length > 1
         ? `The cuts at ${cutList.join(", ")} are the complete cut list.`
         : cuts.length
@@ -1648,7 +1706,7 @@ function markAsSeen(text: string, tags: string[], images: PromptRef[], look: str
     next = next.replace(new RegExp(`(?<!as seen in )${escapeRegExp(tag)}\\b`, "g"), phrase);
   }
   return next
-    .replace(/(?:\s*,?\s*as seen in @Image\d+(?:, in (?:Pixar|Claymation) style)?){2,}/gi, (match) => {
+    .replace(/(?:\s*,?\s*as seen in @Image\d+(?:, in (?:Pixar|Claymation|Realistic) style)?){2,}/gi, (match) => {
       const unique = [...new Set(match.match(/@Image\d+/g) || [])];
       return unique.map((tag) => `, ${seenPhrase(tag, imageKind(images, tag), look)}`).join("");
     })
@@ -1747,10 +1805,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const images = options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
   const tailLine = refs.find((line) => /last 5 seconds/i.test(line)) || "";
+  const previousLine = refs.find((line) => /previous generation in full/i.test(line)) || "";
+  const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
-  const look = project.style === "claymation" ? "Claymation" : "Pixar";
+  const look = styleLookName(project.style);
   const locationTags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
   const seenTags = assetTags(swaps);
   const song = Boolean(project.song);
@@ -1815,8 +1875,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       participateLine(sceneOnScreenNames(scene, project), people, project),
       visual,
       spoken,
-      /close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : "",
-      placeTag ? `${placeTag}.` : "",
+      eyesOffCamera(scene, project) ||
+        (/close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : ""),
+      placeTag ? `The place is ${placeTag}.` : "",
     ]
       .filter(Boolean)
       .join(" ");
@@ -1826,7 +1887,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     song
       ? [
           `${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds.`,
-          `${look} style throughout the whole video.`,
+          styleThroughout(project.style),
           continues
             ? `This video is the next ${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds, the slice that belongs to this part. Do not regenerate the previous 5 seconds. The video reference is that ending, picture and music, only so the cut is not abrupt. @Audio1 is this slice and plays from 00:00 of this video. No title card, no logo sting, no black frame, and no new intro.`
             : "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
@@ -1836,9 +1897,13 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           tailLine,
         ]
       : [
-          `${look} style throughout the whole video.`,
+          styleThroughout(project.style),
+          "People look at each other. A reaction turns toward the other person, not into a pose at the lens.",
+          previousLine,
           tailLine,
-          "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
+          characterVideos
+            ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
+            : "Places and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
           narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
@@ -1861,6 +1926,17 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
+  if (style === "realistic") {
+    const job =
+      kind === "logo"
+        ? "Keep the logo mark recognizable on a real surface."
+        : kind === "product"
+          ? "Keep the exact packaging from the photo, photoreal. Pouch stays a pouch, bottle stays a bottle. Same silhouette, closure, label, colors, and branding."
+          : kind === "location"
+            ? "Keep this a real location. Same architecture and layout, real materials and real light. Not a cartoon set and not a miniature."
+            : "Keep the subject photoreal and recognizable.";
+    return [`Keep this ${kind} photoreal.`, job, "No cartoon, no 3D animation, no clay, no collage, no extra captions, no watermark."].join(" ");
+  }
   const job =
     kind === "logo"
       ? "Keep the logo mark recognizable, clean and on-model. Place it as a physical object or set dressing in-world."
@@ -1934,7 +2010,7 @@ export function labeledReferencePrompt(options: {
   if (priorClip && !/@Video1\b/.test(body)) {
     body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
   }
-  if (!/^(?:pixar|claymation) style throughout/i.test(body)) {
+  if (!/^(?:(?:pixar|claymation) style|realistic live-action) throughout/i.test(body)) {
     body = `${videoStyleLead(options.style, options.project?.aspectRatio)} ${body}`;
   }
   if (!/obey real-world physics/i.test(body)) body = `${body} ${videoCloseLead()}`;

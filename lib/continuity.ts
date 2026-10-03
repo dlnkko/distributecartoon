@@ -233,7 +233,7 @@ function findCharacter(project: Project, name: string) {
 export function characterRole(project: Project, name: string) {
   const character = findCharacter(project, name);
   const first = (character?.description || "")
-    .replace(/\b(claymation|pixar|stop-motion)\s+(style\s+)?/gi, "")
+    .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
     .split(/[.;]/)[0]
     .split(/,|\bwith\b|\bwearing\b/i)[0]
     .trim()

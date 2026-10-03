@@ -1,4 +1,8 @@
-export type VisualStyle = "pixar" | "claymation";
+export type VisualStyle = "pixar" | "claymation" | "realistic";
+
+export function isVisualStyle(value: unknown): value is VisualStyle {
+  return value === "pixar" || value === "claymation" || value === "realistic";
+}
 export type AspectRatio = "16:9" | "9:16";
 export type WorkflowStep = "script" | "song" | "setup" | "review" | "cast" | "produce";
 export type AgentMode = "plan" | "produce";
@@ -133,6 +137,7 @@ export type Batch = {
   cameraPlan: string;
   videoPrompt: string;
   promptReady?: boolean;
+  faceRefsDropped?: boolean;
   framePrompt: string;
   pacingNotes: string;
   status: BatchStatus;

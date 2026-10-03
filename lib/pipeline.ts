@@ -498,6 +498,10 @@ async function narratorVoiceRef(project: Project, sceneIndexes: number[], abortS
 const PART_RETRY_MS = 2 * 60 * 1000;
 const PENDING_STALE_MS = 3 * 60 * 1000;
 
+function blockedByRealFace(message: string) {
+  return /real person|PrivacyInformation/i.test(message);
+}
+
 function notePartFailure(project: Project, batch: Batch, message: string) {
   const taskId = realKieVideoTaskId(batch.kieVideoTaskId);
   batch.failures = [...(batch.failures || []), { at: nowIso(), message, ...(taskId ? { taskId } : {}) }].slice(-8);
@@ -628,6 +632,13 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       delete batch.kieVideoTaskId;
       await saveSoon(project);
     }
+    if (blockedByRealFace(batch.error || "") && !batch.faceRefsDropped) {
+      batch.faceRefsDropped = true;
+      batch.promptReady = false;
+      delete batch.nextRetryAt;
+      delete batch.error;
+      await saveSoon(project);
+    }
     if (batch.nextRetryAt && Date.now() < new Date(batch.nextRetryAt).getTime()) return { ready: false };
     if (heavy) return { ready: false };
     heavy = true;
@@ -711,9 +722,10 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
   const storyStarted = project.batches.some(
     (batch) => batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId),
   );
-  const narrator = storyStarted ? { ready: true } : await stepNarratorVoice(project);
-  if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
-    const intros = await stepCharacterIntros(project);
+  const oneShot = shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
+  const narrator = storyStarted || oneShot ? { ready: true } : await stepNarratorVoice(project);
+  if (!oneShot) {
+    const intros: StepResult = project.style === "realistic" ? { ready: true } : await stepCharacterIntros(project);
     if (intros.failed && !storyStarted) {
       failProduce(project, intros.failed);
       return "failed";
@@ -1131,7 +1143,7 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     if (!character || character.isExtra || isUnseenVoice(character)) continue;
     const speaks = characterHasDialogue(project, character);
     const hasVoice = speaks && Boolean(character.anchorVideoRemoteUrl || character.anchorVideoPublicPath);
-    if (hasVoice) continue;
+    if (hasVoice || project.style === "realistic") continue;
     const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
     if (portrait) add({ url: portrait, kind: "character", name: character.name });
   }
@@ -1168,6 +1180,14 @@ async function stableCharacterVideos(project: Project, abortSignal?: AbortSignal
   return videos;
 }
 
+async function previousFilmRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
+  if (project.style !== "realistic" || project.song) return undefined;
+  const previous = previousStoryBatch(project, batch);
+  if (!previous || !durableVideoSrc(previous)) return undefined;
+  const url = await resolveUploadUrl(previous.videoRemoteUrl, previous.videoPublicPath, abortSignal);
+  return url ? { url, kind: "previous", name: "Previous generation" } : undefined;
+}
+
 async function previousTailRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
   const previous = previousStoryBatch(project, batch);
   const src = tailUrl(previous);
@@ -1178,14 +1198,20 @@ async function previousTailRef(project: Project, batch: Batch, abortSignal?: Abo
 
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
-  const videoEntries = await stableCharacterVideos(project, abortSignal);
+  const videoEntries = project.style === "realistic" ? [] : await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
+  const previousFilm = await previousFilmRef(project, batch, abortSignal);
   const tail = await previousTailRef(project, batch, abortSignal);
-  const reserve = (narrator ? 1 : 0) + (tail ? 1 : 0);
+  const reserve = (narrator ? 1 : 0) + (previousFilm ? 1 : 0) + (tail ? 1 : 0);
   const characters = videoEntries.slice(0, Math.max(0, MAX_ANCHOR_VIDEOS - reserve));
   return {
     imageEntries,
-    videoEntries: [...characters, ...(narrator ? [narrator] : []), ...(tail ? [tail] : [])],
+    videoEntries: [
+      ...characters,
+      ...(previousFilm ? [previousFilm] : []),
+      ...(narrator ? [narrator] : []),
+      ...(tail ? [tail] : []),
+    ],
   };
 }
 
@@ -1195,9 +1221,7 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
-  const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
-  const characters = videoEntries.slice(0, narrator ? MAX_ANCHOR_VIDEOS - 1 : MAX_ANCHOR_VIDEOS);
-  return { imageEntries, videoEntries: narrator ? [...characters, narrator] : characters };
+  return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
 }
 
 function assignClipToCharacters(

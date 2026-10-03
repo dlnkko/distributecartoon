@@ -92,7 +92,12 @@ export const BRAND_FORMATS = [
   {
     title: "Drama animation ads",
     text: "A hook, a problem, your product as the answer. Told like a short film.",
-    media: clip("example-brands-1"),
+    media: {
+      mp4: "/media/outback-signal.mp4",
+      webm: "",
+      poster: "/media/outback-signal.jpg",
+      label: "Outback Signal",
+    },
   },
   {
     title: "Suno ads",
@@ -176,6 +181,7 @@ export function faqFor(mode: Mode) {
           : "Yes. Faces, voices, places, and scenes stay consistent for the whole video.",
     },
     { q: "How long does it take?", a: "About 10 minutes for most animations." },
+    { q: "What is a credit?", a: "1 credit = 1 second of video." },
     { q: "How long can a video be?", a: "Up to 2 minutes today. Up to 5 minutes is coming soon." },
     { q: "Who owns the video?", a: "You do. You own all the rights to every video you create on Clickframes." },
   ];
