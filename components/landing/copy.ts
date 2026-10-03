@@ -138,8 +138,8 @@ export const STEPS = [
 export const EXAMPLES = {
   personal: [clip("example-personal-1"), clip("example-personal-2"), clip("example-personal-3")],
   brands: [
-    { mp4: "/media/createwellness-branded.mp4", webm: "", poster: "/media/poster.svg", label: "Createwellness" },
-    { mp4: "/media/loop-branded.mp4", webm: "", poster: "/media/poster.svg", label: "Loop" },
+    { mp4: "/media/createwellness-branded.mp4", webm: "", poster: "/media/createwellness-branded.jpg", label: "Createwellness" },
+    { mp4: "/media/loop-branded.mp4", webm: "", poster: "/media/loop-branded.jpg", label: "Loop" },
   ],
 };
 

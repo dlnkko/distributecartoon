@@ -21,6 +21,7 @@ export function VideoCard({
   const box = useRef<HTMLElement>(null);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const framed = Boolean(clip.poster) && !clip.poster.endsWith("/poster.svg");
 
   useEffect(() => {
     const video = ref.current;
@@ -58,15 +59,16 @@ export function VideoCard({
       onMouseEnter={() => hover(true)}
       onMouseLeave={() => hover(false)}
     >
+      {framed ? <img src={clip.poster} alt="" className="absolute inset-0 h-full w-full object-cover" /> : null}
       {failed ? null : (
         <video
           ref={ref}
-          className={`h-full w-full object-cover ${ready ? "opacity-100" : "opacity-0"}`}
+          className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-300 ${ready ? "opacity-100" : "opacity-0"}`}
           poster={clip.poster}
           muted
           loop
           playsInline
-          preload={play === "always" ? "metadata" : "none"}
+          preload={framed || play === "always" ? "auto" : "none"}
           autoPlay={play === "always"}
           aria-label={clip.label}
           onCanPlay={() => setReady(true)}
@@ -76,7 +78,7 @@ export function VideoCard({
           <source src={clip.mp4} type="video/mp4" />
         </video>
       )}
-      {ready && !failed ? null : <Clapper label={clip.label} />}
+      {ready || framed || failed ? null : <Clapper label={clip.label} />}
       <figcaption className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-white/70">
         <span>{clip.label.replace(/-/g, " ")}</span>
         <span>{frame}</span>

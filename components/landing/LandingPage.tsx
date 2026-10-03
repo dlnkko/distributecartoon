@@ -34,6 +34,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   const copy = COPY[mode];
   const [clip, setClip] = useState(0);
   const [offer, setOffer] = useState(false);
+  const [left, setLeft] = useState(OFFER_SECONDS);
   const [sticky, setSticky] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
@@ -51,13 +52,30 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   }, [mode]);
 
   useEffect(() => {
-    if (sessionStorage.getItem(offerKey(mode))) return;
+    if (offerSeen(mode)) return;
     const timer = window.setTimeout(() => {
+      rememberOffer(mode);
+      setLeft(OFFER_SECONDS);
       setOffer(true);
       track("trial_offer_shown", { mode });
     }, 20000);
     return () => window.clearTimeout(timer);
   }, [mode]);
+
+  useEffect(() => {
+    if (!offer) return;
+    const started = Date.now();
+    const timer = window.setInterval(() => {
+      const remaining = OFFER_SECONDS - Math.floor((Date.now() - started) / 1000);
+      if (remaining <= 0) {
+        setLeft(0);
+        setOffer(false);
+        return;
+      }
+      setLeft(remaining);
+    }, 200);
+    return () => window.clearInterval(timer);
+  }, [offer]);
 
   useEffect(() => {
     if (!offer) return;
@@ -74,7 +92,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   }, [offer]);
 
   function closeOffer() {
-    sessionStorage.setItem(offerKey(mode), "1");
+    rememberOffer(mode);
     setOffer(false);
   }
 
@@ -224,10 +242,12 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
               <span className="text-sm text-white/60">one time</span>
             </p>
             <p className="relative mt-2 text-sm font-medium text-white">{INTRO_OFFER.seconds} credits</p>
+            <p className="relative mt-5 text-4xl font-semibold tabular-nums text-white">{formatOfferTime(left)}</p>
+            <p className="relative mt-1 text-sm text-white/60">This offer does not come back.</p>
             <button
               type="button"
               onClick={() => {
-                sessionStorage.setItem(offerKey(mode), "1");
+                rememberOffer(mode);
                 void buy(INTRO_OFFER.id, "trial_offer_accept");
               }}
               className="cf-btn btn-primary relative mt-7 w-full rounded-2xl py-3.5 text-base font-semibold"
@@ -251,8 +271,31 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   );
 }
 
-function offerKey(mode: Mode) {
-  return mode === "brands" ? "cf-trial-offer-brands" : "cf-trial-offer";
+const OFFER_SECONDS = 30;
+
+function offerSeenKey(mode: Mode) {
+  return mode === "brands" ? "cf-offer-once-brands" : "cf-offer-once-personal";
+}
+
+function offerSeen(mode: Mode) {
+  try {
+    return localStorage.getItem(offerSeenKey(mode)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberOffer(mode: Mode) {
+  try {
+    localStorage.setItem(offerSeenKey(mode), "1");
+  } catch {
+    /* The browser blocked storage. The offer still closes for this view. */
+  }
+}
+
+function formatOfferTime(seconds: number) {
+  const safe = Math.max(0, seconds);
+  return `0:${String(safe).padStart(2, "0")}`;
 }
 
 function ModeToggle({ mode, base }: { mode: Mode; base: string }) {
