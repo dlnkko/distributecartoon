@@ -32,7 +32,7 @@ export async function updateSession(request: NextRequest) {
 
   const { data } = await supabase.auth.getClaims();
   const path = request.nextUrl.pathname;
-  const isPublic = path === "/" || path === "/landing" || path === "/login" || path.startsWith("/auth/") || path.startsWith("/checkout/");
+  const isPublic = path === "/" || path === "/landing" || path === "/login" || path === "/privacy" || path === "/terms" || path.startsWith("/auth/") || path.startsWith("/checkout/");
   const isApi = path.startsWith("/api/");
 
   if (!data?.claims && !isPublic && !isApi) {

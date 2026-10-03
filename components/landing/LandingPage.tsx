@@ -3,17 +3,27 @@
 import { useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { CreditRange } from "@/components/pricing/CreditRange";
-import { DFY_PLANS, LEAD_PLANS, SLIDER_PLANS, formatPlanPrice } from "@/lib/plans";
+import { INTRO_OFFER, LEAD_PLANS, SLIDER_PLANS, formatPlanPrice } from "@/lib/plans";
+import { CONTACT_EMAIL } from "@/lib/site";
 import { BeforeAfter } from "@/components/landing/BeforeAfter";
 import { startCheckout } from "@/components/landing/checkout";
 import {
+  AGENCY_PLANS,
+  BRAND_AGENCY,
+  BRAND_CLOSE,
+  BRAND_FORMATS,
   BRAND_PAIN,
+  BRAND_TECH,
   COPY,
   EXAMPLES,
   HERO_CLIPS,
-  PERSONAL_STORY,
+  PERSONAL_CLOSE,
+  PERSONAL_EDGE,
+  PERSONAL_IDEA,
+  PERSONAL_OWN,
+  PERSONAL_USES,
   STEPS,
-  STYLES,
+  TRIAL_OFFER,
   ZOOM_URL,
   faqFor,
   type Mode,
@@ -42,10 +52,32 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   }, [mode]);
 
   useEffect(() => {
-    if (sessionStorage.getItem("cf-offer-bar")) return;
-    const timer = window.setTimeout(() => setOffer(true), 8000);
+    if (mode !== "personal" || sessionStorage.getItem("cf-trial-offer")) return;
+    const timer = window.setTimeout(() => {
+      setOffer(true);
+      track("trial_offer_shown", { mode });
+    }, 20000);
     return () => window.clearTimeout(timer);
-  }, []);
+  }, [mode]);
+
+  useEffect(() => {
+    if (!offer) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeOffer();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [offer]);
+
+  function closeOffer() {
+    sessionStorage.setItem("cf-trial-offer", "1");
+    setOffer(false);
+  }
 
   useEffect(() => {
     const hero = document.getElementById("hero");
@@ -73,7 +105,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   const hero = HERO_CLIPS[mode][clip] ?? HERO_CLIPS[mode][0];
 
   return (
-    <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${offer || sticky ? "pb-36" : ""}`}>
+    <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Brand tone="accent" />
         <ModeToggle mode={mode} base={base} />
@@ -96,15 +128,15 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
           <p className="mt-5 max-w-xl text-lg leading-relaxed text-white/80">{copy.sub}</p>
           <div className="mt-7 flex flex-wrap items-center gap-4">
             {mode === "brands" ? (
-              <a href={ZOOM_URL} target="_blank" rel="noopener noreferrer" onClick={() => track("book_call_click", { mode, place: "hero" })} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
-                {copy.cta}
-              </a>
-            ) : (
               <a href="#pricing" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
                 {copy.cta}
               </a>
+            ) : (
+              <button type="button" onClick={() => void buy(INTRO_OFFER.id, "hero_cta_click")} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
+                {busy === INTRO_OFFER.id ? "Opening…" : copy.cta}
+              </button>
             )}
-            <a href="#examples" className="land-link text-sm font-semibold text-white">
+            <a href={mode === "brands" ? "#agency" : "#examples"} className="land-link text-sm font-semibold text-white">
               {copy.secondary}
             </a>
           </div>
@@ -112,7 +144,11 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
         </div>
       </section>
 
-      {mode === "personal" ? <PersonalBody /> : <BrandBody />}
+      {mode === "personal" ? (
+        <PersonalBody busy={busy} onTry={() => void buy(INTRO_OFFER.id, "personal_close_cta")} />
+      ) : (
+        <BrandBody />
+      )}
 
       <section id="examples" className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <h2 className="land-display text-4xl sm:text-5xl">{mode === "brands" ? "Brand examples" : "Examples"}</h2>
@@ -143,45 +179,71 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
         track("faq_open", { question: q, mode });
       }} />
 
-      <footer className="mx-auto flex max-w-6xl items-center justify-between px-4 py-10 text-xs text-[var(--cf-muted)] sm:px-6">
+      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-10 text-xs text-[var(--cf-muted)] sm:px-6">
         <span>Clickframes</span>
-        <span>Monthly plans from $19.99.</span>
+        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Legal">
+          <a href="/privacy" className="hover:text-white">Privacy</a>
+          <a href="/terms" className="hover:text-white">Terms</a>
+          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-white">{CONTACT_EMAIL}</a>
+        </nav>
       </footer>
 
-      {offer ? (
-        <div className={`land-offer fixed inset-x-0 z-[90] px-3 sm:px-6 ${sticky ? "bottom-20 md:bottom-3" : "bottom-3"}`}>
-          <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#141417]/95 px-4 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.4)]">
-            <p className="text-sm">Plans from $19.99 a month.</p>
-            <div className="flex shrink-0 items-center gap-2">
-              <a href="#pricing" onClick={() => track("offer_bar_click", { mode })} className="cf-btn btn-primary px-3 py-2 text-sm font-semibold">
-                See plans
-              </a>
-              <button
-                type="button"
-                className="px-2 text-sm text-[var(--cf-muted)]"
-                onClick={() => {
-                  sessionStorage.setItem("cf-offer-bar", "1");
-                  setOffer(false);
-                }}
-              >
-                Close
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
-
-      {sticky ? (
+      {sticky && !offer ? (
         <div className="fixed inset-x-0 bottom-0 z-[80] border-t border-white/10 bg-[#0b0b0d]/95 p-3 md:hidden">
           {mode === "brands" ? (
-            <a href={ZOOM_URL} target="_blank" rel="noopener noreferrer" onClick={() => track("book_call_click", { mode, place: "sticky" })} className="cf-btn btn-primary w-full py-3 text-center text-sm font-semibold">
+            <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
               {copy.cta}
             </a>
           ) : (
-            <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary w-full py-3 text-center text-sm font-semibold">
-              {copy.cta}
-            </a>
+            <button type="button" onClick={() => void buy(INTRO_OFFER.id, "sticky_cta_click")} className="cf-btn btn-primary w-full py-3 text-center text-sm font-semibold">
+              {busy === INTRO_OFFER.id ? "Opening…" : copy.cta}
+            </button>
           )}
+        </div>
+      ) : null}
+
+      {offer ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="trial-offer-title"
+          className="fixed inset-0 z-[100] grid place-items-center bg-black/80 p-4 backdrop-blur-md"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) closeOffer();
+          }}
+        >
+          <div className="land-offer relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-white/10 bg-[#141417] p-7 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] sm:p-10">
+            <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[#ff8a3d]/30 blur-3xl" />
+            <h2 id="trial-offer-title" className="land-display relative text-4xl leading-[1.02] text-white sm:text-5xl">
+              {TRIAL_OFFER.title}
+            </h2>
+            <p className="relative mx-auto mt-4 max-w-sm text-base leading-relaxed text-white/75">{TRIAL_OFFER.text}</p>
+            <p className="relative mt-6 flex items-baseline justify-center gap-3">
+              <s className="text-xl text-white/45">{TRIAL_OFFER.was}</s>
+              <span className="text-5xl font-semibold text-white">{TRIAL_OFFER.now}</span>
+              <span className="text-sm text-white/60">one time</span>
+            </p>
+            <button
+              type="button"
+              onClick={() => {
+                sessionStorage.setItem("cf-trial-offer", "1");
+                void buy(INTRO_OFFER.id, "trial_offer_accept");
+              }}
+              className="cf-btn btn-primary relative mt-7 w-full rounded-2xl py-3.5 text-base font-semibold"
+            >
+              {busy === INTRO_OFFER.id ? "Opening…" : TRIAL_OFFER.yes}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                track("trial_offer_decline", { mode });
+                closeOffer();
+              }}
+              className="relative mt-3 w-full py-2 text-sm text-white/50 underline-offset-4 hover:text-white/80 hover:underline"
+            >
+              {TRIAL_OFFER.no}
+            </button>
+          </div>
         </div>
       ) : null}
     </main>
@@ -246,75 +308,110 @@ function HeroVideo({ clip }: { clip: (typeof HERO_CLIPS)["personal"][number] }) 
   );
 }
 
-function PersonalBody() {
+function PersonalBody({ busy, onTry }: { busy: string; onTry: () => void }) {
   return (
-    <div className="mx-auto max-w-6xl space-y-16 px-4 py-16 sm:px-6">
-      <BeforeAfter />
-      {PERSONAL_STORY.map((block, index) => (
-        <article key={block.title} className={`grid items-center gap-8 lg:grid-cols-2 ${index % 2 ? "lg:[&>*:first-child]:order-2" : ""}`}>
-          <div>
-            <h2 className="land-display text-4xl sm:text-5xl">{block.title}</h2>
-            <p className="mt-4 max-w-md text-lg leading-relaxed text-[var(--cf-muted)]">{block.text}</p>
-          </div>
-          <VideoCard clip={block.media} frame={String(index + 1).padStart(2, "0")} />
-        </article>
-      ))}
-      <div className="flex flex-wrap gap-3">
-        {STYLES.map((style) => (
-          <span key={style} className="rounded-full border border-white/15 px-4 py-2 text-sm">
-            {style}
-          </span>
-        ))}
-      </div>
+    <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
+      <section className="grid items-center gap-8 lg:grid-cols-2">
+        <div>
+          <h2 className="land-display text-4xl sm:text-5xl">{PERSONAL_IDEA.title}</h2>
+          <p className="mt-4 max-w-md text-lg leading-relaxed text-[var(--cf-muted)]">{PERSONAL_IDEA.text}</p>
+        </div>
+        <BeforeAfter />
+      </section>
+
+      <section>
+        <h2 className="land-display text-4xl sm:text-5xl">What will you make?</h2>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {PERSONAL_USES.map((use, index) => (
+            <article key={use.title} className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-4">
+              <VideoCard clip={use.media} frame={String(index + 1).padStart(2, "0")} />
+              <h3 className="mt-4 text-lg font-semibold">{use.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{use.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <h2 className="land-display text-4xl sm:text-5xl">What no other tool gives you.</h2>
+        <div className="mt-8 grid gap-4 md:grid-cols-3">
+          {PERSONAL_EDGE.map((item, index) => (
+            <article key={item.title} className={`rounded-3xl p-6 ${index === 0 ? "cf-grad text-white" : "border border-white/10 bg-[var(--cf-surface)]"}`}>
+              <h3 className="text-lg font-semibold">{item.title}</h3>
+              <p className={`mt-2 text-sm leading-relaxed ${index === 0 ? "text-white/90" : "text-[var(--cf-muted)]"}`}>{item.text}</p>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="rounded-[2rem] border border-white/10 bg-[var(--cf-surface)] p-8 sm:p-12">
+        <h2 className="land-display text-4xl sm:text-5xl">{PERSONAL_OWN.title}</h2>
+        <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">{PERSONAL_OWN.text}</p>
+      </section>
+
+      <section className="text-center">
+        <h2 className="land-display mx-auto max-w-3xl text-4xl leading-[1.02] sm:text-6xl">{PERSONAL_CLOSE}</h2>
+        <button type="button" onClick={onTry} className="cf-btn btn-primary mt-8 px-6 py-3 text-sm font-semibold">
+          {busy === INTRO_OFFER.id ? "Opening…" : COPY.personal.cta}
+        </button>
+      </section>
     </div>
   );
 }
 
 function BrandBody() {
   return (
-    <div className="mx-auto max-w-6xl space-y-16 px-4 py-16 sm:px-6">
+    <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
       <section>
-        <h2 className="land-display text-4xl sm:text-5xl">Sound familiar?</h2>
+        <h2 className="land-display max-w-3xl text-4xl sm:text-5xl">Making the ads that win has never been this easy.</h2>
+        <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">
+          A script or storyboard with your idea, story, or angle. Your product. One click. A professional ad.
+        </p>
         <div className="mt-8 grid gap-4 md:grid-cols-3">
-          {BRAND_PAIN.map((line) => (
-            <article key={line} className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6 text-lg leading-snug">
-              {line}
+          {BRAND_PAIN.map((item) => (
+            <article key={item.title} className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
+              <h3 className="text-lg font-semibold line-through decoration-[#ff8a3d]/70">{item.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
+            </article>
+          ))}
+        </div>
+        <p className="mt-6 max-w-xl text-lg leading-relaxed">The ad you had in mind, in minutes, with no third party.</p>
+      </section>
+
+      <section className="grid items-center gap-8 lg:grid-cols-2">
+        <div>
+          <h2 className="land-display text-4xl sm:text-5xl">{BRAND_TECH.title}</h2>
+          <p className="mt-4 max-w-md text-lg leading-relaxed text-[var(--cf-muted)]">{BRAND_TECH.text}</p>
+        </div>
+        <VideoCard clip={EXAMPLES.brands[2]} frame="01" />
+      </section>
+
+      <section>
+        <h2 className="land-display text-4xl sm:text-5xl">From drama ads to Suno ads.</h2>
+        <div className="mt-8 grid gap-4 md:grid-cols-2">
+          {BRAND_FORMATS.map((format, index) => (
+            <article key={format.title} className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-4">
+              <VideoCard clip={format.media} frame={String(index + 1).padStart(2, "0")} />
+              <h3 className="mt-4 text-lg font-semibold">{format.title}</h3>
+              <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{format.text}</p>
             </article>
           ))}
         </div>
       </section>
-      <section className="grid items-center gap-8 lg:grid-cols-2">
+
+      <section className="cf-grad flex flex-col items-start justify-between gap-6 rounded-[2rem] p-8 text-white sm:flex-row sm:items-center sm:p-10">
         <div>
-          <h2 className="land-display text-4xl sm:text-5xl">Clickframes locks the details.</h2>
-          <p className="mt-4 max-w-md text-lg leading-relaxed text-[var(--cf-muted)]">
-            Characters, products, places and logos stay identical from shot to shot, so the ad looks like it was planned, not generated.
-          </p>
+          <h2 className="land-display text-3xl sm:text-4xl">{BRAND_AGENCY.title}</h2>
+          <p className="mt-2 max-w-md text-white/90">{BRAND_AGENCY.text}</p>
         </div>
-        <VideoCard clip={EXAMPLES.brands[0]} frame="01" />
+        <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="btn-primary shrink-0 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black">
+          {BRAND_AGENCY.cta}
+        </a>
       </section>
-      <section className="grid gap-4 md:grid-cols-2">
-        <article className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
-          <h3 className="text-lg font-semibold">Traditional studio</h3>
-          <ul className="mt-4 space-y-2 text-sm leading-relaxed text-[var(--cf-muted)]">
-            <li>Weeks of production.</li>
-            <li>Thousands of dollars.</li>
-            <li>Round after round of revisions.</li>
-          </ul>
-        </article>
-        <article className="cf-grad rounded-3xl p-6 text-white">
-          <h3 className="text-lg font-semibold">Clickframes</h3>
-          <ul className="mt-4 space-y-2 text-sm leading-relaxed text-white/90">
-            <li>A fast first generation.</li>
-            <li>A few dollars.</li>
-            <li>A finished cut, with the voices already in.</li>
-          </ul>
-        </article>
-      </section>
-      <section>
-        <h2 className="land-display text-4xl sm:text-5xl">Test ten creatives, not one.</h2>
-        <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">
-          Cheap enough to try different hooks, characters and styles until one wins.
-        </p>
+
+      <section className="text-center">
+        <h2 className="land-display mx-auto max-w-3xl text-4xl leading-[1.02] sm:text-6xl">{BRAND_CLOSE.title}</h2>
+        <p className="mx-auto mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">{BRAND_CLOSE.text}</p>
       </section>
     </div>
   );
@@ -353,25 +450,20 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
         </article>
       </div>
       {mode === "brands" ? (
-        <div className="mt-14">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted)]">Done for you</h3>
-          <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">A monthly crew. Book a call first. Nothing is charged on this page.</p>
+        <div id="agency" className="mt-14 scroll-mt-24">
+          <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted)]">Agency plans</h3>
+          <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">We come up with the concepts and make the ads for you. Book a call first.</p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {DFY_PLANS.map((plan) => (
-              <article key={plan.id} className={`flex flex-col rounded-3xl p-6 ${plan.featured ? "cf-grad text-white" : "border border-white/10 bg-[var(--cf-surface)]"}`}>
+            {AGENCY_PLANS.map((plan, index) => (
+              <article key={plan.id} className={`flex flex-col rounded-3xl p-6 ${index === 1 ? "cf-grad text-white" : "border border-white/10 bg-[var(--cf-surface)]"}`}>
                 <h3 className="text-lg font-semibold">{plan.name}</h3>
-                <p className="mt-2 text-4xl font-semibold">${plan.price.toLocaleString("en-US")}<span className="text-lg font-medium">/mo</span></p>
-                <p className={`mt-3 flex-1 text-sm leading-relaxed ${plan.featured ? "text-white/90" : "text-[var(--cf-muted)]"}`}>
-                  {plan.id === "dfy-studio"
-                    ? "30 animations a month. You send the scripts. We adapt them and deliver the animations."
-                    : "50 animations a month. We write from what has worked, build the angles, and run the creative."}
-                </p>
+                <p className={`mt-3 flex-1 text-sm leading-relaxed ${index === 1 ? "text-white/90" : "text-[var(--cf-muted)]"}`}>{plan.text}</p>
                 <a
                   href={ZOOM_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => track("book_call_click", { mode, place: plan.id })}
-                  className={`btn-primary mt-5 inline-flex justify-center rounded-xl px-3 py-2 text-sm font-semibold ${plan.featured ? "bg-white text-black" : "cf-btn text-white"}`}
+                  className={`btn-primary mt-5 inline-flex justify-center rounded-xl px-3 py-2 text-sm font-semibold ${index === 1 ? "bg-white text-black" : "cf-btn text-white"}`}
                 >
                   Book a call
                 </a>

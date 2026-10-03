@@ -96,14 +96,14 @@ export const PLANS = MONTHLY_PLANS;
 
 export const INTRO_OFFER: Plan = {
   id: "intro",
-  name: "First film",
-  price: 4.99,
+  name: "Try it once",
+  price: 9.99,
   seconds: 30,
   perCredit: "",
-  blurb: "One 30 second video.",
+  blurb: "30 credits, about one 30 second animation.",
   kind: "intro",
-  whopPlanId: "plan_t88yM25i762LC",
-  purchaseUrl: "https://whop.com/checkout/plan_t88yM25i762LC",
+  whopPlanId: "plan_PqAfAwz5I2Z2m",
+  purchaseUrl: "https://whop.com/checkout/plan_PqAfAwz5I2Z2m",
 };
 
 export const DFY_PLANS: Plan[] = [

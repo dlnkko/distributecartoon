@@ -27,8 +27,8 @@ export async function POST(request: Request) {
     const { planById } = await import("@/lib/plans");
     const bought = planById(plan);
     if (bought?.kind === "monthly" && replaceId) await replaceMembership(userId, plan, event.data?.id || "", replaceId);
-    else if (bought?.kind !== "topup") await saveMembership(userId, plan || "m40", event.data?.id || "");
-    if (bought && (bought.kind === "monthly" || bought.kind === "topup") && bought.seconds > 0) {
+    else if (bought?.kind !== "topup" && bought?.kind !== "intro") await saveMembership(userId, plan || "m40", event.data?.id || "");
+    if (bought && (bought.kind === "monthly" || bought.kind === "topup" || bought.kind === "intro") && bought.seconds > 0) {
       await grantCredits(userId, bought.seconds, event.data?.id || "");
     }
   }

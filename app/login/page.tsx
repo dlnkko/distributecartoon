@@ -52,6 +52,9 @@ export default function LoginPage() {
             <GoogleIcon />
             {busy ? "Redirecting…" : "Continue with Google"}
           </button>
+          <p className="mt-4 text-center text-xs leading-5 text-[var(--cf-muted)]">
+            By continuing, you agree to the <a href="/terms" className="text-[#ffb089]">Terms</a> and the <a href="/privacy" className="text-[#ffb089]">Privacy Policy</a>.
+          </p>
         </section>
       </div>
     </main>

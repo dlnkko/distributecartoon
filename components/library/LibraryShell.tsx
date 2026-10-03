@@ -191,6 +191,12 @@ export function LibraryShell({
               >
                 Membership
               </button>
+              <a href="/privacy" role="menuitem" className="no-press block min-h-10 w-full whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-white/5">
+                Privacy
+              </a>
+              <a href="/terms" role="menuitem" className="no-press block min-h-10 w-full whitespace-nowrap px-3 py-2 text-left text-sm hover:bg-white/5">
+                Terms
+              </a>
               <button type="button" role="menuitem" onClick={onLogout} className="no-press block min-h-10 w-full whitespace-nowrap px-3 text-left text-sm hover:bg-white/5">
                 Sign out
               </button>

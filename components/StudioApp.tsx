@@ -20,6 +20,7 @@ import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
+import { CONTACT_EMAIL } from "@/lib/site";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -1704,13 +1705,16 @@ export function StudioApp() {
               </button>
             </div>
             <CreditsShop />
+            <p className="mt-4 text-center text-xs text-[var(--muted)]">
+              Payments follow the <a href="/terms" className="text-[#ffb089]">Terms</a>.
+            </p>
           </div>
         </div>
       ) : null}
 
       {panel === "account" ? (
         <div className="studio-dark fixed inset-0 z-50 grid place-items-center bg-black/60 p-3">
-          <div className="w-full max-w-md rounded-3xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-5 shadow-2xl">
+          <div className="max-h-[min(92vh,760px)] w-full max-w-md overflow-y-auto rounded-3xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-5 shadow-2xl">
             <div className="flex items-start justify-between">
               <div>
                 <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">Account</p>
@@ -1739,6 +1743,13 @@ export function StudioApp() {
             <button type="button" onClick={() => void logout()} className="mt-5 w-full rounded-2xl border border-[var(--line)] px-4 py-2.5 text-sm">
               Sign out
             </button>
+            <p className="mt-4 text-center text-xs text-[var(--muted)]">
+              <a href="/privacy" className="hover:text-white">Privacy</a>
+              <span className="px-2">·</span>
+              <a href="/terms" className="hover:text-white">Terms</a>
+              <span className="px-2">·</span>
+              <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-white">{CONTACT_EMAIL}</a>
+            </p>
           </div>
         </div>
       ) : null}

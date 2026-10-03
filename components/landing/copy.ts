@@ -21,63 +21,113 @@ export const ZOOM_URL = "https://zoom.us/j/81531268770";
 export const COPY = {
   personal: {
     label: "Personal",
-    title: "Turn the people you love into animated characters.",
-    sub: "Upload a photo, pick Pixar or claymation, and get a 30 second animated short starring them. Finished, nothing to edit.",
-    cta: "Start at $19.99 a month",
+    title: "Any idea. Animated like a billion dollar studio made it.",
+    sub: "No prompting. Just know what you want. Your characters stay the same in every shot, and your animation is ready in about 10 minutes.",
+    cta: "Try it for $9.99",
     secondary: "See examples",
-    trust: "Monthly plans. 1 credit is 1 second of video.",
-    metaTitle: "Turn the people you love into animated characters",
+    trust: "One time $9.99 to try it. You own every video you make.",
+    metaTitle: "Any idea, animated like a billion dollar studio made it",
     metaDescription:
-      "Upload a photo, pick Pixar or claymation, and get a 30 second animated short starring them. Finished, nothing to edit.",
+      "Turn any idea into a studio quality animation. No prompting, consistent characters, ready in about 10 minutes.",
   },
   brands: {
     label: "Brands",
-    title: "Let us run the ads, or make them yourself.",
-    sub: "Book a call for 30 animations a month from your scripts, or 50 with the scripts, angles, and creative written for you. Or paste a script and make the first ad yourself.",
-    cta: "Book a call",
-    secondary: "See brand examples",
-    trust: "The agency starts with a call. Plans start at $19.99 a month.",
-    metaTitle: "Let us run the ads, or make them yourself",
+    title: "The ads breaking the market right now. Made in one click.",
+    sub: "Drop in a script or storyboard, upload your product, and get a professional ad in minutes. No editors, no paid retries, no picking AI models.",
+    cta: "Start creating",
+    secondary: "See agency plans",
+    trust: "Plans from $19.99 a month. Built for organic and paid.",
+    metaTitle: "The ads breaking the market right now, made in one click",
     metaDescription:
-      "Book a call for 30 animations a month from your scripts, or 50 with the scripts, angles, and creative written for you.",
+      "Script or storyboard in, professional animated ad out. Drama animation ads and Suno ads in minutes, with no editors.",
   },
 } as const;
 
-export const PERSONAL_STORY = [
+export const PERSONAL_IDEA = {
+  title: "All you need is the idea.",
+  text: "Write it the way you would tell a friend. Clickframes plans the shots, keeps every character consistent, and hands you a finished animation in about 10 minutes.",
+};
+
+export const PERSONAL_USES = [
   {
-    title: "A gift nobody else will give.",
-    text: "Birthdays, anniversaries, a new baby, a goodbye. Give something they will replay and send to everyone they know.",
-    media: clip("example-personal-gift"),
-  },
-  {
-    title: "It looks like them.",
-    text: "Their photo becomes the character, and the face stays the same from the first shot to the last.",
+    title: "Real people, animated.",
+    text: "Turn yourself, your family, or your friends into animated characters and tell any story you want.",
     media: clip("example-personal-face"),
   },
   {
-    title: "Short on time? Good.",
-    text: "Skip the designers and the waiting. Upload, choose a style, download.",
+    title: "A surprise they will never forget.",
+    text: "Birthdays, anniversaries, graduations. Give the people you love a film starring them.",
+    media: clip("example-personal-gift"),
+  },
+  {
+    title: "Your store or your product.",
+    text: "Put what you sell inside a story people actually want to watch.",
     media: clip("example-personal-fast"),
   },
 ];
 
-export const STYLES = ["Pixar", "Claymation", "Describe your own"];
+export const PERSONAL_EDGE = [
+  { title: "Cinematic on the first try", text: "A well made film from the first generation. No rounds of trial and error." },
+  { title: "Continuity up to 2 minutes", text: "Same voices, looks, places, and scenes from start to finish. Up to 5 minutes is coming soon." },
+  { title: "Stories that needed a studio budget", text: "The films you used to dream about now fit in your hands." },
+];
+
+export const PERSONAL_OWN = {
+  title: "Every frame is yours.",
+  text: "You own all the rights to every video you create on Clickframes. It is your creation, and you can be proud of it.",
+};
+
+export const PERSONAL_CLOSE = "Try it once and the gap between your ideas and reality drops to zero.";
 
 export const BRAND_PAIN = [
-  "Agency quotes that eat the whole campaign budget.",
-  "Weeks of revisions for a 30 second spot.",
-  "AI clips where your logo melts and your product changes shape.",
+  { title: "Editors on their schedule", text: "Waiting days for a cut you needed yesterday." },
+  { title: "Editor fees on every ad", text: "A new invoice for every concept you want to test." },
+  { title: "Paying again for retries", text: "Every revision on every ad adds to the bill." },
+];
+
+export const BRAND_TECH = {
+  title: "Always on the best AI.",
+  text: "You never pick a video model or an image model. Clickframes always runs on the best technology available for AI creatives, so your only job is the script or the storyboard.",
+};
+
+export const BRAND_FORMATS = [
+  {
+    title: "Drama animation ads",
+    text: "A hook, a problem, your product as the answer. Told like a short film.",
+    media: clip("example-brands-1"),
+  },
+  {
+    title: "Suno ads",
+    text: "Upload your Suno song. Clickframes handles the rest: visuals, storyboard, sequences, consistency. All of it.",
+    media: clip("example-brands-2"),
+  },
+];
+
+export const BRAND_AGENCY = {
+  title: "Rather skip the ideation too?",
+  text: "Hire us on an agency plan and we come up with the concepts for you.",
+  cta: "See agency plans",
+};
+
+export const BRAND_CLOSE = {
+  title: "Your AI creative partner for scaling.",
+  text: "Organic or paid, Clickframes shrinks the gap between an idea and a finished ad.",
+};
+
+export const AGENCY_PLANS = [
+  { id: "agency-1", name: "Agency", text: "Details coming soon." },
+  { id: "agency-2", name: "Agency Plus", text: "Details coming soon." },
 ];
 
 export const STEPS = [
   {
     title: "Drop in your idea",
-    text: "Paste a script, upload a photo, or add a Suno song. We read the story before generating anything.",
+    text: "A script, a storyboard, a photo, or a Suno song. We read the story before generating anything.",
     media: clip("step-idea"),
   },
   {
     title: "We lock the look",
-    text: "Characters, products, places and logos stay consistent in every shot.",
+    text: "Characters, products, places, and logos stay consistent in every shot.",
     media: clip("step-look"),
   },
   {
@@ -92,30 +142,30 @@ export const EXAMPLES = {
   brands: [clip("example-brands-1"), clip("example-brands-2"), clip("example-brands-3")],
 };
 
-export const PACK_LINES: Record<string, string> = {
-  starter: "One short",
-  creator: "A longer cut",
-  pro: "Your first real campaign",
-  scale: "Several animations",
-  agency: "A full batch",
+export const TRIAL_OFFER = {
+  title: "We want your idea on screen.",
+  text: "So your first one is a one time $9.99. Try it and judge the quality yourself.",
+  was: "$19.99/mo",
+  now: "$9.99",
+  yes: "Yes, I want this!",
+  no: "No, I don't want my idea to come to life",
 };
 
 export function faqFor(mode: Mode) {
-  const same =
-    mode === "brands"
-      ? "Your product, mascot and logo stay identical from shot to shot."
-      : "Their photo becomes the character, and the face stays the same from the first shot to the last.";
   return [
     {
-      q: "Will it look like cheap AI?",
+      q: "Do I need to know how to prompt?",
+      a: "No. Write the idea the way you would explain it to a friend. Clickframes handles the rest.",
+    },
+    {
+      q: "Will the characters stay the same?",
       a:
         mode === "brands"
-          ? "The ad is built so the product, mascot and logo hold from shot to shot, the way a planned commercial does."
-          : "The short is built as a finished Pixar or claymation piece, with the same face from the first shot to the last.",
+          ? "Yes. Your product, mascot, logo, and characters stay identical from shot to shot."
+          : "Yes. Faces, voices, places, and scenes stay consistent for the whole video.",
     },
-    { q: "Will the face or logo stay the same?", a: same },
-    { q: "How long does it take?", a: "TODO: fill the real timing." },
-    { q: "Can I use it commercially?", a: "TODO: confirm the license." },
-    { q: "Do credits expire?", a: "TODO: confirm whether credits expire." },
+    { q: "How long does it take?", a: "About 10 minutes for most animations." },
+    { q: "How long can a video be?", a: "Up to 2 minutes today. Up to 5 minutes is coming soon." },
+    { q: "Who owns the video?", a: "You do. You own all the rights to every video you create on Clickframes." },
   ];
 }
