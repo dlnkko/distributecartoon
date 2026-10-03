@@ -77,8 +77,6 @@ export const PERSONAL_OWN = {
   text: "You own all the rights to every video you create on Clickframes. It is your creation, and you can be proud of it.",
 };
 
-export const PERSONAL_CLOSE = "Try it once and the gap between your ideas and reality drops to zero.";
-
 export const BRAND_PAIN = [
   { title: "Editors on their schedule", text: "Waiting days for a cut you needed yesterday." },
   { title: "Editor fees on every ad", text: "A new invoice for every concept you want to test." },
@@ -142,14 +140,24 @@ export const EXAMPLES = {
   brands: [clip("example-brands-1"), clip("example-brands-2"), clip("example-brands-3")],
 };
 
-export const TRIAL_OFFER = {
-  title: "We want your idea on screen.",
-  text: "So your first one is a one time $9.99. Try it and judge the quality yourself.",
-  was: "$19.99/mo",
-  now: "$9.99",
-  yes: "Yes, I want this!",
-  no: "No, I don't want my idea to come to life",
-};
+export const TRIAL_OFFERS = {
+  personal: {
+    title: "We want your idea on screen.",
+    text: "Your first 40 credits are a one time $9.99. Try it and judge the quality yourself.",
+    was: "$19.99/mo",
+    now: "$9.99",
+    yes: "Yes, I want this!",
+    no: "No, I don't want my idea to come to life",
+  },
+  brands: {
+    title: "We want your winning ad on screen.",
+    text: "Your first 40 credits are a one time $9.99. Try it and judge the quality yourself.",
+    was: "$19.99/mo",
+    now: "$9.99",
+    yes: "Yes, I want this!",
+    no: "No, I don't want ads that win",
+  },
+} as const;
 
 export function faqFor(mode: Mode) {
   return [

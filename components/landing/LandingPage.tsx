@@ -17,13 +17,12 @@ import {
   COPY,
   EXAMPLES,
   HERO_CLIPS,
-  PERSONAL_CLOSE,
   PERSONAL_EDGE,
   PERSONAL_IDEA,
   PERSONAL_OWN,
   PERSONAL_USES,
   STEPS,
-  TRIAL_OFFER,
+  TRIAL_OFFERS,
   ZOOM_URL,
   faqFor,
   type Mode,
@@ -52,7 +51,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   }, [mode]);
 
   useEffect(() => {
-    if (mode !== "personal" || sessionStorage.getItem("cf-trial-offer")) return;
+    if (sessionStorage.getItem(offerKey(mode))) return;
     const timer = window.setTimeout(() => {
       setOffer(true);
       track("trial_offer_shown", { mode });
@@ -75,7 +74,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   }, [offer]);
 
   function closeOffer() {
-    sessionStorage.setItem("cf-trial-offer", "1");
+    sessionStorage.setItem(offerKey(mode), "1");
     setOffer(false);
   }
 
@@ -103,6 +102,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
   }
 
   const hero = HERO_CLIPS[mode][clip] ?? HERO_CLIPS[mode][0];
+  const trial = TRIAL_OFFERS[mode];
 
   return (
     <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
@@ -145,7 +145,7 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
       </section>
 
       {mode === "personal" ? (
-        <PersonalBody busy={busy} onTry={() => void buy(INTRO_OFFER.id, "personal_close_cta")} />
+        <PersonalBody />
       ) : (
         <BrandBody />
       )}
@@ -215,23 +215,24 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
           <div className="land-offer relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-white/10 bg-[#141417] p-7 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] sm:p-10">
             <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[#ff8a3d]/30 blur-3xl" />
             <h2 id="trial-offer-title" className="land-display relative text-4xl leading-[1.02] text-white sm:text-5xl">
-              {TRIAL_OFFER.title}
+              {trial.title}
             </h2>
-            <p className="relative mx-auto mt-4 max-w-sm text-base leading-relaxed text-white/75">{TRIAL_OFFER.text}</p>
+            <p className="relative mx-auto mt-4 max-w-sm text-base leading-relaxed text-white/75">{trial.text}</p>
             <p className="relative mt-6 flex items-baseline justify-center gap-3">
-              <s className="text-xl text-white/45">{TRIAL_OFFER.was}</s>
-              <span className="text-5xl font-semibold text-white">{TRIAL_OFFER.now}</span>
+              <s className="text-xl text-white/45">{trial.was}</s>
+              <span className="text-5xl font-semibold text-white">{trial.now}</span>
               <span className="text-sm text-white/60">one time</span>
             </p>
+            <p className="relative mt-2 text-sm font-medium text-white">{INTRO_OFFER.seconds} credits</p>
             <button
               type="button"
               onClick={() => {
-                sessionStorage.setItem("cf-trial-offer", "1");
+                sessionStorage.setItem(offerKey(mode), "1");
                 void buy(INTRO_OFFER.id, "trial_offer_accept");
               }}
               className="cf-btn btn-primary relative mt-7 w-full rounded-2xl py-3.5 text-base font-semibold"
             >
-              {busy === INTRO_OFFER.id ? "Opening…" : TRIAL_OFFER.yes}
+              {busy === INTRO_OFFER.id ? "Opening…" : trial.yes}
             </button>
             <button
               type="button"
@@ -241,13 +242,17 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
               }}
               className="relative mt-3 w-full py-2 text-sm text-white/50 underline-offset-4 hover:text-white/80 hover:underline"
             >
-              {TRIAL_OFFER.no}
+              {trial.no}
             </button>
           </div>
         </div>
       ) : null}
     </main>
   );
+}
+
+function offerKey(mode: Mode) {
+  return mode === "brands" ? "cf-trial-offer-brands" : "cf-trial-offer";
 }
 
 function ModeToggle({ mode, base }: { mode: Mode; base: string }) {
@@ -308,7 +313,7 @@ function HeroVideo({ clip }: { clip: (typeof HERO_CLIPS)["personal"][number] }) 
   );
 }
 
-function PersonalBody({ busy, onTry }: { busy: string; onTry: () => void }) {
+function PersonalBody() {
   return (
     <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
       <section className="grid items-center gap-8 lg:grid-cols-2">
@@ -349,12 +354,6 @@ function PersonalBody({ busy, onTry }: { busy: string; onTry: () => void }) {
         <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">{PERSONAL_OWN.text}</p>
       </section>
 
-      <section className="text-center">
-        <h2 className="land-display mx-auto max-w-3xl text-4xl leading-[1.02] sm:text-6xl">{PERSONAL_CLOSE}</h2>
-        <button type="button" onClick={onTry} className="cf-btn btn-primary mt-8 px-6 py-3 text-sm font-semibold">
-          {busy === INTRO_OFFER.id ? "Opening…" : COPY.personal.cta}
-        </button>
-      </section>
     </div>
   );
 }
