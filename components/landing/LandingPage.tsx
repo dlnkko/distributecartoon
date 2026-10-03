@@ -152,9 +152,9 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
 
       <section id="examples" className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
         <h2 className="land-display text-4xl sm:text-5xl">{mode === "brands" ? "Brand examples" : "Examples"}</h2>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className={`mt-8 grid gap-4 ${mode === "brands" ? "mx-auto max-w-3xl md:grid-cols-2" : "md:grid-cols-3"}`}>
           {EXAMPLES[mode].map((item, index) => (
-            <VideoCard key={item.label} clip={item} frame={String(index + 1).padStart(2, "0")} />
+            <VideoCard key={item.label} clip={item} ratio={mode === "brands" ? "aspect-[9/16]" : "aspect-video"} frame={String(index + 1).padStart(2, "0")} />
           ))}
         </div>
       </section>
@@ -382,7 +382,7 @@ function BrandBody() {
           <h2 className="land-display text-4xl sm:text-5xl">{BRAND_TECH.title}</h2>
           <p className="mt-4 max-w-md text-lg leading-relaxed text-[var(--cf-muted)]">{BRAND_TECH.text}</p>
         </div>
-        <VideoCard clip={EXAMPLES.brands[2]} frame="01" />
+        <VideoCard clip={EXAMPLES.brands[0]} ratio="aspect-[9/16]" frame="01" className="mx-auto w-full max-w-sm" />
       </section>
 
       <section>

@@ -137,7 +137,10 @@ export const STEPS = [
 
 export const EXAMPLES = {
   personal: [clip("example-personal-1"), clip("example-personal-2"), clip("example-personal-3")],
-  brands: [clip("example-brands-1"), clip("example-brands-2"), clip("example-brands-3")],
+  brands: [
+    { mp4: "/media/createwellness-branded.mp4", webm: "", poster: "/media/poster.svg", label: "Createwellness" },
+    { mp4: "/media/loop-branded.mp4", webm: "", poster: "/media/poster.svg", label: "Loop" },
+  ],
 };
 
 export const TRIAL_OFFERS = {

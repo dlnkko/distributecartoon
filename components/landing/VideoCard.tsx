@@ -72,7 +72,7 @@ export function VideoCard({
           onCanPlay={() => setReady(true)}
           onError={() => setFailed(true)}
         >
-          <source src={clip.webm} type="video/webm" />
+          {clip.webm ? <source src={clip.webm} type="video/webm" /> : null}
           <source src={clip.mp4} type="video/mp4" />
         </video>
       )}
