@@ -7,9 +7,11 @@ const CAP = 150;
 export function CreditsWidget({
   credits,
   compact = false,
+  onBuy,
 }: {
   credits: number;
   compact?: boolean;
+  onBuy?: () => void;
 }) {
   const gradId = useId().replace(/:/g, "");
   const low = credits < 30;
@@ -54,12 +56,13 @@ export function CreditsWidget({
         <>
           <p className="mt-2 text-[11px] leading-4 text-[var(--cf-muted)]">credits = seconds of video</p>
           {low ? <p className="mt-1 text-[11px] text-[#FFB088]">Low balance. A short film needs more credits.</p> : null}
-          <a
-            href="/checkout/pro"
+          <button
+            type="button"
+            onClick={onBuy}
             className="btn-primary mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)]"
           >
             Buy credits
-          </a>
+          </button>
         </>
       )}
     </div>

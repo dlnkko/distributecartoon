@@ -42,7 +42,7 @@ export async function updateSession(request: NextRequest) {
     return copyCookies(supabaseResponse, NextResponse.redirect(redirectUrl));
   }
 
-  if (process.env.NODE_ENV === "development" && path === "/login") {
+  if (process.env.NODE_ENV === "development" && path === "/login" && request.cookies.get("cf-signed-out")?.value !== "1") {
     return copyCookies(supabaseResponse, NextResponse.redirect(new URL("/", request.url)));
   }
 

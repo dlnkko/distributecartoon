@@ -30,6 +30,7 @@ export function LibraryShell({
   onCreateSong,
   onAccount,
   onMembership,
+  onCredits,
   onLogout,
   resolveSrc,
   downloadName,
@@ -49,6 +50,7 @@ export function LibraryShell({
   onCreateSong: () => void;
   onAccount: () => void;
   onMembership: () => void;
+  onCredits: () => void;
   onLogout: () => void;
   resolveSrc: (path?: string) => string;
   downloadName: (item: LibraryVideo) => string;
@@ -157,7 +159,7 @@ export function LibraryShell({
           </button>
         </nav>
         <div className={narrow ? "px-2 pb-2" : "px-3 pb-2"}>
-          <CreditsWidget credits={credits} compact={narrow} />
+          <CreditsWidget credits={credits} compact={narrow} onBuy={onCredits} />
         </div>
         <div className={`relative ${narrow ? "p-2" : "p-3"}`} data-account-menu>
           <button type="button" onClick={() => setMenu((open) => !open)} className={`no-press flex items-center rounded-xl text-left hover:bg-white/5 ${narrow ? "mx-auto size-9 justify-center" : "min-h-11 w-full gap-3 px-2"}`} aria-expanded={menu} aria-haspopup="menu" aria-label="Account menu">
@@ -266,18 +268,18 @@ export function LibraryShell({
                 </p>
               </div>
             ) : (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6">
                 {shownDrafts.map((item) => (
-                  <article key={item.id} className="flex flex-col rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 shadow-[0_16px_40px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.06)]">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-[var(--cf-muted)]">
+                  <article key={item.id} className="flex min-w-0 flex-col rounded-2xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                    <p className="truncate text-[10px] font-medium uppercase tracking-[0.12em] text-[var(--cf-muted)]">
                       {item.kind} · {item.step}
                     </p>
-                    <h3 className="mt-2 truncate text-lg font-semibold">{item.title || "Untitled video"}</h3>
-                    <p className="mt-1 text-xs text-[var(--cf-muted)]">{timeAgo(item.updatedAt)}</p>
+                    <h3 className="mt-1 truncate text-sm font-semibold">{item.title || "Untitled video"}</h3>
+                    <p className="mt-0.5 text-[11px] text-[var(--cf-muted)]">{timeAgo(item.updatedAt)}</p>
                     <button
                       type="button"
                       onClick={() => onOpenDraft(item.id)}
-                      className="btn-primary mt-4 inline-flex min-h-11 items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-4 text-sm font-semibold text-white"
+                      className="btn-primary mt-2 inline-flex h-8 items-center justify-center rounded-lg bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-2 text-xs font-semibold text-white"
                     >
                       Continue
                     </button>
@@ -322,7 +324,7 @@ export function LibraryShell({
                 Close
               </button>
             </div>
-            <CreditsWidget credits={credits} />
+            <CreditsWidget credits={credits} onBuy={() => { setCreditsOpen(false); onCredits(); }} />
           </div>
         </div>
       ) : null}

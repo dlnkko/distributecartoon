@@ -460,6 +460,47 @@ a.btn-primary {
   background: linear-gradient(135deg, var(--cf-accent-a), var(--cf-accent-b));
 }
 
+.cf-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.cf-range::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.cf-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  margin-top: -7px;
+  border: 0;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #ff8a3d, #ff5e62);
+  box-shadow: 0 4px 12px rgba(255, 94, 98, 0.45);
+}
+
+.cf-range::-moz-range-track {
+  height: 4px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.cf-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border: 0;
+  border-radius: 999px;
+  background: #ff8a3d;
+}
+
 @keyframes land-drift {
   0%, 100% { transform: translate3d(0, 0, 0); }
   50% { transform: translate3d(28px, -20px, 0); }

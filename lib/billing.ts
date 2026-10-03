@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { planById, PLANS, planWhopId } from "@/lib/plans";
+import { planById, planByWhop } from "@/lib/plans";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { whopClient, whopConfig } from "@/lib/whop";
 
@@ -47,14 +47,14 @@ export async function activeMembership() {
 function planName(plan: string, planId?: string | null) {
   const named = planById(plan);
   if (named) return named.name;
-  const byWhop = planId ? PLANS.find((item) => item.whopPlanId === planId || planWhopId(item) === planId) : undefined;
+  const byWhop = planId ? planByWhop(planId) : undefined;
   return byWhop?.name || plan || "Membership";
 }
 
 function planSlug(plan: string, planId?: string | null) {
   if (planById(plan)) return plan;
-  const byWhop = planId ? PLANS.find((item) => item.whopPlanId === planId || planWhopId(item) === planId) : undefined;
-  return byWhop?.id || plan || "starter";
+  const byWhop = planId ? planByWhop(planId) : undefined;
+  return byWhop?.id || plan || "m40";
 }
 
 type WhopMembership = {
@@ -158,6 +158,28 @@ export async function loadMembership(userId: string) {
   const local = await localMembership(userId);
   const remote = await whopMembershipFor(userId, local?.whop_payment_id || null, local?.whop_membership_id || null);
   return toView(remote, local);
+}
+
+export async function replaceMembership(userId: string, plan: string, paymentId: string, oldMembershipId: string) {
+  await saveMembership(userId, plan, paymentId);
+  if (!oldMembershipId || !whopConfig().apiKey) return;
+  try {
+    await whopClient().memberships.cancel({
+      id: oldMembershipId,
+      cancel_at_period_end: false,
+      reason: "Replaced by a new monthly plan",
+    });
+  } catch (error) {
+    console.warn("could not end the previous membership", error instanceof Error ? error.message : error);
+  }
+}
+
+export async function grantCredits(userId: string, credits: number, paymentId: string) {
+  if (!userId || !paymentId || !Number.isInteger(credits) || credits < 1) return;
+  const client = admin();
+  if (!client) return;
+  const { error } = await client.rpc("grant_credits", { target: userId, amount: credits, payment: paymentId });
+  if (error) console.warn("credit grant failed", error.message);
 }
 
 export async function cancelMembership(userId: string) {

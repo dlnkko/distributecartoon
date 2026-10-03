@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
+import { loadMembership } from "@/lib/billing";
 import { CANONICAL_ORIGIN } from "@/lib/site";
-import { planById, planWhopId } from "@/lib/plans";
+import { memberCanTopUp, planById, planWhopId } from "@/lib/plans";
 import { whopClient, whopConfig } from "@/lib/whop";
 
 export const runtime = "nodejs";
@@ -10,20 +11,30 @@ export async function GET(request: Request, context: { params: Promise<{ plan: s
   const { plan: planId } = await context.params;
   const origin = new URL(request.url).origin;
   const plan = planById(planId);
-  if (!plan) return NextResponse.redirect(new URL("/#pricing", origin));
+  if (!plan || plan.kind === "legacy") return NextResponse.redirect(new URL("/#pricing", origin));
 
   const user = await getAuthUser();
   if (!user) return NextResponse.redirect(new URL(`/login?next=/checkout/${plan.id}`, origin));
+
+  const membership = plan.kind === "monthly" || plan.kind === "topup" ? await loadMembership(user.id) : null;
+  if (plan.kind === "topup" && !memberCanTopUp(membership?.status)) {
+    return NextResponse.redirect(new URL("/?panel=credits", origin));
+  }
 
   const planWhop = planWhopId(plan);
   const { companyId, apiKey } = whopConfig();
   if (!apiKey || !companyId) return NextResponse.redirect(plan.purchaseUrl);
 
+  const metadata: Record<string, string> = { user_id: user.id, plan: plan.id, credits: String(plan.seconds) };
+  if (plan.kind === "monthly" && membership?.id && memberCanTopUp(membership.status) && membership.plan !== plan.id) {
+    metadata.replace_membership_id = membership.id;
+  }
+
   const checkout = await whopClient().checkoutConfigurations.create({
     account_id: companyId,
     plan_id: planWhop,
     mode: "payment",
-    metadata: { user_id: user.id, plan: plan.id },
+    metadata,
     redirect_url: `${CANONICAL_ORIGIN}/`,
   });
   if (!checkout.purchase_url) {

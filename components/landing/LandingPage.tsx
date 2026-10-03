@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
-import { DFY_PLANS, INTRO_OFFER, PLANS } from "@/lib/plans";
+import { CreditRange } from "@/components/pricing/CreditRange";
+import { DFY_PLANS, LEAD_PLANS, SLIDER_PLANS, formatPlanPrice } from "@/lib/plans";
 import { BeforeAfter } from "@/components/landing/BeforeAfter";
 import { startCheckout } from "@/components/landing/checkout";
 import {
@@ -10,7 +11,6 @@ import {
   COPY,
   EXAMPLES,
   HERO_CLIPS,
-  PACK_LINES,
   PERSONAL_STORY,
   STEPS,
   STYLES,
@@ -100,9 +100,9 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
                 {copy.cta}
               </a>
             ) : (
-              <button type="button" onClick={() => void buy(INTRO_OFFER.id, "hero_cta_click")} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
-                {busy === INTRO_OFFER.id ? "Opening Google…" : copy.cta}
-              </button>
+              <a href="#pricing" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
+                {copy.cta}
+              </a>
             )}
             <a href="#examples" className="land-link text-sm font-semibold text-white">
               {copy.secondary}
@@ -145,17 +145,17 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
 
       <footer className="mx-auto flex max-w-6xl items-center justify-between px-4 py-10 text-xs text-[var(--cf-muted)] sm:px-6">
         <span>Clickframes</span>
-        <span>Credits, not a subscription.</span>
+        <span>Monthly plans from $19.99.</span>
       </footer>
 
       {offer ? (
         <div className={`land-offer fixed inset-x-0 z-[90] px-3 sm:px-6 ${sticky ? "bottom-20 md:bottom-3" : "bottom-3"}`}>
           <div className="mx-auto flex max-w-3xl items-center justify-between gap-3 rounded-2xl border border-white/10 bg-[#141417]/95 px-4 py-3 shadow-[0_16px_40px_rgba(0,0,0,0.4)]">
-            <p className="text-sm">Your first 30 seconds for $4.99.</p>
+            <p className="text-sm">Plans from $19.99 a month.</p>
             <div className="flex shrink-0 items-center gap-2">
-              <button type="button" onClick={() => void buy(INTRO_OFFER.id, "offer_bar_click")} className="cf-btn btn-primary px-3 py-2 text-sm font-semibold">
-                Get it for $4.99
-              </button>
+              <a href="#pricing" onClick={() => track("offer_bar_click", { mode })} className="cf-btn btn-primary px-3 py-2 text-sm font-semibold">
+                See plans
+              </a>
               <button
                 type="button"
                 className="px-2 text-sm text-[var(--cf-muted)]"
@@ -178,9 +178,9 @@ export function LandingPage({ mode, base }: { mode: Mode; base: string }) {
               {copy.cta}
             </a>
           ) : (
-            <button type="button" onClick={() => void buy(INTRO_OFFER.id, "hero_cta_click")} className="cf-btn btn-primary w-full py-3 text-sm font-semibold">
+            <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary w-full py-3 text-center text-sm font-semibold">
               {copy.cta}
-            </button>
+            </a>
           )}
         </div>
       ) : null}
@@ -321,43 +321,36 @@ function BrandBody() {
 }
 
 function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: string) => void }) {
+  const [tier, setTier] = useState(0);
+  const flex = SLIDER_PLANS[tier] ?? SLIDER_PLANS[0];
   return (
     <section id="pricing" className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
       <h2 className="land-display text-4xl sm:text-5xl">Pricing</h2>
-      <article className="mt-8 flex flex-wrap items-center justify-between gap-4 rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
-        <div>
-          <p className="text-sm font-medium text-[#ffb089]">First 30 seconds</p>
-          <p className="land-display mt-1 text-3xl">${INTRO_OFFER.price}</p>
-          {/* TODO: confirm 1 credit = 1 second before treating this as a promise. */}
-          <p className="mt-1 text-sm text-[var(--cf-muted)]">About {INTRO_OFFER.seconds} seconds of animation.</p>
-        </div>
-        <button type="button" onClick={() => onBuy(INTRO_OFFER.id)} className="cf-btn btn-primary px-4 py-2.5 text-sm font-semibold">
-          {busy === INTRO_OFFER.id ? "Opening…" : "Get it for $4.99"}
-        </button>
-      </article>
-      <p className="mt-8 text-sm text-[var(--cf-muted)]">Credits, not a subscription. Keep every animation.</p>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-        {PLANS.map((plan) => (
-          <article
-            key={plan.id}
-            className={`flex flex-col rounded-3xl p-5 ${plan.featured ? "cf-grad text-white lg:scale-105" : "border border-white/10 bg-[var(--cf-surface)]"}`}
-          >
-            {plan.featured ? <p className="text-xs font-semibold uppercase tracking-[0.14em]">Most popular</p> : null}
-            <h3 className="mt-1 text-lg font-semibold">{plan.name}</h3>
-            <p className="mt-3 text-3xl font-semibold">${plan.price}</p>
-            <p className={`mt-1 text-sm ${plan.featured ? "text-white/85" : "text-[var(--cf-muted)]"}`}>{plan.seconds} credits</p>
-            {/* TODO: confirm 1 credit = 1 second before treating this as a promise. */}
-            <p className={`text-sm ${plan.featured ? "text-white/85" : "text-[var(--cf-muted)]"}`}>About {plan.seconds} seconds of animation.</p>
-            <p className="mt-3 flex-1 text-sm">{PACK_LINES[plan.id]}</p>
-            <button
-              type="button"
-              onClick={() => onBuy(plan.id)}
-              className={`btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold ${plan.featured ? "bg-white text-black" : "cf-btn text-white"}`}
-            >
-              {busy === plan.id ? "Opening…" : "Pay with Whop"}
+      <p className="mt-3 max-w-xl text-sm text-[var(--cf-muted)]">Monthly plans. 1 credit is 1 second of video. The month starts the day you pay.</p>
+      <div className="mt-8 grid gap-4 lg:grid-cols-3">
+        {LEAD_PLANS.map((plan) => (
+          <article key={plan.id} className="flex flex-col rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
+            <h3 className="text-lg font-semibold">{plan.seconds} credits</h3>
+            <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
+            <p className="mt-1 text-sm text-[var(--cf-muted)]">{plan.perCredit} per credit</p>
+            <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{plan.blurb}</p>
+            <button type="button" onClick={() => onBuy(plan.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
+              {busy === plan.id ? "Opening…" : "Start plan"}
             </button>
           </article>
         ))}
+        <article className="cf-grad flex flex-col rounded-3xl p-6 text-white">
+          <h3 className="text-lg font-semibold">{flex.badge || `${flex.seconds} credits`}</h3>
+          <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(flex.price)}<span className="text-lg font-medium">/mo</span></p>
+          <p className="mt-1 text-sm text-white/85">{flex.seconds.toLocaleString("en-US")} credits · {flex.perCredit} per credit</p>
+          <div className="mt-5">
+            <CreditRange labels={["250", "Max", "Ultra"]} index={tier} onChange={setTier} label="Monthly plan size" idleClass="text-white/70" />
+          </div>
+          <p className="mt-3 flex-1 text-sm text-white/90">{flex.blurb}</p>
+          <button type="button" onClick={() => onBuy(flex.id)} className="btn-primary mt-5 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-black">
+            {busy === flex.id ? "Opening…" : "Start plan"}
+          </button>
+        </article>
       </div>
       {mode === "brands" ? (
         <div className="mt-14">

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, ScriptCastMember, VisualStyle, WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
@@ -14,13 +13,13 @@ import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
 import { generationCreditCost } from "@/lib/credits";
 import { draftKind, draftStepLabel, isDraftProject } from "@/lib/drafts";
+import { CreditsShop } from "@/components/library/CreditsShop";
 import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
 import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
-import { PLANS } from "@/lib/plans";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -138,11 +137,23 @@ function stepReachable(project: Project, step: WorkflowStep) {
   return Boolean(projectDeliveredSrc(project));
 }
 
-function studioUrl(projectId?: string, step?: string) {
-  if (!projectId) return window.location.pathname;
-  const params = new URLSearchParams({ p: projectId });
-  if (step) params.set("step", step);
-  return `${window.location.pathname}?${params.toString()}`;
+function viewUrl(view: {
+  pane: "library" | "studio";
+  projectId?: string;
+  step?: string;
+  zone?: LibraryZone;
+  panel?: "account" | "membership" | "credits" | null;
+}) {
+  const params = new URLSearchParams();
+  if (view.pane === "studio" && view.projectId) {
+    params.set("p", view.projectId);
+    if (view.step) params.set("step", view.step);
+  } else if (view.zone === "drafts") {
+    params.set("zone", "drafts");
+  }
+  if (view.panel) params.set("panel", view.panel);
+  const query = params.toString();
+  return `${window.location.pathname}${query ? `?${query}` : ""}`;
 }
 
 function draftKey(projectId: string) {
@@ -381,7 +392,6 @@ async function requestCastLooks(projectId: string, signal: AbortSignal, prepareS
 }
 
 export function StudioApp() {
-  const router = useRouter();
   const [projects, setProjects] = useState<Project[]>([]);
   const [project, setProject] = useState<Project | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -392,8 +402,8 @@ export function StudioApp() {
   const [songUploadName, setSongUploadName] = useState("");
   const [uploadingSlotId, setUploadingSlotId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [accountOpen, setAccountOpen] = useState(false);
-  const [membershipOpen, setMembershipOpen] = useState(false);
+  const [panel, setPanel] = useState<"account" | "membership" | "credits" | null>(null);
+  const panelRef = useRef(panel);
   const [expanded, setExpanded] = useState<{ src: string; poster?: string; label?: string; downloadName?: string } | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
   const songRef = useRef<HTMLInputElement>(null);
@@ -784,7 +794,18 @@ export function StudioApp() {
     const forward = to > from && steps.slice(from + 1, to + 1).every((item) => stepReachable(current, item.id));
     const generatingNow = !projectDeliveredSrc(current) && projectIsGenerating(current);
     if (busyRef.current || generatingNow || !(backward || (fromHistory && forward))) {
-      if (fromHistory) window.history.replaceState(null, "", studioUrl(current.id, current.workflowStep || "script"));
+      if (fromHistory) {
+        window.history.replaceState(
+          null,
+          "",
+          viewUrl({
+            pane: "studio",
+            projectId: current.id,
+            step: current.workflowStep || "script",
+            panel: panelRef.current,
+          }),
+        );
+      }
       return;
     }
     setStatus("");
@@ -1145,9 +1166,13 @@ export function StudioApp() {
   }
 
   async function logout() {
-    await createClient().auth.signOut();
-    router.replace("/login");
-    router.refresh();
+    document.cookie = "cf-signed-out=1; Path=/; Max-Age=2592000; SameSite=Lax";
+    try {
+      await createClient().auth.signOut();
+    } catch {
+      // The session is already gone. Still leave the studio.
+    }
+    window.location.replace("/");
   }
 
   async function enableReadyNotify() {
@@ -1214,26 +1239,64 @@ export function StudioApp() {
     if (generatingIds.includes(current.id) || projectIsGenerating(current)) setPane("library");
   }, [generatingIds, project?.id, project?.workflowStep, project?.joinedVideoPublicPath, project?.batches]);
 
+  panelRef.current = panel;
+
+  function closePanel() {
+    if (new URLSearchParams(window.location.search).get("panel")) {
+      window.history.back();
+      return;
+    }
+    setPanel(null);
+  }
+
   useEffect(() => {
     if (!project) return;
-    const target = pane === "studio" ? studioUrl(project.id, project.workflowStep || "script") : studioUrl();
     const here = `${window.location.pathname}${window.location.search}`;
-    const replace = poppingRef.current || !urlReadyRef.current;
+    const target = viewUrl({
+      pane,
+      projectId: project.id,
+      step: project.workflowStep || "script",
+      zone: libraryZone,
+      panel,
+    });
+    if (!urlReadyRef.current) {
+      urlReadyRef.current = true;
+      const params = new URLSearchParams(window.location.search);
+      const open = params.get("panel");
+      let syncing = false;
+      if ((open === "account" || open === "membership" || open === "credits") && open !== panel) {
+        setPanel(open);
+        syncing = true;
+      }
+      if (!params.get("p")) {
+        const zone = params.get("zone") === "drafts" ? "drafts" : "videos";
+        if (zone !== libraryZone) {
+          setLibraryZone(zone);
+          syncing = true;
+        }
+      }
+      if (syncing) return;
+      if (target !== here) window.history.replaceState(null, "", target);
+      return;
+    }
+    const replace = poppingRef.current;
     poppingRef.current = false;
-    urlReadyRef.current = true;
     if (target === here) return;
     if (replace) window.history.replaceState(null, "", target);
     else window.history.pushState(null, "", target);
-  }, [pane, project?.id, project?.workflowStep]);
+  }, [pane, project?.id, project?.workflowStep, libraryZone, panel]);
 
   useEffect(() => {
     function onPopState() {
       const params = new URLSearchParams(window.location.search);
       const id = params.get("p");
+      const open = params.get("panel");
       poppingRef.current = true;
       window.setTimeout(() => {
         poppingRef.current = false;
       }, 2000);
+      setPanel(open === "account" || open === "membership" || open === "credits" ? open : null);
+      setLibraryZone(params.get("zone") === "drafts" ? "drafts" : "videos");
       const found = id ? projectsRef.current.find((item) => item.id === id) : undefined;
       if (!found) {
         setPane("library");
@@ -1294,8 +1357,9 @@ export function StudioApp() {
           }}
           onCreate={() => void createNew()}
           onCreateSong={() => void createSong()}
-          onAccount={() => setAccountOpen(true)}
-          onMembership={() => setMembershipOpen(true)}
+          onAccount={() => setPanel("account")}
+          onMembership={() => setPanel("membership")}
+          onCredits={() => setPanel("credits")}
           onLogout={() => void logout()}
           resolveSrc={assetSrc}
           downloadName={(item) => videoDownloadName(item.title, item.index, item.parts)}
@@ -1368,13 +1432,13 @@ export function StudioApp() {
         </nav>
 
         <div className="px-3 pb-2">
-          <CreditsWidget credits={credits} />
+          <CreditsWidget credits={credits} onBuy={() => setPanel("credits")} />
         </div>
 
         <div className="p-3">
           <button
             type="button"
-            onClick={() => setAccountOpen(true)}
+            onClick={() => setPanel("account")}
             className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-white/5"
           >
             <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-white/10 text-sm">
@@ -1625,9 +1689,26 @@ export function StudioApp() {
         />
       ))}
 
-      {membershipOpen ? <MembershipPanel onClose={() => setMembershipOpen(false)} /> : null}
+      {panel === "membership" ? <MembershipPanel onClose={closePanel} /> : null}
 
-      {accountOpen ? (
+      {panel === "credits" ? (
+        <div className="studio-dark fixed inset-0 z-50 grid place-items-center bg-black/60 p-3">
+          <div className="max-h-[min(92vh,760px)] w-full max-w-md overflow-y-auto rounded-3xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-5 shadow-2xl">
+            <div className="mb-4 flex items-start justify-between">
+              <div>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">Buy credits</p>
+                <h3 className="display mt-1 text-2xl">Credits</h3>
+              </div>
+              <button type="button" onClick={closePanel} className="text-sm text-[var(--muted)]">
+                Close
+              </button>
+            </div>
+            <CreditsShop />
+          </div>
+        </div>
+      ) : null}
+
+      {panel === "account" ? (
         <div className="studio-dark fixed inset-0 z-50 grid place-items-center bg-black/60 p-3">
           <div className="w-full max-w-md rounded-3xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-5 shadow-2xl">
             <div className="flex items-start justify-between">
@@ -1636,7 +1717,7 @@ export function StudioApp() {
                 <h3 className="display mt-1 text-2xl">{profile?.displayName || "Account"}</h3>
                 <p className="text-sm text-[var(--muted)]">{profile?.email}</p>
               </div>
-              <button type="button" onClick={() => setAccountOpen(false)} className="text-sm text-[var(--muted)]">
+              <button type="button" onClick={closePanel} className="text-sm text-[var(--muted)]">
                 Close
               </button>
             </div>
@@ -1650,19 +1731,9 @@ export function StudioApp() {
               </div>
               <div className="rounded-2xl border border-[var(--line)] p-3">
                 <p className="px-1 text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Buy credits</p>
-                <ul className="mt-2 flex flex-col gap-1.5">
-                  {PLANS.map((plan) => (
-                    <li key={plan.id}>
-                      <a href={`/checkout/${plan.id}`} className="flex items-center justify-between rounded-xl px-2 py-2 hover:bg-[var(--bg)]">
-                        <span>
-                          {plan.name}
-                          <span className="ml-2 text-[var(--muted)]">{plan.seconds} credits</span>
-                        </span>
-                        <span className="font-medium">${plan.price.toFixed(2)}</span>
-                      </a>
-                    </li>
-                  ))}
-                </ul>
+                <div className="mt-2">
+                  <CreditsShop />
+                </div>
               </div>
             </dl>
             <button type="button" onClick={() => void logout()} className="mt-5 w-full rounded-2xl border border-[var(--line)] px-4 py-2.5 text-sm">

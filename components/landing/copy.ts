@@ -23,9 +23,9 @@ export const COPY = {
     label: "Personal",
     title: "Turn the people you love into animated characters.",
     sub: "Upload a photo, pick Pixar or claymation, and get a 30 second animated short starring them. Finished, nothing to edit.",
-    cta: "Make their animation for $4.99",
+    cta: "Start at $19.99 a month",
     secondary: "See examples",
-    trust: "Credits, not a subscription. Pay once, keep every animation.",
+    trust: "Monthly plans. 1 credit is 1 second of video.",
     metaTitle: "Turn the people you love into animated characters",
     metaDescription:
       "Upload a photo, pick Pixar or claymation, and get a 30 second animated short starring them. Finished, nothing to edit.",
@@ -36,7 +36,7 @@ export const COPY = {
     sub: "Book a call for 30 animations a month from your scripts, or 50 with the scripts, angles, and creative written for you. Or paste a script and make the first ad yourself.",
     cta: "Book a call",
     secondary: "See brand examples",
-    trust: "The agency starts with a call. Credits are pay once.",
+    trust: "The agency starts with a call. Plans start at $19.99 a month.",
     metaTitle: "Let us run the ads, or make them yourself",
     metaDescription:
       "Book a call for 30 animations a month from your scripts, or 50 with the scripts, angles, and creative written for you.",
