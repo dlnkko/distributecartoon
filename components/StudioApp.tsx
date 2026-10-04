@@ -21,6 +21,7 @@ import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { CONTACT_EMAIL } from "@/lib/site";
+import { castChipLabel } from "@/lib/cast-label";
 
 function assetSrc(publicPath?: string) {
   if (!publicPath) return "";
@@ -1515,7 +1516,7 @@ export function StudioApp() {
         </div>
       </aside>
 
-      <section className="flex min-w-0 flex-1 flex-col bg-[var(--cf-bg)]">
+      <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--cf-bg)]">
         <header className="sticky top-0 z-20 border-b border-[var(--cf-line)] bg-[rgba(11,11,13,0.78)] px-3 py-4 backdrop-blur-xl md:px-6">
           <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(255,138,61,0.22),transparent_68%)] blur-3xl" />
           <div className="relative flex items-center gap-2 md:gap-3">
@@ -1564,7 +1565,7 @@ export function StudioApp() {
                 }}
               />
             ) : null}
-            <div className="scroll-thin relative mx-auto flex w-full max-w-4xl flex-1 flex-col overflow-y-auto px-3 pb-8 md:px-6">
+            <div className="scroll-thin relative mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-y-auto overscroll-y-contain px-3 pb-24 md:px-6">
           {working && step === "setup" ? (
             <div className="absolute inset-0 z-10 grid place-items-center bg-[var(--bg)]/75 p-6">
               <div className="w-full max-w-sm rounded-3xl border border-[var(--line)] bg-white px-6 py-7 text-center shadow-[0_12px_40px_rgba(28,25,23,0.08)]">
@@ -2255,7 +2256,7 @@ function SetupStep({
             ? "Choose who the slot is for, describe the look, and add a photo if you have one."
             : "One photo per role from the script. Leave empty if you do not have one."}
         </p>
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <div className="grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2">
           {characters.map((slot, index) => (
             <CharacterSlot
               key={slot.id}
@@ -3014,7 +3015,42 @@ function CharacterSlot({
   const selected = slot.label.trim().toLowerCase();
 
   return (
-    <div className="space-y-1.5">
+    <div className="min-w-0 space-y-2">
+      {options.length ? (
+        <div className="flex min-w-0 flex-wrap gap-2">
+          {options.map((option) => {
+            const key = option.name.trim().toLowerCase();
+            const active = selected === key;
+            const used = !active && taken.includes(key);
+            return (
+              <button
+                key={option.name}
+                type="button"
+                disabled={disabled || used}
+                aria-pressed={active}
+                onClick={() => onLabel(slot, active ? fallback : option.name)}
+                className={`inline-flex max-w-full min-h-11 touch-manipulation items-center rounded-full border px-3.5 text-left text-[13px] font-medium leading-tight ${
+                  active
+                    ? "border-transparent bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]"
+                    : "border-white/15 bg-[#1c1c21] text-[var(--ink)] hover:border-white/30 hover:bg-white/10"
+                } disabled:cursor-not-allowed disabled:opacity-35`}
+              >
+                <span className="min-w-0 whitespace-normal">{castChipLabel(option.name, option.role)}</span>
+              </button>
+            );
+          })}
+        </div>
+      ) : (
+        <input
+          type="text"
+          value={name}
+          disabled={disabled}
+          placeholder="Role in the script (e.g. Cat)"
+          onChange={(event) => setName(event.target.value)}
+          onBlur={() => onLabel(slot, name.trim() || fallback)}
+          className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
+        />
+      )}
       <UploadTile
         label={named ? slot.label : fallback}
         preview={preview}
@@ -3033,41 +3069,6 @@ function CharacterSlot({
         onBlur={() => onLook(slot, look)}
         className="min-h-[52px] w-full resize-none rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
       />
-      {options.length ? (
-        <div className="flex flex-wrap gap-1.5">
-          {options.map((option) => {
-            const key = option.name.trim().toLowerCase();
-            const active = selected === key;
-            const used = !active && taken.includes(key);
-            return (
-              <button
-                key={option.name}
-                type="button"
-                disabled={disabled || used}
-                aria-pressed={active}
-                onClick={() => onLabel(slot, active ? fallback : option.name)}
-                className={`rounded-full px-2.5 py-1 text-[11px] font-medium disabled:opacity-40 ${
-                  active
-                    ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white"
-                    : "bg-white/5 text-[var(--ink)] hover:bg-white/10"
-                }`}
-              >
-                {option.name} ({option.role})
-              </button>
-            );
-          })}
-        </div>
-      ) : (
-        <input
-          type="text"
-          value={name}
-          disabled={disabled}
-          placeholder="Role in the script (e.g. Cat)"
-          onChange={(event) => setName(event.target.value)}
-          onBlur={() => onLabel(slot, name.trim() || fallback)}
-          className="w-full rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
-        />
-      )}
     </div>
   );
 }
