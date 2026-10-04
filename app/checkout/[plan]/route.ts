@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { loadMembership } from "@/lib/billing";
-import { CANONICAL_ORIGIN } from "@/lib/site";
+import { loadMembership, rememberCreditCheckout } from "@/lib/billing";
+import { APP_ORIGIN } from "@/lib/site";
 import { memberCanTopUp, planById, planWhopId } from "@/lib/plans";
 import { whopClient, whopConfig } from "@/lib/whop";
 
@@ -35,8 +35,9 @@ export async function GET(request: Request, context: { params: Promise<{ plan: s
     plan_id: planWhop,
     mode: "payment",
     metadata,
-    redirect_url: `${CANONICAL_ORIGIN}/`,
+    redirect_url: `${APP_ORIGIN}/`,
   });
+  if (checkout.id) await rememberCreditCheckout(user.id, checkout.id, plan.id);
   if (!checkout.purchase_url) {
     return NextResponse.json({ error: "Whop did not return a checkout link." }, { status: 502 });
   }

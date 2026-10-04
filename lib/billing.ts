@@ -1,5 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
-import { planById, planByWhop } from "@/lib/plans";
+import { planById, planByWhop, planWhopId } from "@/lib/plans";
 import { createClient as createUserClient } from "@/lib/supabase/server";
 import { whopClient, whopConfig } from "@/lib/whop";
 
@@ -176,14 +176,30 @@ export async function replaceMembership(userId: string, plan: string, paymentId:
 export async function grantCredits(userId: string, credits: number, paymentId: string, membershipId?: string) {
   if (!userId || !paymentId || !Number.isInteger(credits) || credits < 1) return;
   const client = admin();
-  if (!client) return;
+  if (!client) {
+    console.error("credit grant skipped: service role is not configured");
+    return;
+  }
   const { error } = await client.rpc("grant_credits", {
     target: userId,
     amount: credits,
     payment: paymentId,
     membership: membershipId || null,
   });
-  if (error) console.warn("credit grant failed", error.message);
+  if (error) console.error("credit grant failed", error.message);
+}
+
+export async function rememberCreditCheckout(userId: string, checkoutId: string, plan: string) {
+  if (!userId || !checkoutId || !plan) return;
+  const client = admin();
+  if (!client) return;
+  const { error } = await client.from("credit_checkouts").upsert({
+    id: checkoutId,
+    user_id: userId,
+    plan,
+    created_at: new Date().toISOString(),
+  });
+  if (error) console.error("credit checkout save failed", error.message);
 }
 
 export async function applyWhopPurchase(userId: string, planId: string, paymentId: string, membershipId?: string) {
@@ -201,6 +217,52 @@ export async function applyWhopPurchase(userId: string, planId: string, paymentI
 }
 
 const creditSyncAt = new Map<string, number>();
+const CREDIT_KINDS = new Set(["monthly", "topup", "intro"]);
+
+type ListedMembership = {
+  id: string;
+  plan_id: string;
+  status: string;
+  created_at: string;
+  metadata?: Record<string, unknown> | null;
+};
+
+async function listRecentMemberships(companyId: string) {
+  const client = whopClient();
+  const found: ListedMembership[] = [];
+  let page = await client.memberships.list({ account_id: companyId, first: 50, direction: "desc" });
+  for (let i = 0; i < 4; i++) {
+    for (const item of page.data) {
+      found.push({
+        id: item.id,
+        plan_id: item.plan_id,
+        status: item.status,
+        created_at: item.created_at,
+        metadata: (item.metadata || null) as Record<string, unknown> | null,
+      });
+    }
+    if (!page.hasNextPage()) break;
+    page = await page.getNextPage();
+  }
+  return found;
+}
+
+async function pendingCheckouts(userId: string) {
+  const client = admin();
+  if (!client) return [];
+  const since = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await client
+    .from("credit_checkouts")
+    .select("id, plan, created_at")
+    .eq("user_id", userId)
+    .gte("created_at", since)
+    .order("created_at", { ascending: true });
+  if (error) {
+    console.error("credit checkout read failed", error.message);
+    return [];
+  }
+  return (data || []) as Array<{ id: string; plan: string; created_at: string }>;
+}
 
 export async function syncWhopCredits(userId: string) {
   const { apiKey, companyId } = whopConfig();
@@ -209,30 +271,60 @@ export async function syncWhopCredits(userId: string) {
   if (Date.now() - last < 15_000) return;
   creditSyncAt.set(userId, Date.now());
   try {
-    const client = whopClient();
-    let page = await client.memberships.list({ account_id: companyId, first: 50, direction: "desc" });
+    const memberships = await listRecentMemberships(companyId);
+    const claimed = new Set<string>();
     let savedMonthly = false;
-    for (let i = 0; i < 4; i++) {
-      for (const item of page.data) {
-        const metadata = (item.metadata || {}) as Record<string, unknown>;
-        if (String(metadata.user_id || "") !== userId || !PAID_MEMBERSHIP.has(item.status)) continue;
-        const bought = planById(String(metadata.plan || "")) || planByWhop(item.plan_id);
-        if (!bought || (bought.kind !== "monthly" && bought.kind !== "topup" && bought.kind !== "intro")) continue;
-        if (bought.kind === "monthly" && LIVE_MEMBERSHIP.has(item.status) && !savedMonthly) {
-          savedMonthly = true;
-          const local = await localMembership(userId);
-          if (local?.whop_membership_id !== item.id || local.plan !== bought.id) {
-            await saveMembership(userId, bought.id, item.id, item.id);
-          }
+
+    for (const item of memberships) {
+      const metadata = item.metadata || {};
+      if (String(metadata.user_id || "") !== userId || !PAID_MEMBERSHIP.has(item.status)) continue;
+      const bought = planById(String(metadata.plan || "")) || planByWhop(item.plan_id);
+      if (!bought || !CREDIT_KINDS.has(bought.kind)) continue;
+      claimed.add(item.id);
+      if (bought.kind === "monthly" && LIVE_MEMBERSHIP.has(item.status) && !savedMonthly) {
+        savedMonthly = true;
+        const local = await localMembership(userId);
+        if (local?.whop_membership_id !== item.id || local.plan !== bought.id) {
+          await saveMembership(userId, bought.id, item.id, item.id);
         }
-        if (bought.seconds > 0) await grantCredits(userId, bought.seconds, item.id, item.id);
       }
-      if (!page.hasNextPage()) break;
-      page = await page.getNextPage();
+      if (bought.seconds > 0) await grantCredits(userId, bought.seconds, item.id, item.id);
+    }
+
+    // A promo checkout still creates a paid membership. The company key can list
+    // that membership without the metadata we stored on it, so match it to the
+    // checkout row we saved when the buyer left for Whop.
+    for (const checkout of await pendingCheckouts(userId)) {
+      const bought = planById(checkout.plan);
+      if (!bought || !CREDIT_KINDS.has(bought.kind) || bought.seconds < 1) continue;
+      const expectedPlans = new Set([bought.whopPlanId, planWhopId(bought)]);
+      const start = Date.parse(checkout.created_at) - 60_000;
+      const end = Date.parse(checkout.created_at) + 2 * 60 * 60 * 1000;
+      const candidates = memberships
+        .filter((item) => {
+          if (claimed.has(item.id) || !PAID_MEMBERSHIP.has(item.status)) return false;
+          const owner = String((item.metadata || {}).user_id || "");
+          if (owner && owner !== userId) return false;
+          if (!expectedPlans.has(item.plan_id)) return false;
+          const created = Date.parse(item.created_at);
+          return created >= start && created <= end;
+        })
+        .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
+      if (candidates.length !== 1) continue;
+      const item = candidates[0];
+      claimed.add(item.id);
+      if (bought.kind === "monthly" && LIVE_MEMBERSHIP.has(item.status) && !savedMonthly) {
+        savedMonthly = true;
+        const local = await localMembership(userId);
+        if (local?.whop_membership_id !== item.id || local.plan !== bought.id) {
+          await saveMembership(userId, bought.id, item.id, item.id);
+        }
+      }
+      await grantCredits(userId, bought.seconds, item.id, item.id);
     }
   } catch (error) {
     creditSyncAt.delete(userId);
-    console.warn("whop credit sync failed", error instanceof Error ? error.message : error);
+    console.error("whop credit sync failed", error instanceof Error ? error.message : error);
   }
 }
 
