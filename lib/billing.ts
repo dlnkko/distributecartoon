@@ -19,16 +19,18 @@ function admin() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-export async function saveMembership(userId: string, plan: string, paymentId: string) {
+export async function saveMembership(userId: string, plan: string, paymentId: string, membershipId?: string) {
   const client = admin();
   if (!client || !userId) return false;
-  const { error } = await client.from("memberships").upsert({
+  const row: Record<string, string | null> = {
     user_id: userId,
     plan,
     status: "active",
     whop_payment_id: paymentId || null,
     updated_at: new Date().toISOString(),
-  });
+  };
+  if (membershipId) row.whop_membership_id = membershipId;
+  const { error } = await client.from("memberships").upsert(row);
   if (error) console.warn("membership save failed", error.message);
   return !error;
 }
@@ -122,32 +124,29 @@ export async function setMembershipStatus(userId: string, status: string, plan =
   }
 }
 
-async function whopMembershipFor(userId: string, paymentId: string | null, membershipId: string | null) {
-  if (!whopConfig().apiKey) return null;
+const LIVE_MEMBERSHIP = new Set(["active", "trialing", "past_due", "canceling"]);
+const PAID_MEMBERSHIP = new Set(["active", "trialing", "past_due", "canceling", "completed"]);
+
+async function whopMembershipFor(userId: string, _paymentId: string | null, _membershipId: string | null) {
+  const { apiKey, companyId } = whopConfig();
+  if (!apiKey || !companyId || !userId) return null;
   const client = whopClient();
-  if (membershipId) {
-    try {
-      return (await client.memberships.retrieve({ id: membershipId })) as WhopMembership;
-    } catch {
-      /* Fall through to the payment and company search. */
+  let page = await client.memberships.list({ account_id: companyId, first: 50, direction: "desc" });
+  for (let i = 0; i < 4; i++) {
+    for (const item of page.data) {
+      const metadata = (item.metadata || {}) as Record<string, unknown>;
+      if (String(metadata.user_id || "") !== userId) continue;
+      const bought = planById(String(metadata.plan || "")) || planByWhop(item.plan_id);
+      if (bought?.kind !== "monthly" || !LIVE_MEMBERSHIP.has(item.status)) continue;
+      return {
+        id: item.id,
+        plan_id: item.plan_id,
+        status: item.status,
+        cancel_at_period_end: Boolean(item.cancel_at_period_end),
+        current_period_end: item.current_period_end || null,
+        metadata,
+      } satisfies WhopMembership;
     }
-  }
-  if (paymentId) {
-    try {
-      const payment = await client.payments.retrieve({ id: paymentId });
-      if (payment.membership_id) {
-        return (await client.memberships.retrieve({ id: payment.membership_id })) as WhopMembership;
-      }
-    } catch {
-      /* Fall through to a company search. */
-    }
-  }
-  const { companyId } = whopConfig();
-  if (!companyId) return null;
-  let page = await client.memberships.list({ account_id: companyId, first: 50 });
-  for (let i = 0; i < 6; i++) {
-    const hit = page.data.find((item) => String((item.metadata || {}).user_id || "") === userId);
-    if (hit) return hit as WhopMembership;
     if (!page.hasNextPage()) break;
     page = await page.getNextPage();
   }
@@ -174,12 +173,31 @@ export async function replaceMembership(userId: string, plan: string, paymentId:
   }
 }
 
-export async function grantCredits(userId: string, credits: number, paymentId: string) {
+export async function grantCredits(userId: string, credits: number, paymentId: string, membershipId?: string) {
   if (!userId || !paymentId || !Number.isInteger(credits) || credits < 1) return;
   const client = admin();
   if (!client) return;
-  const { error } = await client.rpc("grant_credits", { target: userId, amount: credits, payment: paymentId });
+  const { error } = await client.rpc("grant_credits", {
+    target: userId,
+    amount: credits,
+    payment: paymentId,
+    membership: membershipId || null,
+  });
   if (error) console.warn("credit grant failed", error.message);
+}
+
+export async function applyWhopPurchase(userId: string, planId: string, paymentId: string, membershipId?: string) {
+  const bought = planById(planId);
+  if (!bought || !userId || !paymentId) return;
+  if (bought.kind === "monthly") {
+    const local = await localMembership(userId);
+    if (local?.whop_membership_id !== membershipId || local?.plan !== bought.id) {
+      await saveMembership(userId, bought.id, paymentId, membershipId);
+    }
+  }
+  if ((bought.kind === "monthly" || bought.kind === "topup" || bought.kind === "intro") && bought.seconds > 0) {
+    await grantCredits(userId, bought.seconds, paymentId, membershipId);
+  }
 }
 
 const creditSyncAt = new Map<string, number>();
@@ -188,25 +206,29 @@ export async function syncWhopCredits(userId: string) {
   const { apiKey, companyId } = whopConfig();
   if (!apiKey || !companyId || !userId) return;
   const last = creditSyncAt.get(userId) || 0;
-  if (Date.now() - last < 60_000) return;
+  if (Date.now() - last < 15_000) return;
   creditSyncAt.set(userId, Date.now());
   try {
-    const page = await whopClient().payments.list({ account_id: companyId, status: "paid", first: 20 });
+    const client = whopClient();
+    let page = await client.memberships.list({ account_id: companyId, first: 50, direction: "desc" });
     let savedMonthly = false;
-    for (const payment of page.data) {
-      const metadata = (payment.metadata || {}) as Record<string, unknown>;
-      if (String(metadata.user_id || "") !== userId) continue;
-      const paymentId = String(payment.id || "");
-      const bought = planById(String(metadata.plan || ""));
-      if (!paymentId || !bought) continue;
-      if (bought.kind === "monthly" && !savedMonthly) {
-        savedMonthly = true;
-        const local = await localMembership(userId);
-        if (local?.whop_payment_id !== paymentId) await saveMembership(userId, bought.id, paymentId);
+    for (let i = 0; i < 4; i++) {
+      for (const item of page.data) {
+        const metadata = (item.metadata || {}) as Record<string, unknown>;
+        if (String(metadata.user_id || "") !== userId || !PAID_MEMBERSHIP.has(item.status)) continue;
+        const bought = planById(String(metadata.plan || "")) || planByWhop(item.plan_id);
+        if (!bought || (bought.kind !== "monthly" && bought.kind !== "topup" && bought.kind !== "intro")) continue;
+        if (bought.kind === "monthly" && LIVE_MEMBERSHIP.has(item.status) && !savedMonthly) {
+          savedMonthly = true;
+          const local = await localMembership(userId);
+          if (local?.whop_membership_id !== item.id || local.plan !== bought.id) {
+            await saveMembership(userId, bought.id, item.id, item.id);
+          }
+        }
+        if (bought.seconds > 0) await grantCredits(userId, bought.seconds, item.id, item.id);
       }
-      if ((bought.kind === "monthly" || bought.kind === "topup" || bought.kind === "intro") && bought.seconds > 0) {
-        await grantCredits(userId, bought.seconds, paymentId);
-      }
+      if (!page.hasNextPage()) break;
+      page = await page.getNextPage();
     }
   } catch (error) {
     creditSyncAt.delete(userId);

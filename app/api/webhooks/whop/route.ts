@@ -12,25 +12,32 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid webhook signature." }, { status: 401 });
   }
 
-  const userId = String(event.data?.metadata?.user_id || "");
-  const plan = String(event.data?.metadata?.plan || "");
-  const replaceId = String(event.data?.metadata?.replace_membership_id || "");
+  const data = event.data;
+  const metadata = data?.metadata || data?.membership?.metadata || {};
+  const userId = String(metadata.user_id || "");
+  const plan = String(metadata.plan || "");
+  const replaceId = String(metadata.replace_membership_id || "");
+  const membershipId = String(data?.membership_id || data?.membership?.id || (String(data?.id || "").startsWith("mem_") ? data?.id : "") || "");
+  const paymentId = String(data?.id || "").startsWith("pay_") ? String(data?.id) : membershipId;
   const membershipEnded =
-    Boolean(event.type?.startsWith("membership.")) && (event.data?.status === "canceled" || event.data?.status === "expired" || event.type === "membership.went_invalid");
+    event.type === "membership.deactivated" ||
+    event.type === "membership.went_invalid" ||
+    (Boolean(event.type?.startsWith("membership.")) && (data?.status === "canceled" || data?.status === "expired"));
   if (membershipEnded && userId) {
     const { setMembershipStatus } = await import("@/lib/billing");
-    await setMembershipStatus(userId, event.data?.status === "expired" ? "expired" : "canceled", plan || "m40");
+    await setMembershipStatus(userId, data?.status === "expired" ? "expired" : "canceled", plan || "m40");
   }
-  const paid = event.type === "payment.succeeded" || event.data?.status === "paid";
-  if (paid && userId) {
-    const { grantCredits, replaceMembership, saveMembership } = await import("@/lib/billing");
+  const paid =
+    event.type === "payment.succeeded" ||
+    event.type === "membership.activated" ||
+    event.type === "membership.went_valid" ||
+    data?.status === "paid";
+  if (paid && userId && plan && paymentId) {
+    const { applyWhopPurchase, replaceMembership } = await import("@/lib/billing");
     const { planById } = await import("@/lib/plans");
     const bought = planById(plan);
-    if (bought?.kind === "monthly" && replaceId) await replaceMembership(userId, plan, event.data?.id || "", replaceId);
-    else if (bought?.kind !== "topup" && bought?.kind !== "intro") await saveMembership(userId, plan || "m40", event.data?.id || "");
-    if (bought && (bought.kind === "monthly" || bought.kind === "topup" || bought.kind === "intro") && bought.seconds > 0) {
-      await grantCredits(userId, bought.seconds, event.data?.id || "");
-    }
+    if (bought?.kind === "monthly" && replaceId) await replaceMembership(userId, plan, paymentId, replaceId);
+    await applyWhopPurchase(userId, plan, paymentId, membershipId || undefined);
   }
   const projectId = String(event.data?.metadata?.project_id || "");
   if (paid && projectId) {

@@ -40,7 +40,9 @@ export function readWhopEvent(payload: string, headers: Headers) {
     data?: {
       id?: string;
       status?: string;
+      membership_id?: string | null;
       metadata?: Record<string, unknown> | null;
+      membership?: { id?: string; metadata?: Record<string, unknown> | null } | null;
     };
   };
 }
@@ -58,10 +60,25 @@ export async function markProjectPaid(projectId: string, paymentId: string, owne
 
 export async function confirmWhopPayment(project: Project, paymentId: string) {
   if (project.paidAt) return project;
-  const payment = await whopClient().payments.retrieve({ id: paymentId });
-  const metadata = (payment.metadata || {}) as Record<string, unknown>;
-  const projectId = String(metadata.project_id || "");
-  if (projectId !== project.id) throw new Error("This payment is for a different video.");
-  if (payment.status !== "paid") throw new Error("Payment is not complete yet.");
-  return markProjectPaid(project.id, payment.id || paymentId, project.ownerId);
+  try {
+    const payment = await whopClient().payments.retrieve({ id: paymentId });
+    const metadata = (payment.metadata || {}) as Record<string, unknown>;
+    const projectId = String(metadata.project_id || "");
+    if (projectId !== project.id) throw new Error("This payment is for a different video.");
+    if (payment.status !== "paid") throw new Error("Payment is not complete yet.");
+    return markProjectPaid(project.id, payment.id || paymentId, project.ownerId);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+    if (!/403|forbidden|not authorized/i.test(message)) throw error;
+  }
+
+  const { companyId } = whopConfig();
+  if (!companyId) throw new Error("Payment is not complete yet.");
+  const page = await whopClient().memberships.list({ account_id: companyId, first: 20, direction: "desc" });
+  const hit = page.data.find((item) => {
+    const metadata = (item.metadata || {}) as Record<string, unknown>;
+    return String(metadata.project_id || "") === project.id && ["active", "completed", "trialing"].includes(item.status);
+  });
+  if (!hit) throw new Error("Payment is not complete yet.");
+  return markProjectPaid(project.id, paymentId, project.ownerId);
 }
