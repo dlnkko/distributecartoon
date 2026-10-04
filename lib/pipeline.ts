@@ -576,6 +576,9 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       await saveSoon(project);
       if (!tailUrl(previous)) return { ready: false };
     }
+    if (project.style === "realistic" && /@Video(?!\d)/.test(batch.videoPrompt || "")) {
+      batch.promptReady = false;
+    }
     if (
       previous &&
       project.style !== "realistic" &&

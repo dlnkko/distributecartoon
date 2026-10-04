@@ -1122,7 +1122,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     else if (item.kind === "previous")
       refs.push(
         project.style === "realistic"
-          ? `${tag} is the previous generation in full. Every face and every voice comes from ${tag}. Match that person and that voice. Do not replay it. This part starts after that video.`
+          ? `${tag} is the previous generation in full. Only people described as seen in ${tag} were in that video, with that face and that voice. Anyone else is new and was not in ${tag}. Do not replay it. This part starts after that video.`
           : `${tag} is the previous generation in full. Match the people and their voices from it. Do not replay it. This part starts after that video.`,
       );
     else if (item.kind === "video")
@@ -1802,17 +1802,57 @@ function sceneSays(project: Project, scene: Scene | undefined, people: Map<strin
   return parts.join(" ");
 }
 
-function samePersonLine(project: Project, name: string, tag: string) {
+const INVENTED_LOOKS = [
+  "a tall person with black hair and a narrow face",
+  "a short person with brown hair and glasses",
+  "a broad person with a shaved head and a square jaw",
+  "a slim person with curly dark hair and a long nose",
+  "a person with long black hair and a narrow face",
+  "a person with wavy dark hair and a warm complexion",
+  "a tall person with straight light hair",
+  "a short person with a round face and brown hair",
+];
+
+function lookSeed(name: string) {
+  return [...name.toLowerCase()].reduce((sum, char) => sum + char.charCodeAt(0), 0);
+}
+
+function ensureCastLook(project: Project, name: string) {
   const character = project.characters.find((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase());
-  const raw = (character?.description || "").split(/[.!?]/)[0].replace(/\s+/g, " ").trim();
-  const look = raw
-    .split(/\s+/)
-    .filter(Boolean)
-    .slice(0, 12)
-    .join(" ")
-    .replace(/^[A-Z]/, (letter) => letter.toLowerCase());
-  const who = look && look.toLowerCase() !== name.trim().toLowerCase() ? `the same ${look}` : "the same person";
-  return `${name} is ${who} as seen in ${tag}.`;
+  const label = character?.name.trim() || name.trim();
+  const existing = (character?.description || "").split(/[.!?]/)[0].replace(/\s+/g, " ").trim();
+  const stripped = existing.replace(new RegExp(`^${escapeRegExp(label)}\\s+is\\s+`, "i"), "").trim();
+  const usable = stripped && stripped.toLowerCase() !== label.toLowerCase() && stripped.split(/\s+/).length >= 3;
+  if (usable) return stripped.charAt(0).toLowerCase() + stripped.slice(1);
+  const invented = INVENTED_LOOKS[lookSeed(label) % INVENTED_LOOKS.length];
+  if (character && !usable) character.description = invented;
+  return invented;
+}
+
+function namesInScenes(project: Project, indexes: number[]) {
+  const names: string[] = [];
+  for (const index of indexes) {
+    for (const name of sceneOnScreenNames(sceneByIndex(project, index), project)) {
+      if (!names.some((item) => item.toLowerCase() === name.toLowerCase())) names.push(name);
+    }
+  }
+  return names;
+}
+
+function seenInPreviousVideo(project: Project, sceneIndexes: number[], name: string) {
+  const current = new Set(sceneIndexes);
+  const batch = project.batches.find((item) => item.sceneIndexes?.some((index) => current.has(index)));
+  const previous = batch ? project.batches.find((item) => item.index === batch.index - 1) : undefined;
+  const earlier = previous?.sceneIndexes || [];
+  if (!earlier.length) return false;
+  const needle = name.trim().toLowerCase();
+  return namesInScenes(project, earlier).some((item) => item.toLowerCase() === needle);
+}
+
+function personLine(project: Project, name: string, previousTag: string, sceneIndexes: number[]) {
+  const look = ensureCastLook(project, name);
+  const seen = Boolean(previousTag) && seenInPreviousVideo(project, sceneIndexes, name);
+  return seen ? `${name} is ${look}, the same person as seen in ${previousTag}.` : `${name} is ${look}.`;
 }
 
 function simpleScenePrompt(options: CompactPromptOptions) {
@@ -1876,22 +1916,27 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const visual = song ? pictured.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : pictured;
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     const samePeople =
-      previousTag && project.style === "realistic"
+      project.style === "realistic" && shotIndex === 0
         ? sceneOnScreenNames(scene, project)
-            .map((name) => samePersonLine(project, name, previousTag))
+            .map((name) => personLine(project, name, previousTag, sceneIndexes))
             .join(" ")
         : "";
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
+    const said = sceneSays(project, scene, people, narratorTag);
     const spoken = song
       ? singsAlong
         ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
         : ""
-      : shotIndex === 0
-        ? sceneSays(project, scene, people, narratorTag)
-        : sceneSays(project, scene, people, narratorTag)
-          ? "The same line continues over this cut."
-          : "";
+      : project.style === "realistic"
+        ? said
+          ? `${shotIndex === 0 ? said : "The same line continues over this cut."} No background music.`
+          : "No background music or dialogue."
+        : shotIndex === 0
+          ? said
+          : said
+            ? "The same line continues over this cut."
+            : "";
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
@@ -1923,10 +1968,17 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       : [
           styleThroughout(project.style),
           "People look at each other. A reaction turns toward the other person, not into a pose at the lens.",
-          previousLine,
+          project.style === "realistic"
+            ? namesInScenes(project, sceneIndexes)
+                .map((name) => personLine(project, name, previousTag, sceneIndexes))
+                .join(" ")
+            : "",
+          previousTag
+            ? `${previousLine} A person who is not described as seen in ${previousTag} is new in this part and was not in that video.`
+            : previousLine,
           tailLine,
           previousTag
-            ? `Every face and every voice comes from ${previousTag}. Places and products are @Image. Those numbers stay the same in every generation.`
+            ? `Faces and voices of people already in ${previousTag} come from that video. A new person is described here for the first time and is not in ${previousTag}. Places and products are @Image. Those numbers stay the same in every generation.`
             : characterVideos
               ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
               : "Places and products are @Image. Those numbers stay the same in every generation.",
@@ -1937,7 +1989,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   )
     .filter(Boolean)
     .join(" ");
-  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."}`
+  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : project.style === "realistic" ? "" : "No background music."}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();
