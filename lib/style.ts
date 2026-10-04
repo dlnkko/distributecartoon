@@ -1121,7 +1121,9 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     } else if (item.kind === "character" && key) people.set(key, tag);
     else if (item.kind === "previous")
       refs.push(
-        `${tag} is the previous generation in full. Match the people and their voices from it. Do not replay it. This part starts after that video.`,
+        project.style === "realistic"
+          ? `${tag} is the previous generation in full. Every face and every voice comes from ${tag}. Match that person and that voice. Do not replay it. This part starts after that video.`
+          : `${tag} is the previous generation in full. Match the people and their voices from it. Do not replay it. This part starts after that video.`,
       );
     else if (item.kind === "video")
       refs.push(
@@ -1800,12 +1802,27 @@ function sceneSays(project: Project, scene: Scene | undefined, people: Map<strin
   return parts.join(" ");
 }
 
+function samePersonLine(project: Project, name: string, tag: string) {
+  const character = project.characters.find((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const raw = (character?.description || "").split(/[.!?]/)[0].replace(/\s+/g, " ").trim();
+  const look = raw
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 12)
+    .join(" ")
+    .replace(/^[A-Z]/, (letter) => letter.toLowerCase());
+  const who = look && look.toLowerCase() !== name.trim().toLowerCase() ? `the same ${look}` : "the same person";
+  return `${name} is ${who} as seen in ${tag}.`;
+}
+
 function simpleScenePrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
   const images = options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
   const tailLine = refs.find((line) => /last 5 seconds/i.test(line)) || "";
   const previousLine = refs.find((line) => /previous generation in full/i.test(line)) || "";
+  const filmTag = (options.videos || []).findIndex((item) => item.kind === "previous");
+  const previousTag = filmTag >= 0 ? `@Video${filmTag + 1}` : "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
@@ -1858,6 +1875,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const pictured = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
     const visual = song ? pictured.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : pictured;
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
+    const samePeople =
+      previousTag && project.style === "realistic"
+        ? sceneOnScreenNames(scene, project)
+            .map((name) => samePersonLine(project, name, previousTag))
+            .join(" ")
+        : "";
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
     const spoken = song
@@ -1873,6 +1896,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
       participateLine(sceneOnScreenNames(scene, project), people, project),
+      samePeople,
       visual,
       spoken,
       eyesOffCamera(scene, project) ||
@@ -1901,9 +1925,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           "People look at each other. A reaction turns toward the other person, not into a pose at the lens.",
           previousLine,
           tailLine,
-          characterVideos
-            ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
-            : "Places and products are @Image. Those numbers stay the same in every generation.",
+          previousTag
+            ? `Every face and every voice comes from ${previousTag}. Places and products are @Image. Those numbers stay the same in every generation.`
+            : characterVideos
+              ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
+              : "Places and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
           narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",

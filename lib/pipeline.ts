@@ -566,7 +566,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     if (durableVideoSrc(batch)) continue;
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
-    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+    if (previous && project.style !== "realistic" && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
@@ -578,6 +578,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     }
     if (
       previous &&
+      project.style !== "realistic" &&
       !realKieVideoTaskId(batch.kieVideoTaskId) &&
       batch.kieVideoTaskId !== "pending" &&
       (!/last 5 seconds/i.test(batch.videoPrompt || "") || /@Audio2\b/.test(batch.videoPrompt || ""))
@@ -1189,6 +1190,7 @@ async function previousFilmRef(project: Project, batch: Batch, abortSignal?: Abo
 }
 
 async function previousTailRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
+  if (project.style === "realistic") return undefined;
   const previous = previousStoryBatch(project, batch);
   const src = tailUrl(previous);
   if (!src) return undefined;
