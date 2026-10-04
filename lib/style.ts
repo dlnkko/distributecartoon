@@ -1119,12 +1119,14 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       narratorTag = tag;
       refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
     } else if (item.kind === "character" && key) people.set(key, tag);
-    else if (item.kind === "previous")
+    else if (item.kind === "previous") {
+      if (project.style === "realistic") narratorTag = tag;
       refs.push(
         project.style === "realistic"
-          ? `${tag} is the previous generation in full. Only people described as seen in ${tag} were in that video, with that face and that voice. Anyone else is new and was not in ${tag}. Do not replay it. This part starts after that video.`
+          ? `${tag} is the previous generation in full. Only people described as seen in ${tag} were in that video, with that face and that voice. The narrator's voice is the one already heard in ${tag}. Anyone else is new and was not in ${tag}. Do not replay it. This part starts after that video.`
           : `${tag} is the previous generation in full. Match the people and their voices from it. Do not replay it. This part starts after that video.`,
       );
+    }
     else if (item.kind === "video")
       refs.push(
         project.song

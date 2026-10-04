@@ -440,7 +440,7 @@ function freshNarratorVoice(project: Project) {
 
 // A missing narrator reference never blocks the video: after the last attempt the story goes on without it.
 async function stepNarratorVoice(project: Project): Promise<StepResult> {
-  if (project.song) return { ready: true };
+  if (project.song || project.style === "realistic") return { ready: true };
   const source = narratorVoiceSource(project);
   if (!source || freshNarratorVoice(project)) return { ready: true };
   if (project.narratorVoice?.source !== source) project.narratorVoice = { source, attempts: 0 };
@@ -489,6 +489,7 @@ async function stepNarratorVoice(project: Project): Promise<StepResult> {
 }
 
 async function narratorVoiceRef(project: Project, sceneIndexes: number[], abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
+  if (project.style === "realistic") return undefined;
   const voice = freshNarratorVoice(project);
   if (!voice || !narrationLines(project, sceneIndexes).length) return undefined;
   const url = await resolveUploadUrl(voice.remoteUrl, voice.publicPath, abortSignal);
