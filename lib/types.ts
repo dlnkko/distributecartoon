@@ -3,6 +3,12 @@ export type VisualStyle = "pixar" | "claymation" | "realistic";
 export function isVisualStyle(value: unknown): value is VisualStyle {
   return value === "pixar" || value === "claymation" || value === "realistic";
 }
+
+export type SpeechMode = "dialogue" | "voiceover" | "both";
+
+export function isSpeechMode(value: unknown): value is SpeechMode {
+  return value === "dialogue" || value === "voiceover" || value === "both";
+}
 export type AspectRatio = "16:9" | "9:16";
 export type WorkflowStep = "script" | "song" | "setup" | "review" | "cast" | "produce";
 export type AgentMode = "plan" | "produce";
@@ -214,6 +220,7 @@ export type Project = {
   aspectRatio: AspectRatio;
   scriptName: string;
   scriptText: string;
+  speechMode?: SpeechMode;
   scriptCast?: ScriptCastMember[];
   song?: Song;
   characters: Character[];

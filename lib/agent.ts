@@ -10,7 +10,7 @@ import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
-import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
+import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue, type SpeechMode } from "./types";
 
 const SYSTEM_PROMPT = `You are the director-agent of distribute.to, a studio that turns scripts into Pixar, claymation, or realistic live-action shorts.
 
@@ -421,6 +421,7 @@ function projectSnapshot(project: Project) {
     aspectRatio: project.aspectRatio,
     scriptName: project.scriptName,
     scriptChars: project.scriptText.length,
+    speechMode: project.speechMode || null,
     pendingQuestions: project.pendingQuestions,
     characters: project.characters.map((character) => ({
       name: character.name,
@@ -611,6 +612,7 @@ async function executeTool(
       if (withStory.length) {
         project.scenes = withStory.map((scene, index) => ({ ...scene, index: index + 1 }));
       }
+      applySpeechMode(project);
       refineStoryLeads(project);
       diversifyInventedCast(project);
       applyScriptLooks(project);
@@ -763,6 +765,57 @@ function asRecord(value: string) {
   return JSON.parse(value) as Record<string, unknown>;
 }
 
+const NARRATOR_NAME = /^(the\s+)?(narrator|narradora|voice[- ]?over|voiceover|vo|off[- ]?screen|voz en off)$/i;
+
+function applySpeechMode(project: Project) {
+  if (project.song || !project.speechMode) return;
+  if (project.speechMode === "voiceover") {
+    for (const scene of project.scenes) {
+      scene.dialogue = (scene.dialogue || [])
+        .filter((line) => line.line?.trim())
+        .map((line) => ({ speaker: "Narrator", line: line.line.trim() }));
+    }
+    const narrator = project.characters.find((character) => NARRATOR_NAME.test(character.name.trim()));
+    if (narrator) {
+      narrator.name = "Narrator";
+      narrator.slug = "narrator";
+      narrator.isExtra = true;
+      if (!narrator.description.trim()) narrator.description = "Off-screen voice-over. Never on screen.";
+    } else if (project.scenes.some((scene) => scene.dialogue.length)) {
+      project.characters.push({
+        id: createId("char"),
+        name: "Narrator",
+        slug: "narrator",
+        description: "Off-screen voice-over. Never on screen.",
+        voiceNotes: "a warm, close, even storyteller voice",
+        isExtra: true,
+        lookConfirmed: false,
+        clips: [],
+      });
+    }
+    return;
+  }
+  if (project.speechMode === "dialogue") {
+    for (const scene of project.scenes) {
+      scene.dialogue = (scene.dialogue || []).filter((line) => line.line?.trim() && !NARRATOR_NAME.test(line.speaker.trim()));
+    }
+    project.characters = project.characters.filter((character) => !NARRATOR_NAME.test(character.name.trim()));
+  }
+}
+
+function speechPlan(mode: SpeechMode | undefined) {
+  if (mode === "voiceover") {
+    return "SPEECH MODE voiceover. This mode overrides every other speech rule. Write only off-screen narrator voice-over over the actions in each summary. Every dialogue line uses speaker Narrator and describes what is happening. Do not write a conversation. Do not give a line to an on-screen character. No lipsync. Mouths stay closed. Scene 1 opens with the first narrator line.";
+  }
+  if (mode === "both") {
+    return "SPEECH MODE both. This mode overrides every other speech rule. Use off-screen narrator voice-over and on-screen dialogue in the same film. Narrator lines describe the action, stay off-screen, and are never lipsync. Dialogue lines are a real exchange between the characters in the shot, and each speaker looks at the other person. Do not use only one of the two. Scene 1 opens with a spoken line.";
+  }
+  if (mode === "dialogue") {
+    return "SPEECH MODE dialogue. This mode overrides every other speech rule. Write full dialogue between the characters. Every spoken line is said by someone on screen to another person in the scene. Do not use a narrator. Do not write voice-over. No off-screen speaker. Scene 1 opens with the first line of dialogue.";
+  }
+  return "";
+}
+
 function planTask(project: Project) {
   const styleLine = `Style: ${project.style}. Aspect: ${project.aspectRatio}. Call extract_storyboard once, then stop.`;
   if (project.song) {
@@ -789,7 +842,8 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     ? "The user already ordered this as a storyboard. Keep that scene order, those beats, and those characters. Do not merge, reorder, or replace a named person."
     : "The user wrote a paragraph. Turn it into an ordered storyboard in the exact cause order they told, one beat per scene, naming each person once and reusing that name. Do not invent a different sequence.";
   const known = castBrief(project);
-  return `${opening} ${known} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+  const speech = speechPlan(project.speechMode);
+  return `${speech} ${opening} ${known} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Do not default to 6, 7, or 8. The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 
 export async function runAgent(options: {

@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createClient } from "@/lib/supabase/client";
-import type { AgentMode, AspectRatio, Character, Project, ReferenceAsset, Scene, ScriptCastMember, VisualStyle, WorkflowStep } from "@/lib/types";
+import { isSpeechMode, type AgentMode, type AspectRatio, type Character, type Project, type ReferenceAsset, type Scene, type ScriptCastMember, type SpeechMode, type VisualStyle, type WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
@@ -397,6 +397,7 @@ export function StudioApp() {
   const [project, setProject] = useState<Project | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [scriptDraft, setScriptDraft] = useState("");
+  const [speechMode, setSpeechMode] = useState<SpeechMode | "">("");
   const [scenesDraft, setScenesDraft] = useState<Scene[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
@@ -529,6 +530,7 @@ export function StudioApp() {
     setScriptDraft(
       readDraft(project.id) || (isFileScript(project.scriptName) || project.song ? "" : project.scriptText || ""),
     );
+    setSpeechMode(isSpeechMode(project.speechMode) ? project.speechMode : "");
     setScenesDraft(project.scenes.map(cloneScene));
   }, [project?.id]);
 
@@ -969,12 +971,17 @@ export function StudioApp() {
       setStatus("Paste or upload a script first.");
       return;
     }
+    if (!isSpeechMode(speechMode)) {
+      setStatus("Pick Dialogue, Voiceover, or Both.");
+      return;
+    }
     setBusy(true);
-    if (!uploaded || text) {
+    const scriptText = text || project.scriptText;
+    if (scriptText.trim()) {
       const saved = await fetch("/api/script", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, text, name: "pasted-script.txt" }),
+        body: JSON.stringify({ projectId: project.id, text: scriptText, name: uploaded && !text ? project.scriptName : "pasted-script.txt", speechMode }),
       });
       const json = (await saved.json()) as { project?: Project; error?: string };
       if (!json.project) {
@@ -1540,9 +1547,11 @@ export function StudioApp() {
               scriptName={project.scriptName}
               fileAttached={isFileScript(project.scriptName)}
               value={scriptDraft}
+              speechMode={speechMode}
               busy={working}
               textareaRef={textareaRef}
               onChange={setScriptDraft}
+              onSpeechMode={setSpeechMode}
               onPickFile={() => fileRef.current?.click()}
               onClearFile={() => void clearScriptFile()}
               onContinue={() => void continueFromScript()}
@@ -1869,9 +1878,11 @@ function ScriptStep({
   scriptName,
   fileAttached,
   value,
+  speechMode,
   busy,
   textareaRef,
   onChange,
+  onSpeechMode,
   onPickFile,
   onClearFile,
   onContinue,
@@ -1879,9 +1890,11 @@ function ScriptStep({
   scriptName: string;
   fileAttached: boolean;
   value: string;
+  speechMode: SpeechMode | "";
   busy: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   onChange: (value: string) => void;
+  onSpeechMode: (mode: SpeechMode) => void;
   onPickFile: () => void;
   onClearFile: () => void;
   onContinue: () => void;
@@ -1891,7 +1904,7 @@ function ScriptStep({
   const typing = Boolean(value.trim());
   const uploadLocked = busy || typing;
   const pasteLocked = busy || fileAttached;
-  const canContinue = fileAttached || typing;
+  const canContinue = (fileAttached || typing) && Boolean(speechMode);
 
   useEffect(() => {
     if (!infoOpen) return;
@@ -1968,6 +1981,33 @@ function ScriptStep({
         placeholder={fileAttached ? "Remove the file to type the script instead." : "Type or paste the full script or storyboard…"}
         className="mt-1.5 min-h-[140px] max-h-[220px] w-full resize-none overflow-y-auto rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] px-4 py-3 text-sm leading-6 outline-none placeholder:text-[var(--cf-muted)] disabled:cursor-not-allowed disabled:opacity-50"
       />
+
+      <p className="mb-2 mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">How the video speaks</p>
+      <div className="flex h-11 w-full items-center rounded-full bg-white/5 p-[3px]">
+        {(
+          [
+            ["dialogue", "Dialogue"],
+            ["voiceover", "Voiceover"],
+            ["both", "Both"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            disabled={busy}
+            aria-pressed={speechMode === id}
+            onClick={() => onSpeechMode(id)}
+            className={`h-full flex-1 rounded-full px-2 text-[12px] font-medium leading-none sm:px-3 sm:text-[13px] disabled:opacity-40 ${
+              speechMode === id
+                ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]"
+                : "text-[var(--cf-muted)] hover:text-white"
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-[var(--muted)]">Pick one. Scenes are written from this.</p>
 
       <div className="mt-auto flex justify-end pt-6">
         <button

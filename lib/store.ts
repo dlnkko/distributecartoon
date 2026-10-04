@@ -3,7 +3,7 @@ import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { createId, nowIso, normalizeAspectRatio } from "./ids";
 import { ensureReferenceSlots, isUnseenVoice, syncReferenceInclusion } from "./refs";
-import type { AspectRatio, Project, VisualStyle, WorkflowStep } from "./types";
+import { isSpeechMode, type AspectRatio, type Project, type VisualStyle, type WorkflowStep } from "./types";
 
 const projectsDir = () => path.join(process.cwd(), "data", "projects");
 
@@ -69,6 +69,7 @@ export function normalizeProject(project: Project): Project {
   project.scriptRefCues = Array.isArray(project.scriptRefCues) ? project.scriptRefCues : [];
   project.skippedRefs = Boolean(project.skippedRefs);
   project.characters = project.characters || [];
+  if (!isSpeechMode(project.speechMode)) delete project.speechMode;
   project.scriptCast = Array.isArray(project.scriptCast)
     ? project.scriptCast.filter((item) => item?.name?.trim() && item?.role?.trim())
     : [];
