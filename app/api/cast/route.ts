@@ -58,6 +58,14 @@ export async function POST(request: Request) {
   if (!project.scenes.length) {
     return NextResponse.json({ error: "Review scenes before casting." }, { status: 400 });
   }
+  if (project.style === "realistic") {
+    delete project.pendingTask;
+    delete project.taskError;
+    await confirmCharacterLooks(project);
+    project.workflowStep = body.confirm ? "produce" : "review";
+    await saveProject(project);
+    return NextResponse.json({ project });
+  }
   if (activeTask(project)) {
     return NextResponse.json({ error: "Still working on the cast. Hang on a moment.", project }, { status: 409 });
   }

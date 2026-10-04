@@ -108,14 +108,17 @@ function songMode(project: Project) {
 }
 
 function stepsFor(project: Project) {
-  if (!songMode(project)) return STEPS;
-  return [
-    { id: "song" as const, label: "Song" },
-    { id: "setup" as const, label: "Setup" },
-    { id: "review" as const, label: "Scenes" },
-    { id: "cast" as const, label: "Cast" },
-    { id: "produce" as const, label: "Generate" },
-  ];
+  const steps = songMode(project)
+    ? [
+        { id: "song" as const, label: "Song" },
+        { id: "setup" as const, label: "Setup" },
+        { id: "review" as const, label: "Scenes" },
+        { id: "cast" as const, label: "Cast" },
+        { id: "produce" as const, label: "Generate" },
+      ]
+    : STEPS;
+  if (project.style === "realistic") return steps.filter((item) => item.id !== "cast");
+  return steps;
 }
 
 function stepIndex(project: Project, step?: string) {
@@ -134,7 +137,10 @@ function stepReachable(project: Project, step: WorkflowStep) {
     return Boolean(project.scriptText.trim());
   }
   if (step === "review") return project.scenes.length > 0;
-  if (step === "cast") return project.scenes.length > 0 && (Boolean(project.song) || missingCastLooks(project).length === 0);
+  if (step === "cast") {
+    if (project.style === "realistic") return false;
+    return project.scenes.length > 0 && (Boolean(project.song) || missingCastLooks(project).length === 0);
+  }
   return Boolean(projectDeliveredSrc(project));
 }
 
@@ -434,7 +440,8 @@ export function StudioApp() {
   }
 
   projectsRef.current = projects;
-  const working = busy || Boolean(activeTask(project));
+  const task = activeTask(project);
+  const working = busy || Boolean(task && !(project?.style === "realistic" && task.kind === "cast"));
   busyRef.current = working;
 
   useEffect(() => {
@@ -539,6 +546,11 @@ export function StudioApp() {
     if (!current || (current.workflowStep || "script") !== "script") return;
     writeDraft(current.id, scriptDraft === current.scriptText ? "" : scriptDraft);
   }, [scriptDraft]);
+
+  useEffect(() => {
+    if (!project || project.style !== "realistic" || project.workflowStep !== "cast") return;
+    void patchProject({ workflowStep: "review" });
+  }, [project?.id, project?.style, project?.workflowStep]);
 
   function remember(next: Project) {
     projectRef.current = next;
@@ -1036,14 +1048,32 @@ export function StudioApp() {
         setBusy(false);
         return;
       }
+      const realistic = project.style === "realistic";
       const saved = await patchProject({
         scenes,
-        workflowStep: "cast",
+        workflowStep: realistic ? "review" : "cast",
         resetGeneration: true,
       });
       if (!saved) return;
       setScenesDraft(scenes);
       setPane("studio");
+      if (realistic) {
+        const confirmed = await fetch("/api/cast", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ projectId: saved.id, confirm: true }),
+        });
+        const approved = (await confirmed.json()) as { project?: Project; error?: string };
+        if (!approved.project) {
+          setStatus(approved.error || "Couldn't start that video.");
+          setBusy(false);
+          return;
+        }
+        remember(approved.project);
+        setBusy(false);
+        await beginProduce();
+        return;
+      }
       if (saved.song) {
         setStatus("");
         return;
@@ -1142,8 +1172,13 @@ export function StudioApp() {
       return;
     }
     setBusy(false);
+    await beginProduce();
+  }
+
+  async function beginProduce() {
     const current = projectRef.current;
-    if (current && !current.paidAt) {
+    if (!current) return;
+    if (!current.paidAt) {
       const status = await fetch(`/api/checkout?projectId=${encodeURIComponent(current.id)}`).then((response) =>
         response.json().catch(() => ({ enabled: false })),
       );
@@ -1337,9 +1372,13 @@ export function StudioApp() {
     return <div className="grid h-screen place-items-center text-[var(--muted)]">Loading…</div>;
   }
 
-  const step = project.workflowStep || "script";
-  const task = activeTask(project);
-  const taskLabel = task ? (task.kind === "plan" ? "Building your scenes… you can refresh, it keeps going." : "Casting characters… you can refresh, it keeps going.") : "";
+  const step = project.style === "realistic" && project.workflowStep === "cast" ? "review" : project.workflowStep || "script";
+  const taskLabel =
+    task?.kind === "plan"
+      ? "Building your scenes… you can refresh, it keeps going."
+      : task?.kind === "cast" && project.style !== "realistic"
+        ? "Casting characters… you can refresh, it keeps going."
+        : "";
   const charactersSlots = slotsOf(project, "character");
   const products = slotsOf(project, "product");
   const locations = slotsOf(project, "location");
@@ -1614,6 +1653,9 @@ export function StudioApp() {
               targetSeconds={project.targetDurationSeconds || 15}
               busy={working}
               hasVideo={Boolean(projectDeliveredSrc(project))}
+              directGenerate={project.style === "realistic"}
+              creditCost={generationCreditCost(project)}
+              credits={credits}
               onChange={setScenesDraft}
               onBack={() =>
                 void (projectDeliveredSrc(project)
@@ -2342,6 +2384,9 @@ function ReviewStep({
   targetSeconds,
   busy,
   hasVideo,
+  directGenerate,
+  creditCost,
+  credits,
   onChange,
   onBack,
   onContinue,
@@ -2350,6 +2395,9 @@ function ReviewStep({
   targetSeconds: number;
   busy: boolean;
   hasVideo: boolean;
+  directGenerate: boolean;
+  creditCost: number;
+  credits: number;
   onChange: (scenes: Scene[]) => void;
   onBack: () => void;
   onContinue: () => void;
@@ -2368,6 +2416,7 @@ function ReviewStep({
     targetSeconds,
   );
   const canContinue = scenes.some(sceneHasStory);
+  const affordable = !directGenerate || credits >= creditCost;
 
   const groups = parts.length
     ? parts.map((part, partIndex) => ({
@@ -2514,14 +2563,17 @@ function ReviewStep({
         <BackButton disabled={busy} onClick={onBack}>
           {hasVideo ? "Back to video" : "Back"}
         </BackButton>
-        <button
-          type="button"
-          disabled={busy || !canContinue}
-          onClick={onContinue}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
-        >
-          {hasVideo ? "Generate" : "Continue"}
-        </button>
+        <div className="flex flex-col items-end gap-1">
+          <button
+            type="button"
+            disabled={busy || !canContinue || !affordable}
+            onClick={onContinue}
+            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+          >
+            {directGenerate ? `Generate - ${creditCost} credits` : hasVideo ? "Generate" : "Continue"}
+          </button>
+          {directGenerate && !affordable ? <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p> : null}
+        </div>
       </div>
     </div>
   );

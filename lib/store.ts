@@ -115,7 +115,10 @@ export function inferWorkflowStep(project: Project): WorkflowStep {
   ) {
     return "produce";
   }
-  if (project.characters.some((character) => !character.isExtra && !isUnseenVoice(character) && (character.portraitPublicPath || character.portraitRemoteUrl) && !character.lookConfirmed)) {
+  if (
+    project.style !== "realistic" &&
+    project.characters.some((character) => !character.isExtra && !isUnseenVoice(character) && (character.portraitPublicPath || character.portraitRemoteUrl) && !character.lookConfirmed)
+  ) {
     return "cast";
   }
   return "review";
