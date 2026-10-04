@@ -32,7 +32,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
           ? "This is realistic live-action. Keep every person's appearance sentence word for word. Do not write @Video in front of a name. A video tag is only @Video1, @Video2, and so on, and only when the draft already has that tag. The first part has no previous video, so it must not mention @Video at all. On a later part, only a person the draft already calls seen in @Video1 was in that video. A person described without that tag is new: keep that first-appearance description and do not move them into @Video1."
           : "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
         realistic
-          ? "Keep every SCENE heading, its duration, every @Image tag, and every quoted line. If a scene says 'No background music or dialogue.', leave it and do not add a spoken line. If a scene gives a character a quoted line, keep that speaker and that line."
+          ? "Keep every SCENE heading, its duration, every Active state line, every @Image tag, and every quoted line. Keep each 'Name - State X | clothing | face | hair' line word for word, and keep 'Name in State X' inside the scene. Keep every 'MUST NOT resemble' line and every 'From SCENE' transition. If a scene says 'No background music or dialogue.', leave it and do not add a spoken line. If a scene gives a character a quoted line, keep that speaker and that line. Keep the door, solid-object, and eyeline lines. Two characters never share a face."
           : "",
         realistic
           ? "If the draft includes @Audio1, keep @Audio1. Do not add @Audio2. Do not add a silent intro, a title card, or a spoken line when the draft has none. Do not mention a 5 second tail or a cut of the previous video."
@@ -54,6 +54,9 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     let revised = (response.output_text || "").trim();
     if (realistic) revised = revised.replace(/@Video(?!\d)\s*/g, "");
     if (realistic && !hasVideoRef) revised = revised.replace(/@Video\d+\b/g, "");
+    if (realistic && /\bState [A-Z]\b/.test(trimmed) && !/\bState [A-Z]\b/.test(revised)) return trimmed;
+    if (realistic && /MUST NOT resemble/i.test(trimmed) && !/MUST NOT resemble/i.test(revised)) return trimmed;
+    if (realistic && /\bActive:/.test(trimmed) && !/\bActive:/.test(revised)) return trimmed;
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (/@Video\d|@Image\d/.test(trimmed) && !/@Video\d|@Image\d/.test(revised)) return trimmed;

@@ -1857,6 +1857,193 @@ function personLine(project: Project, name: string, previousTag: string, sceneIn
   return seen ? `${name} is ${look}, the same person as seen in ${previousTag}.` : `${name} is ${look}.`;
 }
 
+type CastState = {
+  letter: string;
+  place: string;
+  clothing: string;
+  face: string;
+  hair: string;
+  sceneIndex: number;
+};
+
+const CLOTHING_MARKS: Array<[RegExp, string]> = [
+  [/pajama|pyjama/i, "Pajamas"],
+  [/business suit|formal suit|\bsuit\b/i, "Formal business suit"],
+  [/uniform/i, "Uniform"],
+  [/scrubs/i, "Scrubs"],
+  [/\bgown\b/i, "Gown"],
+  [/\bdress\b/i, "Dress"],
+  [/hoodie/i, "Hoodie"],
+  [/coat|jacket/i, "Coat"],
+  [/t-?shirt/i, "T-shirt"],
+  [/\bshirt\b/i, "Shirt"],
+  [/jeans/i, "Jeans"],
+  [/\brobe\b/i, "Robe"],
+];
+
+const FACE_MARKS: Array<[RegExp, string]> = [
+  [/red[\w\s,]{0,16}eyes|swollen eyes|bloodshot/i, "Red, swollen eyes"],
+  [/exhaust|fatigue|fatigued|tired|worn out/i, "Exhausted"],
+  [/cry(?:ing)?|tears|tearful/i, "Tearful"],
+  [/fresh makeup|makeup/i, "Fresh makeup"],
+  [/rested|well rested/i, "Rested"],
+  [/angry|furious/i, "Angry"],
+  [/smil(?:e|ing)/i, "Smiling"],
+  [/bruise[ds]?/i, "Bruised"],
+];
+
+const HAIR_MARKS: Array<[RegExp, string]> = [
+  [/messy hair|unkempt/i, "Messy hair"],
+  [/sleek hair|hair slicked/i, "Sleek hair"],
+  [/ponytail|tied back|hair up/i, "Hair tied back"],
+  [/wet hair/i, "Wet hair"],
+  [/bald|shaved head/i, "Shaved head"],
+];
+
+function firstMark(text: string, marks: Array<[RegExp, string]>) {
+  for (const [pattern, label] of marks) {
+    if (pattern.test(text)) return label;
+  }
+  return "";
+}
+
+function joinedMarks(text: string, marks: Array<[RegExp, string]>) {
+  const found = marks.filter(([pattern]) => pattern.test(text)).map(([, label]) => label);
+  return [...new Set(found)].join(", ");
+}
+
+function clothesForPlace(place: string) {
+  if (/\b(bed|bedroom|pillow|night)\b/i.test(place)) return "Sleep clothes";
+  if (/\b(office|desk|meeting|work)\b/i.test(place)) return "Work clothes";
+  return "Clothes that fit this place";
+}
+
+function hairForCharacter(project: Project, name: string) {
+  const character = project.characters.find((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase());
+  const hair = firstMark(character?.description || "", HAIR_MARKS);
+  return hair || "Same hair";
+}
+
+function realisticCastStates(project: Project) {
+  const byName = new Map<string, CastState[]>();
+  const atScene = new Map<string, CastState>();
+  for (const scene of project.scenes) {
+    const blob = `${scene.location || ""} ${scene.title || ""} ${scene.summary || ""} ${(scene.dialogue || []).map((line) => line.line).join(" ")}`;
+    const place = (scene.location || scene.title || "the same place").replace(/\s+/g, " ").trim();
+    for (const name of sceneOnScreenNames(scene, project)) {
+      const clothing = firstMark(blob, CLOTHING_MARKS) || clothesForPlace(`${place} ${blob}`);
+      const face = joinedMarks(blob, FACE_MARKS) || "Natural face";
+      const hair = firstMark(blob, HAIR_MARKS) || hairForCharacter(project, name);
+      const list = byName.get(name) || [];
+      const prev = list[list.length - 1];
+      const same =
+        prev &&
+        prev.clothing === clothing &&
+        prev.face === face &&
+        prev.hair === hair &&
+        prev.place.toLowerCase() === place.toLowerCase();
+      const state: CastState = same
+        ? prev
+        : {
+            letter: String.fromCharCode(65 + list.length),
+            place,
+            clothing,
+            face,
+            hair,
+            sceneIndex: scene.index,
+          };
+      if (!same) {
+        list.push(state);
+        byName.set(name, list);
+      }
+      atScene.set(`${name.toLowerCase()}|${scene.index}`, state);
+    }
+  }
+  return { byName, atScene };
+}
+
+function stateMatrixLines(project: Project, names: string[]) {
+  const allow = new Set(names.map((name) => name.toLowerCase()));
+  const { byName } = realisticCastStates(project);
+  const lines: string[] = [];
+  for (const [name, states] of byName) {
+    if (!allow.has(name.toLowerCase())) continue;
+    for (const state of states) {
+      const place = state.place.split(/[,.]/)[0].trim();
+      lines.push(`${name} - State ${state.letter} - ${place} | ${state.clothing} | ${state.face} | ${state.hair}.`);
+    }
+  }
+  return lines;
+}
+
+function stateTransitionLines(project: Project, sceneIndexes: number[], localSceneNumber: Map<number, number>) {
+  const { byName } = realisticCastStates(project);
+  const lines: string[] = [];
+  for (const [name, states] of byName) {
+    for (let i = 1; i < states.length; i++) {
+      const next = states[i];
+      if (!sceneIndexes.includes(next.sceneIndex)) continue;
+      const local = localSceneNumber.get(next.sceneIndex) || next.sceneIndex;
+      const prev = states[i - 1];
+      const drop = prev.face !== "Natural face" ? ` Remove ${prev.face}.` : "";
+      lines.push(`From SCENE ${local} onwards, ${name} is State ${next.letter}.${drop}`);
+    }
+  }
+  return lines;
+}
+
+function isolationLines(project: Project, sceneIndexes: number[], previousTag: string) {
+  const here = namesInScenes(project, sceneIndexes);
+  const lines = ["No two characters share a face in the same frame."];
+  for (const name of here) {
+    if (previousTag && seenInPreviousVideo(project, sceneIndexes, name)) continue;
+    const others = here.filter((item) => item.toLowerCase() !== name.toLowerCase());
+    if (!others.length && !previousTag) continue;
+    const ban = others.length ? others.join(" or ") : "any other character";
+    const video = previousTag ? ` or any actor from ${previousTag}` : "";
+    lines.push(`${name} MUST NOT resemble ${ban}${video}.`);
+  }
+  return lines;
+}
+
+function activeStateLine(scene: Scene | undefined, project: Project, atScene: Map<string, CastState>) {
+  if (!scene) return "";
+  const names = sceneOnScreenNames(scene, project).map((name) => {
+    const state = atScene.get(`${name.toLowerCase()}|${scene.index}`);
+    return state ? `${name} State ${state.letter}` : name;
+  });
+  return names.length ? `Active: ${names.join(", ")}.` : "";
+}
+
+function stateActionLead(scene: Scene | undefined, project: Project, atScene: Map<string, CastState>) {
+  if (!scene) return "";
+  return sceneOnScreenNames(scene, project)
+    .map((name) => {
+      const state = atScene.get(`${name.toLowerCase()}|${scene.index}`);
+      return state ? `${name} in State ${state.letter}` : name;
+    })
+    .filter(Boolean)
+    .join(". ");
+}
+
+function solidObjectLine(text: string) {
+  if (/\b(door|doors|gate|gates)\b/i.test(text)) {
+    return "The door stays solid. Open it by the handle. No ghosting, no clipping, and no passing through it.";
+  }
+  if (/\b(wall|window|fence|glass|table)\b/i.test(text)) {
+    return "Solid objects stay solid. No ghosting, no clipping, and no passing through them.";
+  }
+  return "";
+}
+
+function realisticEyeline(scene: Scene | undefined, project: Project) {
+  if (addressesCamera(scene)) return "";
+  const names = sceneOnScreenNames(scene, project);
+  if (names.length >= 2) return `${names[0]} looks directly at ${names[1]}, never at the camera lens.`;
+  if (names.length === 1) return `${names[0]} looks at the person they address, never at the camera lens.`;
+  return "Eyes stay off the camera lens unless the scene says otherwise.";
+}
+
 function simpleScenePrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
   const images = options.images || [];
@@ -1886,6 +2073,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
     options.maxSeconds,
   );
+  const realistic = project.style === "realistic" && !song;
+  const castStates = realistic ? realisticCastStates(project) : undefined;
+  const localSceneNumber = new Map<number, number>();
+  flat.forEach((item, i) => {
+    if (!localSceneNumber.has(item.index)) localSceneNumber.set(item.index, i + 1);
+  });
 
   const blocks = flat.map((item, i) => {
     const { scene, shot, shotIndex, index } = item;
@@ -1939,6 +2132,23 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           : said
             ? "The same line continues over this cut."
             : "";
+    if (realistic && castStates) {
+      const who = stateActionLead(scene, project, castStates.atScene);
+      return [
+        `SCENE ${i + 1} (${cutSeconds[i]}s).`,
+        activeStateLine(scene, project, castStates.atScene),
+        `Camera: ${camera}.`,
+        placeTag ? `Place: ${placeTag}.` : scene?.location ? `Place: ${scene.location}.` : "",
+        participateLine(sceneOnScreenNames(scene, project), people, project),
+        samePeople,
+        who ? `${who}. ${visual}` : visual,
+        spoken,
+        realisticEyeline(scene, project),
+        solidObjectLine(`${visual} ${scene?.location || ""} ${scene?.summary || ""}`),
+      ]
+        .filter(Boolean)
+        .join(" ");
+    }
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
@@ -1970,6 +2180,15 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       : [
           styleThroughout(project.style),
           "People look at each other. A reaction turns toward the other person, not into a pose at the lens.",
+          realistic
+            ? "Each character keeps a separate face. Do not reuse one actor for two roles."
+            : "",
+          realistic ? stateMatrixLines(project, namesInScenes(project, sceneIndexes)).join(" ") : "",
+          realistic ? isolationLines(project, sceneIndexes, previousTag).join(" ") : "",
+          realistic ? stateTransitionLines(project, sceneIndexes, localSceneNumber).join(" ") : "",
+          realistic
+            ? "Doors and solid objects stay solid. A person opens a door by its handle. No ghosting, clipping, or passing through."
+            : "",
           project.style === "realistic"
             ? namesInScenes(project, sceneIndexes)
                 .map((name) => personLine(project, name, previousTag, sceneIndexes))
