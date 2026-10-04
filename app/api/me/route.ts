@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
+import { syncWhopCredits } from "@/lib/billing";
 import { createClient } from "@/lib/supabase/server";
 
 export async function GET() {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "No session." }, { status: 401 });
+  await syncWhopCredits(user.id);
   const supabase = await createClient();
   const { data } = await supabase
     .from("profiles")

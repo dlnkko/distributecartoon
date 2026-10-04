@@ -182,6 +182,38 @@ export async function grantCredits(userId: string, credits: number, paymentId: s
   if (error) console.warn("credit grant failed", error.message);
 }
 
+const creditSyncAt = new Map<string, number>();
+
+export async function syncWhopCredits(userId: string) {
+  const { apiKey, companyId } = whopConfig();
+  if (!apiKey || !companyId || !userId) return;
+  const last = creditSyncAt.get(userId) || 0;
+  if (Date.now() - last < 60_000) return;
+  creditSyncAt.set(userId, Date.now());
+  try {
+    const page = await whopClient().payments.list({ account_id: companyId, status: "paid", first: 20 });
+    let savedMonthly = false;
+    for (const payment of page.data) {
+      const metadata = (payment.metadata || {}) as Record<string, unknown>;
+      if (String(metadata.user_id || "") !== userId) continue;
+      const paymentId = String(payment.id || "");
+      const bought = planById(String(metadata.plan || ""));
+      if (!paymentId || !bought) continue;
+      if (bought.kind === "monthly" && !savedMonthly) {
+        savedMonthly = true;
+        const local = await localMembership(userId);
+        if (local?.whop_payment_id !== paymentId) await saveMembership(userId, bought.id, paymentId);
+      }
+      if ((bought.kind === "monthly" || bought.kind === "topup" || bought.kind === "intro") && bought.seconds > 0) {
+        await grantCredits(userId, bought.seconds, paymentId);
+      }
+    }
+  } catch (error) {
+    creditSyncAt.delete(userId);
+    console.warn("whop credit sync failed", error instanceof Error ? error.message : error);
+  }
+}
+
 export async function cancelMembership(userId: string) {
   const local = await localMembership(userId);
   const remote = await whopMembershipFor(userId, local?.whop_payment_id || null, local?.whop_membership_id || null);
