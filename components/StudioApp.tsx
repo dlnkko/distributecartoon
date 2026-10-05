@@ -1659,7 +1659,6 @@ export function StudioApp() {
           {step === "cast" && !(project.song && missingCastLooks(project).length > 0 && !working) ? (
             <CastStep
               characters={project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character))}
-              sheet={project.style === "realistic"}
               busy={working}
               creditCost={generationCreditCost(project)}
               credits={credits}
@@ -2655,7 +2654,6 @@ function SongLookStep({
 
 function CastStep({
   characters,
-  sheet,
   busy,
   creditCost,
   credits,
@@ -2664,7 +2662,6 @@ function CastStep({
   onContinue,
 }: {
   characters: Character[];
-  sheet: boolean;
   busy: boolean;
   creditCost: number;
   credits: number;
@@ -2682,9 +2679,7 @@ function CastStep({
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {characters.length
-            ? sheet
-              ? "Main characters only. Four angles of each person, none looking into the camera. Change a look once if needed."
-              : "Main characters only. One pose each. Change a look once if needed."
+            ? "Main characters only. One pose each. Change a look once if needed."
             : "No on-screen characters in this script. Continue when you are ready to generate."}
         </p>
       </div>
@@ -2702,7 +2697,7 @@ function CastStep({
           const draft = notes[character.id] || "";
           return (
             <article key={character.id} className="rounded-2xl border border-[var(--line)] bg-white p-3">
-              <div className={`${sheet ? "aspect-video" : "aspect-square"} overflow-hidden rounded-xl bg-stone-100`}>
+              <div className="aspect-square overflow-hidden rounded-xl bg-stone-100">
                 {src ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img

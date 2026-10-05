@@ -4,6 +4,8 @@ import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { generateGptImage25Flare as generateFalGptImage25Flare, uploadLocalPublicPath } from "./fal";
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const KIE_BASE = "https://api.kie.ai";
+const KIE_TASK_PREFIX = "kie:";
 const SEEDANCE_MODEL = "bytedance/seedance-2.5";
 const SEEDANCE_FAST_MODEL = "bytedance/seedance-2.0-fast";
 
@@ -48,6 +50,61 @@ function isFailed(status?: string) {
   return /^(failed|cancelled|canceled|expired)$/i.test(status || "");
 }
 
+type KieRecord = {
+  code?: number;
+  msg?: string;
+  data?: {
+    taskId?: string;
+    state?: string;
+    resultJson?: string;
+    failMsg?: string | null;
+    response?: { resultUrls?: string[] };
+  };
+};
+
+function kieHeaders() {
+  const { kieApiKey } = getSecrets();
+  if (!kieApiKey) throw new Error("KIE_API_KEY is missing.");
+  return {
+    Authorization: `Bearer ${kieApiKey}`,
+    "Content-Type": "application/json",
+  };
+}
+
+function isKieTask(taskId: string) {
+  return taskId.startsWith(KIE_TASK_PREFIX);
+}
+
+function rawKieTask(taskId: string) {
+  return taskId.slice(KIE_TASK_PREFIX.length);
+}
+
+function kieResultUrl(job: { resultJson?: string; response?: { resultUrls?: string[] } }) {
+  const direct = job.response?.resultUrls?.find((url) => /^https?:\/\//i.test(url));
+  if (direct) return direct;
+  if (!job.resultJson) return "";
+  try {
+    const parsed = JSON.parse(job.resultJson) as { resultUrls?: string[] };
+    return parsed.resultUrls?.find((url) => /^https?:\/\//i.test(url)) || "";
+  } catch {
+    return "";
+  }
+}
+
+async function readKieTask(taskId: string, signal?: AbortSignal) {
+  const timeout = AbortSignal.timeout(STATUS_TIMEOUT_MS);
+  const response = await fetch(`${KIE_BASE}/api/v1/jobs/recordInfo?taskId=${encodeURIComponent(rawKieTask(taskId))}`, {
+    headers: kieHeaders(),
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  const json = (await response.json().catch(() => ({}))) as KieRecord;
+  if (response.status === 404 || json.code === 404) return { state: "waiting" };
+  if (!response.ok || (json.code && json.code !== 200)) {
+    throw new Error(json.msg || `KIE video status failed (${response.status || json.code})`);
+  }
+  return json.data || { state: "waiting" };
+}
+
 const STATUS_TIMEOUT_MS = 20_000;
 const SUBMIT_TIMEOUT_MS = 120_000;
 
@@ -67,6 +124,24 @@ async function readVideoJob(taskId: string, signal?: AbortSignal) {
 }
 
 export async function peekKieTask(taskId: string): Promise<{ status: "success"; url: string } | { status: "fail"; error: string } | { status: "pending" }> {
+  if (isKieTask(taskId)) {
+    try {
+      const job = await readKieTask(taskId);
+      if (job.state === "success") {
+        const url = kieResultUrl(job);
+        if (!url) {
+          console.warn("kie job finished without a url", taskId);
+          return { status: "pending" };
+        }
+        return { status: "success", url };
+      }
+      if (job.state === "fail") return { status: "fail", error: job.failMsg || "Video generation failed." };
+      return { status: "pending" };
+    } catch (error) {
+      console.warn("kie status check failed", taskId, error instanceof Error ? error.message : error);
+      return { status: "pending" };
+    }
+  }
   try {
     const job = await readVideoJob(taskId);
     if (isFinished(job.status)) {
@@ -88,6 +163,7 @@ export async function peekKieTask(taskId: string): Promise<{ status: "success"; 
 }
 
 export async function waitForTask(taskId: string, signal?: AbortSignal, kind: "image" | "video" = "image") {
+  if (isKieTask(taskId)) return waitForKieTask(taskId, signal, kind);
   const started = Date.now();
   let delay = 4000;
   const limit = kind === "video" ? 15 * 60 * 1000 : 8 * 60 * 1000;
@@ -116,6 +192,33 @@ export async function waitForTask(taskId: string, signal?: AbortSignal, kind: "i
   throw new Error(kind === "video" ? "Timed out waiting for Seedance 2.5." : "Timed out waiting for GPT Image 2.5 Flare.");
 }
 
+async function waitForKieTask(taskId: string, signal?: AbortSignal, kind: "image" | "video" = "video") {
+  const started = Date.now();
+  let delay = 4000;
+  const limit = kind === "video" ? 15 * 60 * 1000 : 8 * 60 * 1000;
+  let emptySuccess = 0;
+  while (Date.now() - started < limit) {
+    throwIfAborted(signal);
+    try {
+      const job = await readKieTask(taskId, signal);
+      if (job.state === "success") {
+        const url = kieResultUrl(job);
+        if (url) return url;
+        emptySuccess += 1;
+        if (emptySuccess > 8) throw new Error(`KIE finished without a ${kind} URL.`);
+      } else if (job.state === "fail") {
+        throw new Error(job.failMsg || `${kind} generation failed.`);
+      }
+    } catch (error) {
+      if (isAbortError(error)) throw error;
+      if (error instanceof Error && /generation failed|without a /i.test(error.message)) throw error;
+    }
+    await abortableDelay(delay, signal);
+    delay = Math.min(delay + 2000, kind === "video" ? 15000 : 8000);
+  }
+  throw new Error(kind === "video" ? "Timed out waiting for Seedance 2.5." : "Timed out waiting for the image.");
+}
+
 export async function uploadKieFile(publicPath: string, signal?: AbortSignal) {
   throwIfAborted(signal);
   if (/^https?:\/\//i.test(publicPath)) return publicPath;
@@ -142,6 +245,7 @@ type SeedanceRequest = {
   generateAudio?: boolean;
   resolution?: "480p" | "720p" | "1080p";
   model?: "bytedance/seedance-2.5" | "bytedance/seedance-2.0-fast";
+  provider?: "openrouter" | "kie";
   seed?: number;
   abortSignal?: AbortSignal;
   existingTaskId?: string;
@@ -149,6 +253,7 @@ type SeedanceRequest = {
 };
 
 export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
+  if (options.provider === "kie") return submitKieSeedance(options);
   const existing = options.existingTaskId?.trim() || "";
   if (existing && existing !== "pending") return existing;
   throwIfAborted(options.abortSignal);
@@ -200,6 +305,47 @@ export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
     const taskId = json.id;
     await options.onTaskCreated?.(taskId);
     return taskId;
+}
+
+async function submitKieSeedance(options: SeedanceRequest) {
+  const existing = options.existingTaskId?.trim() || "";
+  if (existing && existing !== "pending") return isKieTask(existing) ? existing : `${KIE_TASK_PREFIX}${existing}`;
+  throwIfAborted(options.abortSignal);
+  const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
+  const aspectRatio = options.aspectRatio === "9:16" ? "9:16" : options.aspectRatio === "1:1" ? "1:1" : "16:9";
+  const images = (options.referenceImageUrls || []).filter(Boolean).slice(0, 30);
+  const videos = (options.referenceVideoUrls || []).filter(Boolean).slice(0, 10);
+  const audios = (options.referenceAudioUrls || []).filter(Boolean).slice(0, 10);
+  const input: Record<string, unknown> = {
+    prompt: options.prompt,
+    generate_audio: options.generateAudio !== false,
+    resolution: options.resolution || "480p",
+    aspect_ratio: aspectRatio,
+    duration,
+    output_format: "mp4",
+  };
+  if (images.length) input.reference_image_urls = images;
+  if (videos.length) input.reference_video_urls = videos;
+  if (audios.length) input.reference_audio_urls = audios;
+  const timeout = AbortSignal.timeout(SUBMIT_TIMEOUT_MS);
+  const signal = options.abortSignal ? AbortSignal.any([options.abortSignal, timeout]) : timeout;
+  const response = await fetch(`${KIE_BASE}/api/v1/jobs/createTask`, {
+    method: "POST",
+    headers: kieHeaders(),
+    signal,
+    body: JSON.stringify({
+      model: "bytedance/seedance-2-5",
+      input,
+    }),
+  });
+  const json = (await response.json().catch(() => ({}))) as KieRecord;
+  const created = json.data?.taskId?.trim() || "";
+  if (!response.ok || json.code !== 200 || !created) {
+    throw new Error(json.msg || `KIE Seedance create failed (${response.status})`);
+  }
+  const taskId = `${KIE_TASK_PREFIX}${created}`;
+  await options.onTaskCreated?.(taskId);
+  return taskId;
 }
 
 export async function generateSeedance25ReferenceVideo(options: SeedanceRequest) {

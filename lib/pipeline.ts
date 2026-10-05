@@ -841,7 +841,7 @@ async function createCharacterLook(
       : fromPhoto
         ? characterLookFromPhotoPrompt(character, project.style, photo?.lookNotes || "")
         : characterLookPrompt(character, project.style),
-    aspectRatio: project.style === "realistic" ? "16:9" : "1:1",
+    aspectRatio: "1:1",
     resolution: "2K",
     inputUrls,
     abortSignal,
@@ -1150,14 +1150,7 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     const generated = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
     const uploaded = generated || !photo ? "" : await resolveUploadUrl(photo.originalRemoteUrl, photo.originalPublicPath, abortSignal);
     const portrait = generated || uploaded;
-    if (portrait) {
-      add({
-        url: portrait,
-        kind: "character",
-        name: character.name,
-        notes: generated && project.style === "realistic" ? "four angles of this person" : undefined,
-      });
-    }
+    if (portrait) add({ url: portrait, kind: "character", name: character.name });
   }
 
   const places: string[] = [];
@@ -1402,6 +1395,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
     generateAudio: true,
     resolution: "480p",
+    provider: project.style === "realistic" ? "kie" : "openrouter",
     seed: projectSeed(project),
     onTaskCreated: async (id) => {
       batch.kieVideoTaskId = id;
@@ -1577,6 +1571,7 @@ async function runGenerateBatchVideo(
       referenceVideoUrls: videoEntries.map((item) => item.url),
       referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
       generateAudio: true,
+      provider: project.style === "realistic" ? "kie" : "openrouter",
       resolution: "480p",
       seed: projectSeed(project),
       existingTaskId: batch.kieVideoTaskId !== "pending" ? batch.kieVideoTaskId : undefined,

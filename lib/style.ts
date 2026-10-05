@@ -29,7 +29,7 @@ function portraitCraft(style: VisualStyle) {
     return "Hand-sculpted stop-motion clay puppet. Lumpy handmade face, fingerprints, tool marks, matte clay. Not smooth skin with a clay texture on top.";
   }
   if (style === "realistic") {
-    return "Real person in a real photograph. Real skin, real hair, real clothes, real proportions. Not illustrated, not 3D, not clay, and not a cartoon.";
+    return "Real person in a real photograph, looking straight at the camera. Real skin, real hair, real clothes, real proportions. Not illustrated, not 3D, not clay, and not a cartoon.";
   }
   return "Original 3D face. Use a specific nose, brow, and jaw from the description, with uneven features. Not a generic big-eyed hero.";
 }
@@ -167,33 +167,19 @@ function shortLookAppearance(character: Character) {
   return `${name}, ${look}`;
 }
 
-function realisticAngleSheet(subject: string) {
-  return [
-    `Photorealistic live-action sheet of ${subject}.`,
-    "One wide image on a plain gray background: the same person four times, waist up, in a single row.",
-    "Four different angles: a left three-quarter view, a right three-quarter view, a left profile, and a right profile.",
-    "In every panel the eyes look past the camera, never into the lens. No head-on shot and no eye contact.",
-    "Same face, same hair, same clothes, and the same body in all four.",
-    "Real skin, real hair, real clothes, real proportions. Not illustrated, not 3D, not clay, and not a cartoon.",
-    "No text, no labels, no arrows, and no extra people.",
-  ].join(" ");
-}
-
 export function characterLookPrompt(character: Character, style: VisualStyle) {
-  if (style === "realistic") return realisticAngleSheet(shortLookAppearance(character));
   return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
 export function characterLookFromPhotoPrompt(_character: Character, style: VisualStyle, lookNote = "") {
-  const note = lookNote.trim().slice(0, 180);
-  const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
-  if (style === "realistic") {
-    return `${realisticAngleSheet("the same person as the attached photo")}${extra} Keep their real face, hair, and clothes. Do not invent a different person.`;
-  }
   const craft =
     style === "claymation"
       ? "Same person as the photo, rebuilt as a hand-sculpted clay puppet. Fingerprints, tool marks, matte clay. Not smooth skin with a clay texture."
-      : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
+      : style === "realistic"
+        ? "Same person as the photo, kept photoreal and looking straight at the camera. Do not redraw them as a cartoon, a 3D character, or a clay puppet."
+        : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
+  const note = lookNote.trim().slice(0, 180);
+  const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
   return `${imageStyleLead(style)} portrait from the attached photo. ${craft}${extra} One character, plain gray background.`;
 }
 
@@ -225,9 +211,6 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
   const change = notes.trim().split(/[.!?]/)[0].slice(0, 120);
-  if (style === "realistic") {
-    return `${realisticAngleSheet(character.name)} Apply this change in all four panels: ${change}.`;
-  }
   return `${imageStyleLead(style)} portrait of ${character.name}. ${change}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
@@ -1783,14 +1766,7 @@ function referenceLock(images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      const kind =
-        item.kind === "character"
-          ? /four angles/i.test(item.notes || "")
-            ? "four-angle reference of the same person. Use the face, hair, and clothes. Do not copy the four panels into the video"
-            : "silent character"
-          : item.kind === "location"
-            ? "location"
-            : item.kind;
+      const kind = item.kind === "character" ? "silent character" : item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
     .filter(Boolean);
