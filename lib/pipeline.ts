@@ -567,7 +567,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     if (durableVideoSrc(batch)) continue;
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
-    if (previous && project.style !== "realistic" && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
@@ -577,12 +577,8 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       await saveSoon(project);
       if (!tailUrl(previous)) return { ready: false };
     }
-    if (project.style === "realistic" && /@Video(?!\d)/.test(batch.videoPrompt || "")) {
-      batch.promptReady = false;
-    }
     if (
       previous &&
-      project.style !== "realistic" &&
       !realKieVideoTaskId(batch.kieVideoTaskId) &&
       batch.kieVideoTaskId !== "pending" &&
       (!/last 5 seconds/i.test(batch.videoPrompt || "") || /@Audio2\b/.test(batch.videoPrompt || ""))
@@ -845,7 +841,7 @@ async function createCharacterLook(
       : fromPhoto
         ? characterLookFromPhotoPrompt(character, project.style, photo?.lookNotes || "")
         : characterLookPrompt(character, project.style),
-    aspectRatio: "1:1",
+    aspectRatio: project.style === "realistic" ? "16:9" : "1:1",
     resolution: "2K",
     inputUrls,
     abortSignal,
@@ -1143,14 +1139,25 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     imageEntries.push(entry);
   }
 
+  const sources = assignCharacterSourcePhotos(project);
   for (const name of appearanceOrder(project)) {
     const character = findCharacter(project, name);
     if (!character || character.isExtra || isUnseenVoice(character)) continue;
     const speaks = characterHasDialogue(project, character);
     const hasVoice = speaks && Boolean(character.anchorVideoRemoteUrl || character.anchorVideoPublicPath);
-    if (hasVoice || project.style === "realistic") continue;
-    const portrait = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
-    if (portrait) add({ url: portrait, kind: "character", name: character.name });
+    if (hasVoice && project.style !== "realistic") continue;
+    const photo = sources.get(character.id);
+    const generated = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
+    const uploaded = generated || !photo ? "" : await resolveUploadUrl(photo.originalRemoteUrl, photo.originalPublicPath, abortSignal);
+    const portrait = generated || uploaded;
+    if (portrait) {
+      add({
+        url: portrait,
+        kind: "character",
+        name: character.name,
+        notes: generated && project.style === "realistic" ? "four angles of this person" : undefined,
+      });
+    }
   }
 
   const places: string[] = [];
@@ -1185,16 +1192,7 @@ async function stableCharacterVideos(project: Project, abortSignal?: AbortSignal
   return videos;
 }
 
-async function previousFilmRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
-  if (project.style !== "realistic" || project.song) return undefined;
-  const previous = previousStoryBatch(project, batch);
-  if (!previous || !durableVideoSrc(previous)) return undefined;
-  const url = await resolveUploadUrl(previous.videoRemoteUrl, previous.videoPublicPath, abortSignal);
-  return url ? { url, kind: "previous", name: "Previous generation" } : undefined;
-}
-
 async function previousTailRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
-  if (project.style === "realistic") return undefined;
   const previous = previousStoryBatch(project, batch);
   const src = tailUrl(previous);
   if (!src) return undefined;
@@ -1206,15 +1204,13 @@ async function collectLongformReferences(project: Project, batch: Batch, abortSi
   const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries = project.style === "realistic" ? [] : await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
-  const previousFilm = await previousFilmRef(project, batch, abortSignal);
   const tail = await previousTailRef(project, batch, abortSignal);
-  const reserve = (narrator ? 1 : 0) + (previousFilm ? 1 : 0) + (tail ? 1 : 0);
+  const reserve = (narrator ? 1 : 0) + (tail ? 1 : 0);
   const characters = videoEntries.slice(0, Math.max(0, MAX_ANCHOR_VIDEOS - reserve));
   return {
     imageEntries,
     videoEntries: [
       ...characters,
-      ...(previousFilm ? [previousFilm] : []),
       ...(narrator ? [narrator] : []),
       ...(tail ? [tail] : []),
     ],
@@ -1226,7 +1222,7 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
     return collectLongformReferences(project, batch, abortSignal);
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
-  const videoEntries = await stableCharacterVideos(project, abortSignal);
+  const videoEntries = project.style === "realistic" ? [] : await stableCharacterVideos(project, abortSignal);
   return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
 }
 

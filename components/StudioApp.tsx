@@ -118,7 +118,6 @@ function stepsFor(project: Project) {
         { id: "produce" as const, label: "Generate" },
       ]
     : STEPS;
-  if (project.style === "realistic") return steps.filter((item) => item.id !== "cast");
   return steps;
 }
 
@@ -139,7 +138,6 @@ function stepReachable(project: Project, step: WorkflowStep) {
   }
   if (step === "review") return project.scenes.length > 0;
   if (step === "cast") {
-    if (project.style === "realistic") return false;
     return project.scenes.length > 0 && (Boolean(project.song) || missingCastLooks(project).length === 0);
   }
   return Boolean(projectDeliveredSrc(project));
@@ -442,7 +440,7 @@ export function StudioApp() {
 
   projectsRef.current = projects;
   const task = activeTask(project);
-  const working = busy || Boolean(task && !(project?.style === "realistic" && task.kind === "cast"));
+  const working = busy || Boolean(task);
   busyRef.current = working;
 
   useEffect(() => {
@@ -547,11 +545,6 @@ export function StudioApp() {
     if (!current || (current.workflowStep || "script") !== "script") return;
     writeDraft(current.id, scriptDraft === current.scriptText ? "" : scriptDraft);
   }, [scriptDraft]);
-
-  useEffect(() => {
-    if (!project || project.style !== "realistic" || project.workflowStep !== "cast") return;
-    void patchProject({ workflowStep: "review" });
-  }, [project?.id, project?.style, project?.workflowStep]);
 
   function remember(next: Project) {
     projectRef.current = next;
@@ -1049,32 +1042,14 @@ export function StudioApp() {
         setBusy(false);
         return;
       }
-      const realistic = project.style === "realistic";
       const saved = await patchProject({
         scenes,
-        workflowStep: realistic ? "review" : "cast",
+        workflowStep: "cast",
         resetGeneration: true,
       });
       if (!saved) return;
       setScenesDraft(scenes);
       setPane("studio");
-      if (realistic) {
-        const confirmed = await fetch("/api/cast", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ projectId: saved.id, confirm: true }),
-        });
-        const approved = (await confirmed.json()) as { project?: Project; error?: string };
-        if (!approved.project) {
-          setStatus(approved.error || "Couldn't start that video.");
-          setBusy(false);
-          return;
-        }
-        remember(approved.project);
-        setBusy(false);
-        await beginProduce();
-        return;
-      }
       if (saved.song) {
         setStatus("");
         return;
@@ -1373,11 +1348,11 @@ export function StudioApp() {
     return <div className="grid h-screen place-items-center text-[var(--muted)]">Loading…</div>;
   }
 
-  const step = project.style === "realistic" && project.workflowStep === "cast" ? "review" : project.workflowStep || "script";
+  const step = project.workflowStep || "script";
   const taskLabel =
     task?.kind === "plan"
       ? "Building your scenes… you can refresh, it keeps going."
-      : task?.kind === "cast" && project.style !== "realistic"
+      : task?.kind === "cast"
         ? "Casting characters… you can refresh, it keeps going."
         : "";
   const charactersSlots = slotsOf(project, "character");
@@ -1654,7 +1629,7 @@ export function StudioApp() {
               targetSeconds={project.targetDurationSeconds || 15}
               busy={working}
               hasVideo={Boolean(projectDeliveredSrc(project))}
-              directGenerate={project.style === "realistic"}
+              directGenerate={false}
               creditCost={generationCreditCost(project)}
               credits={credits}
               onChange={setScenesDraft}
@@ -1684,6 +1659,7 @@ export function StudioApp() {
           {step === "cast" && !(project.song && missingCastLooks(project).length > 0 && !working) ? (
             <CastStep
               characters={project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character))}
+              sheet={project.style === "realistic"}
               busy={working}
               creditCost={generationCreditCost(project)}
               credits={credits}
@@ -2679,6 +2655,7 @@ function SongLookStep({
 
 function CastStep({
   characters,
+  sheet,
   busy,
   creditCost,
   credits,
@@ -2687,6 +2664,7 @@ function CastStep({
   onContinue,
 }: {
   characters: Character[];
+  sheet: boolean;
   busy: boolean;
   creditCost: number;
   credits: number;
@@ -2704,7 +2682,9 @@ function CastStep({
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {characters.length
-            ? "Main characters only. One pose each. Change a look once if needed."
+            ? sheet
+              ? "Main characters only. Four angles of each person, none looking into the camera. Change a look once if needed."
+              : "Main characters only. One pose each. Change a look once if needed."
             : "No on-screen characters in this script. Continue when you are ready to generate."}
         </p>
       </div>
@@ -2722,7 +2702,7 @@ function CastStep({
           const draft = notes[character.id] || "";
           return (
             <article key={character.id} className="rounded-2xl border border-[var(--line)] bg-white p-3">
-              <div className="aspect-square overflow-hidden rounded-xl bg-stone-100">
+              <div className={`${sheet ? "aspect-video" : "aspect-square"} overflow-hidden rounded-xl bg-stone-100`}>
                 {src ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
