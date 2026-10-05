@@ -8,6 +8,7 @@ import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
+import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
@@ -908,6 +909,7 @@ async function requestLooks(
 
 export async function ensureCharacterLooks(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   refineStoryLeads(project);
+  if (project.style === "realistic") applyScriptLooks(project);
   const leads = leadCharacters(project);
   const sources = assignCharacterSourcePhotos(project);
   const pending = leads.filter((character) => characterNeedsLook(character, sources.get(character.id)));

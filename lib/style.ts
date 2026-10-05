@@ -36,7 +36,7 @@ function portraitCraft(style: VisualStyle) {
 
 function styleThroughout(style: VisualStyle) {
   if (style === "realistic") {
-    return "Realistic live-action throughout the whole video. Real people, real places, real materials, and real light. Not a cartoon, not 3D animation, and not clay.";
+    return "Realistic live-action throughout the whole video. Real subjects, real places, real materials, and real light. A person stays a person and an animal stays that animal. Not a cartoon, not 3D animation, and not clay.";
   }
   return `${styleLookName(style)} style throughout the whole video.`;
 }
@@ -81,7 +81,7 @@ function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style(?: throughout the whole video)?\.?\s*/i, "")
     .replace(
-      /^Realistic live-action throughout the whole video\.?\s*Real people, real places, real materials, and real light\.?\s*Not a cartoon, not 3D animation, and not clay\.?\s*/i,
+      /^Realistic live-action throughout the whole video\.?\s*Real (?:people|subjects), real places, real materials, and real light\.?\s*(?:A person stays a person and an animal stays that animal\.?\s*)?Not a cartoon, not 3D animation, and not clay\.?\s*/i,
       "",
     )
     .replace(/^(?:Horizontal 16:9|Vertical 9:16) frame:[^.]*\.\s*/i, "")
@@ -150,6 +150,30 @@ function appearanceForLook(character: Character) {
   return `${name}, ${text}`;
 }
 
+function realisticLookLine(character: Character) {
+  const name = character.name.trim();
+  const text = (character.description || "")
+    .replace(/^\s*human\b[.,]?\s*/i, "")
+    .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
+    .replace(/\b(fight|fighting|scuffle|brawl)\b[\s\S]*/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .trim()
+    .slice(0, 500);
+  if (!text || text.toLowerCase() === name.toLowerCase()) return name;
+  return `${name}, ${text}`;
+}
+
+function realisticSubjectCraft(description: string) {
+  const animal =
+    /\b(kittens?|cats?|puppies|puppy|dogs?|birds?|rabbits?|horses?|fish|robots?|dragons?|aliens?|creatures?|monsters?)\b/i.test(
+      description,
+    );
+  if (animal) {
+    return "Photograph that animal for real, looking at the camera. Not a human, not a person in a costume, not face paint, and not a mascot. Real proportions for that species.";
+  }
+  return "A real photograph of this subject, looking straight at the camera. Keep the age that is written: a child stays a child and an adult stays an adult. Do not age them up or down. Real skin, real hair, real clothes. If a heritage, nationality, or feature is written, show it.";
+}
+
 function shortLookAppearance(character: Character) {
   const name = character.name.trim();
   const text = (character.description || "")
@@ -168,16 +192,24 @@ function shortLookAppearance(character: Character) {
 }
 
 export function characterLookPrompt(character: Character, style: VisualStyle) {
+  if (style === "realistic") {
+    const appearance = realisticLookLine(character);
+    return `${imageStyleLead(style)} portrait of ${appearance}. ${realisticSubjectCraft(appearance)} Not illustrated, not 3D, not clay, and not a cartoon. One subject only, plain gray background.`;
+  }
   return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
-export function characterLookFromPhotoPrompt(_character: Character, style: VisualStyle, lookNote = "") {
+export function characterLookFromPhotoPrompt(character: Character, style: VisualStyle, lookNote = "") {
+  if (style === "realistic") {
+    const appearance = realisticLookLine(character);
+    const note = lookNote.trim().slice(0, 180);
+    const extra = note && !appearance.toLowerCase().includes(note.toLowerCase()) ? ` Look notes: ${note}.` : "";
+    return `${imageStyleLead(style)} portrait of ${appearance}. Use the attached photo only when it is the same subject. ${realisticSubjectCraft(`${appearance} ${note}`)}${extra} Not illustrated, not 3D, not clay, and not a cartoon. One subject only, plain gray background.`;
+  }
   const craft =
     style === "claymation"
       ? "Same person as the photo, rebuilt as a hand-sculpted clay puppet. Fingerprints, tool marks, matte clay. Not smooth skin with a clay texture."
-      : style === "realistic"
-        ? "Same person as the photo, kept photoreal and looking straight at the camera. Do not redraw them as a cartoon, a 3D character, or a clay puppet."
-        : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
+      : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
   const note = lookNote.trim().slice(0, 180);
   const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
   return `${imageStyleLead(style)} portrait from the attached photo. ${craft}${extra} One character, plain gray background.`;
@@ -211,6 +243,10 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
   const change = notes.trim().split(/[.!?]/)[0].slice(0, 120);
+  if (style === "realistic") {
+    const appearance = realisticLookLine(character);
+    return `${imageStyleLead(style)} portrait of ${appearance}. Change only this: ${change}. ${realisticSubjectCraft(appearance)} Keep the same species and the same age. One subject only, plain gray background.`;
+  }
   return `${imageStyleLead(style)} portrait of ${character.name}. ${change}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
