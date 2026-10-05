@@ -36,7 +36,7 @@ function portraitCraft(style: VisualStyle) {
 
 function styleThroughout(style: VisualStyle) {
   if (style === "realistic") {
-    return "Realistic live-action throughout the whole video. Real subjects, real places, real materials, and real light. A person stays a person and an animal stays that animal. Not a cartoon, not 3D animation, and not clay.";
+    return "Realistic live-action throughout the whole video. Real subjects, real places, real materials, and real light. A person stays a person and an animal stays that animal. Not a cartoon, not 3D animation, and not clay. Each person appears once in a shot. Never the same person in the foreground and again at a door or in the background.";
   }
   return `${styleLookName(style)} style throughout the whole video.`;
 }
@@ -81,7 +81,7 @@ function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style(?: throughout the whole video)?\.?\s*/i, "")
     .replace(
-      /^Realistic live-action throughout the whole video\.?\s*Real (?:people|subjects), real places, real materials, and real light\.?\s*(?:A person stays a person and an animal stays that animal\.?\s*)?Not a cartoon, not 3D animation, and not clay\.?\s*/i,
+      /^Realistic live-action throughout the whole video\.?\s*Real (?:people|subjects), real places, real materials, and real light\.?\s*(?:A person stays a person and an animal stays that animal\.?\s*)?Not a cartoon, not 3D animation, and not clay\.?\s*(?:Each person appears once in a shot\.?\s*Never the same person in the foreground and again at a door or in the background\.?\s*)?/i,
       "",
     )
     .replace(/^(?:Horizontal 16:9|Vertical 9:16) frame:[^.]*\.\s*/i, "")
