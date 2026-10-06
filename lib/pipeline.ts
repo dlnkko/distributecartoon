@@ -413,7 +413,7 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
         generateAudio: true,
         resolution: "480p",
         ...(project.style === "realistic"
-          ? { provider: "kie" as const }
+          ? { model: "bytedance/seedance-2.0-fast" as const, provider: "kie" as const }
           : { model: "bytedance/seedance-2.0-fast" as const, provider: "openrouter" as const }),
         seed: projectSeed(project),
         onTaskCreated: async (id) => {

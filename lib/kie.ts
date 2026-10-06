@@ -8,6 +8,8 @@ const KIE_BASE = "https://api.kie.ai";
 const KIE_TASK_PREFIX = "kie:";
 const SEEDANCE_MODEL = "bytedance/seedance-2.5";
 const SEEDANCE_FAST_MODEL = "bytedance/seedance-2.0-fast";
+const KIE_SEEDANCE_MODEL = "bytedance/seedance-2-5";
+const KIE_SEEDANCE_FAST_MODEL = "bytedance/seedance-2-fast";
 
 type OpenRouterJob = {
   id?: string;
@@ -311,19 +313,22 @@ async function submitKieSeedance(options: SeedanceRequest) {
   const existing = options.existingTaskId?.trim() || "";
   if (existing && existing !== "pending") return isKieTask(existing) ? existing : `${KIE_TASK_PREFIX}${existing}`;
   throwIfAborted(options.abortSignal);
-  const duration = Math.min(30, Math.max(4, Math.round(options.duration || 8)));
+  const fast = options.model === SEEDANCE_FAST_MODEL;
+  const durationCap = fast ? 15 : 30;
+  const duration = Math.min(durationCap, Math.max(4, Math.round(options.duration || 8)));
   const aspectRatio = options.aspectRatio === "9:16" ? "9:16" : options.aspectRatio === "1:1" ? "1:1" : "16:9";
-  const images = (options.referenceImageUrls || []).filter(Boolean).slice(0, 30);
-  const videos = (options.referenceVideoUrls || []).filter(Boolean).slice(0, 10);
-  const audios = (options.referenceAudioUrls || []).filter(Boolean).slice(0, 10);
+  const images = (options.referenceImageUrls || []).filter(Boolean).slice(0, fast ? 9 : 30);
+  const videos = (options.referenceVideoUrls || []).filter(Boolean).slice(0, fast ? 3 : 10);
+  const audios = (options.referenceAudioUrls || []).filter(Boolean).slice(0, fast ? 3 : 10);
+  const resolution = fast && options.resolution === "1080p" ? "720p" : options.resolution || "480p";
   const input: Record<string, unknown> = {
     prompt: options.prompt,
     generate_audio: options.generateAudio !== false,
-    resolution: options.resolution || "480p",
+    resolution,
     aspect_ratio: aspectRatio,
     duration,
-    output_format: "mp4",
   };
+  if (!fast) input.output_format = "mp4";
   if (images.length) input.reference_image_urls = images;
   if (videos.length) input.reference_video_urls = videos;
   if (audios.length) input.reference_audio_urls = audios;
@@ -334,7 +339,7 @@ async function submitKieSeedance(options: SeedanceRequest) {
     headers: kieHeaders(),
     signal,
     body: JSON.stringify({
-      model: "bytedance/seedance-2-5",
+      model: fast ? KIE_SEEDANCE_FAST_MODEL : KIE_SEEDANCE_MODEL,
       input,
     }),
   });
