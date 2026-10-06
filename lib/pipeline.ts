@@ -726,19 +726,24 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
     (batch) => batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId),
   );
   const oneShot = shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
-  const narrator = storyStarted || oneShot ? { ready: true } : await stepNarratorVoice(project);
-  if (!oneShot) {
+  const realistic = project.style === "realistic";
+  const narrator = storyStarted || oneShot || realistic ? { ready: true } : await stepNarratorVoice(project);
+  if (!realistic && !oneShot) {
     const intros: StepResult = await stepCharacterIntros(project);
     if (intros.failed && !storyStarted) {
       failProduce(project, intros.failed);
       return "failed";
     }
-    if (!oneShot && !project.platesTried) {
+    if (!project.platesTried) {
       await ensureLocationPlates(project, onStatus);
       project.platesTried = true;
       await saveSoon(project);
     }
     if (!intros.ready && !storyStarted) return "waiting";
+  } else if (realistic && !project.platesTried) {
+    await ensureLocationPlates(project, onStatus);
+    project.platesTried = true;
+    await saveSoon(project);
   }
   if (!narrator.ready) return "waiting";
   const story = await stepStoryParts(project);
@@ -1132,7 +1137,7 @@ function appearanceOrder(project: Project) {
   return names;
 }
 
-async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
+async function stableImageEntries(project: Project, abortSignal?: AbortSignal, keepSpeakingPortraits = false) {
   const imageEntries: PromptRef[] = [];
   const seen = new Set<string>();
   function add(entry: PromptRef) {
@@ -1148,7 +1153,7 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     if (!character || character.isExtra || isUnseenVoice(character)) continue;
     const speaks = characterHasDialogue(project, character);
     const hasVoice = speaks && Boolean(character.anchorVideoRemoteUrl || character.anchorVideoPublicPath);
-    if (hasVoice) continue;
+    if (hasVoice && !keepSpeakingPortraits) continue;
     const photo = sources.get(character.id);
     const generated = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
     const uploaded = generated || !photo ? "" : await resolveUploadUrl(photo.originalRemoteUrl, photo.originalPublicPath, abortSignal);
@@ -1196,6 +1201,26 @@ async function previousTailRef(project: Project, batch: Batch, abortSignal?: Abo
   return url ? { url, kind: "video", name: "Previous ending" } : undefined;
 }
 
+async function collectRealisticReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  const imageEntries = await stableImageEntries(project, abortSignal, true);
+  const seen = new Set(imageEntries.map((item) => item.url));
+  for (const asset of project.references) {
+    if (asset.originalRemoteUrl && seen.has(asset.originalRemoteUrl)) continue;
+    if (asset.originalPublicPath && seen.has(asset.originalPublicPath)) continue;
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (!url || seen.has(url)) continue;
+    seen.add(url);
+    const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" || asset.kind === "character" ? asset.kind : "other";
+    imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
+  }
+  if (imageEntries.length > 30) imageEntries.length = 30;
+  if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+    return { imageEntries, videoEntries: [] as PromptRef[] };
+  }
+  const tail = await previousTailRef(project, batch, abortSignal);
+  return { imageEntries, videoEntries: tail ? [tail] : [] };
+}
+
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
@@ -1214,6 +1239,7 @@ async function collectLongformReferences(project: Project, batch: Batch, abortSi
 }
 
 async function collectReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  if (project.style === "realistic") return collectRealisticReferences(project, batch, abortSignal);
   if (!shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     return collectLongformReferences(project, batch, abortSignal);
   }

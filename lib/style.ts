@@ -1765,7 +1765,7 @@ function referenceLock(images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      const kind = item.kind === "character" ? "silent character" : item.kind === "location" ? "location" : item.kind;
+      const kind = item.kind === "character" ? "character" : item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
     .filter(Boolean);
@@ -1925,7 +1925,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
             ? `This video is the next ${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds, the slice that belongs to this part. Do not regenerate the previous 5 seconds. The video reference is that ending, picture and music, only so the cut is not abrupt. @Audio1 is this slice and plays from 00:00 of this video. No title card, no logo sting, no black frame, and no new intro.`
             : "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
           "Each scene shows the lyric quoted in it, while @Audio1 is singing that line. Do not show a different event during that line. Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the quoted lyric already in @Audio1. The attached product stays out of frame until a scene already shows it as the solution. Do not add it to a problem scene.",
-          "Silent characters, places, and products are @Image. Those numbers stay the same in every generation.",
+          characterVideos
+            ? "Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
+            : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine,
         ]
@@ -1936,7 +1938,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           tailLine,
           characterVideos
             ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
-            : "Places and products are @Image. Those numbers stay the same in every generation.",
+            : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine ? "" : continues ? "This clip picks up straight from the previous part." : "",
           narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
