@@ -8,13 +8,15 @@ export function VideoCard({
   clip,
   ratio = "aspect-video",
   play = "view",
-  frame = "01",
+  frame = "",
+  quiet = false,
   className = "",
 }: {
   clip: Clip;
   ratio?: string;
   play?: "hover" | "view" | "always";
   frame?: string;
+  quiet?: boolean;
   className?: string;
 }) {
   const ref = useRef<HTMLVideoElement>(null);
@@ -100,7 +102,7 @@ export function VideoCard({
           muted
           loop
           playsInline
-          preload={framed || play === "always" ? "auto" : "none"}
+          preload={play === "always" ? "auto" : "metadata"}
           autoPlay={play === "always"}
           aria-label={clip.label}
           onCanPlay={() => setReady(true)}
@@ -113,18 +115,21 @@ export function VideoCard({
         </video>
       )}
       {ready || framed || failed ? null : <Clapper label={clip.label} />}
-      <figcaption className="pointer-events-none absolute inset-x-0 top-0 flex items-center justify-between px-3 py-2 text-[10px] uppercase tracking-[0.16em] text-white/70">
-        <span>{clip.label.replace(/-/g, " ")}</span>
-        <span>{frame}</span>
-      </figcaption>
+      {quiet ? null : (
+        <figcaption className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/55 to-transparent px-3 pb-3 pt-8 text-xs text-white/90">
+          {clip.label}
+          {frame ? <span className="float-right text-white/60">{frame}</span> : null}
+        </figcaption>
+      )}
       {failed ? null : (
         <button
           type="button"
           onClick={toggle}
+          aria-label={playing ? "Pause" : "Play"}
           aria-pressed={playing}
-          className="absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white backdrop-blur-sm"
+          className="absolute bottom-3 right-3 grid h-8 w-8 place-items-center rounded-full bg-black/45 text-[11px] text-white"
         >
-          {playing ? "Pause" : "Play"}
+          {playing ? "II" : "▶"}
         </button>
       )}
     </figure>

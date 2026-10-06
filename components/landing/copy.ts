@@ -7,13 +7,14 @@ export type Film = {
   label: string;
   title: string;
   text: string;
+  ratio: "9:16" | "16:9";
 };
 
 export function modeFromQuery(value: string | string[] | undefined): Mode {
   return value === "brands" ? "brands" : "personal";
 }
 
-function film(name: string, label: string, title = "", text = ""): Film {
+function film(name: string, label: string, title = "", text = "", ratio: Film["ratio"] = "9:16"): Film {
   return {
     mp4: `/media/${name}.mp4`,
     webm: "",
@@ -21,42 +22,52 @@ function film(name: string, label: string, title = "", text = ""): Film {
     label,
     title,
     text,
+    ratio,
   };
 }
 
-export const PERSONAL_HERO = film("tigre-and-the-last-chance", "Tigre and the last chance");
-
-export const PERSONAL_FILMS = [
+export const FILMS: Film[] = [
+  film(
+    "outback-signal",
+    "Outback Signal",
+    "Outback Signal",
+    "A brand story with one look from the first shot to the last.",
+    "16:9",
+  ),
+  film(
+    "tigre-and-the-last-chance",
+    "Tigre and the last chance",
+    "Tigre and the last chance",
+    "A mother, a child, and a kitten. The same faces the whole way through.",
+  ),
   film(
     "don-julio-and-canela",
     "Don Julio and Canela",
-    "A story about someone you love",
-    "Same faces, same dog, from the first frame to the last.",
+    "Don Julio and Canela",
+    "Same man, same dog, from the first frame to the last.",
   ),
   film(
     "beto-and-osofuerte",
     "Beto and OsoFuerte",
-    "A film with a real ending",
+    "Beto and OsoFuerte",
     "Two minutes, one look, no reshoots.",
   ),
-];
-
-export const BRAND_HERO = film("outback-signal", "Outback Signal");
-
-export const BRAND_FILMS = [
   film(
     "lumabrew-brew-your-mood",
     "LumaBrew",
-    "Your product inside the story",
-    "A mood, a morning, and the thing you sell.",
+    "LumaBrew",
+    "A product, a morning, and a mood. Told in clay.",
   ),
   film(
     "calm-in-your-ears",
     "Calm in your ears",
-    "A hook people finish",
-    "The problem, then your product, told in clay.",
+    "Calm in your ears",
+    "The problem, then the product, in one short film.",
   ),
 ];
+
+export const PERSONAL_HERO = FILMS[1];
+export const BRAND_HERO = FILMS[0];
 
 export const ZOOM_URL = "https://zoom.us/j/81531268770";
 

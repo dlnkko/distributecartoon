@@ -110,7 +110,7 @@ export const DFY_PLANS: Plan[] = [
   {
     id: "dfy-studio",
     name: "Studio",
-    price: 999,
+    price: 1999,
     seconds: 0,
     perCredit: "",
     blurb: "30 videos a month. You send the scripts. We adapt them and deliver the animations.",
@@ -121,7 +121,7 @@ export const DFY_PLANS: Plan[] = [
   {
     id: "dfy-partner",
     name: "Partner",
-    price: 1999,
+    price: 2999,
     seconds: 0,
     perCredit: "",
     blurb: "50 videos a month. We write from what has worked, build the angles, and run the creative.",

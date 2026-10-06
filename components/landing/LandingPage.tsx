@@ -8,12 +8,11 @@ import { CONTACT_EMAIL } from "@/lib/site";
 import { startCheckout } from "@/components/landing/checkout";
 import {
   BRAND_AGENCY,
-  BRAND_FILMS,
   BRAND_HERO,
   BRAND_PAIN,
   COPY,
+  FILMS,
   PERSONAL_EDGE,
-  PERSONAL_FILMS,
   PERSONAL_HERO,
   STEPS,
   TRIAL_OFFERS,
@@ -172,14 +171,13 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
       <section id="hero" className={mode === "brands" ? "relative isolate min-h-[100svh] overflow-hidden" : "relative overflow-hidden"}>
         {mode === "brands" ? <HeroVideo clip={BRAND_HERO} /> : null}
         <div className={`pointer-events-none absolute inset-0 ${mode === "brands" ? "bg-gradient-to-t from-[#0b0b0d] via-[#0b0b0d]/70 to-[#0b0b0d]/25" : ""}`} />
-        <div className="pointer-events-none absolute -left-16 top-24 h-64 w-64 rounded-full bg-[#ff8a3d]/25 blur-3xl land-orb" />
         {mode === "personal" ? (
           <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 py-8 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:py-16">
             <Reveal>
               <HeroCopy copy={copy} mode={mode} />
             </Reveal>
             <Reveal delay={120}>
-              <VideoCard clip={PERSONAL_HERO} ratio="aspect-[9/16]" play="always" frame="01" className="land-film mx-auto w-full max-w-[280px] sm:max-w-xs" />
+              <VideoCard clip={PERSONAL_HERO} ratio="aspect-[9/16]" play="always" quiet className="land-film mx-auto w-full max-w-[280px] sm:max-w-xs" />
             </Reveal>
           </div>
         ) : (
@@ -197,14 +195,14 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
 
       <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
         <Reveal>
-          <h2 className="land-display text-4xl sm:text-5xl">How it works</h2>
+          <h2 className="land-display text-3xl sm:text-4xl">How it works</h2>
         </Reveal>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-8 md:grid-cols-3">
           {STEPS.map((step, index) => (
             <Reveal key={step.title} delay={index * 80}>
-              <article className="h-full rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted)]">{String(index + 1).padStart(2, "0")}</p>
-                <h3 className="mt-3 text-lg font-semibold">{step.title}</h3>
+              <article className="border-t border-white/10 pt-5">
+                <p className="text-sm tabular-nums text-[var(--cf-muted)]">{String(index + 1).padStart(2, "0")}</p>
+                <h3 className="mt-3 text-lg font-medium">{step.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{step.text}</p>
               </article>
             </Reveal>
@@ -448,18 +446,25 @@ function HeroVideo({ clip }: { clip: Film }) {
   );
 }
 
-function FilmRail({ films, start }: { films: Film[]; start: number }) {
+function FilmRail({ films }: { films: Film[] }) {
   return (
-    <div className="land-rail -mx-4 mt-8 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-2 md:overflow-visible md:px-0">
-      {films.map((item, index) => (
-        <Reveal key={item.mp4} delay={index * 90} className="w-[84%] shrink-0 snap-center md:w-auto">
-          <article className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-3 sm:p-4">
-            <VideoCard clip={item} ratio="aspect-[9/16]" play="view" frame={String(start + index).padStart(2, "0")} className="land-film mx-auto w-full max-w-xs" />
-            <h3 className="mt-4 text-lg font-semibold">{item.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-          </article>
-        </Reveal>
-      ))}
+    <div className="land-rail -mx-4 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-6 md:gap-x-5 md:gap-y-10 md:overflow-visible md:px-0">
+      {films.map((item, index) => {
+        const wide = item.ratio === "16:9";
+        return (
+          <Reveal key={item.mp4} delay={index * 50} className={`w-[78%] shrink-0 snap-center md:w-auto ${wide ? "md:col-span-6" : "md:col-span-2"}`}>
+            <VideoCard
+              clip={item}
+              ratio={wide ? "aspect-video" : "aspect-[9/16]"}
+              play="view"
+              quiet
+              className={wide ? "land-film mx-auto w-full max-w-4xl" : "land-film"}
+            />
+            <h3 className={`mt-3 font-medium ${wide ? "text-lg" : "text-[15px]"}`}>{item.title}</h3>
+            <p className="mt-1 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
+          </Reveal>
+        );
+      })}
     </div>
   );
 }
@@ -469,24 +474,24 @@ function PersonalBody() {
     <div className="mx-auto max-w-6xl space-y-20 px-4 py-10 sm:px-6">
       <section id="films" className="scroll-mt-24">
         <Reveal>
-          <h2 className="land-display text-4xl sm:text-5xl">Stories, ready to watch.</h2>
-          <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">
+          <h2 className="land-display text-3xl sm:text-4xl">Stories, ready to watch.</h2>
+          <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
             Write it the way you would tell a friend. These films started that way.
           </p>
         </Reveal>
-        <FilmRail films={PERSONAL_FILMS} start={2} />
+        <FilmRail films={FILMS} />
       </section>
 
       <section>
         <Reveal>
-          <h2 className="land-display text-4xl sm:text-5xl">What no other tool gives you.</h2>
+          <h2 className="land-display text-3xl sm:text-4xl">What no other tool gives you.</h2>
         </Reveal>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-8 md:grid-cols-3">
           {PERSONAL_EDGE.map((item, index) => (
             <Reveal key={item.title} delay={index * 80}>
-              <article className={`rounded-3xl p-6 ${index === 0 ? "cf-grad text-white" : "border border-white/10 bg-[var(--cf-surface)]"}`}>
-                <h3 className="text-lg font-semibold">{item.title}</h3>
-                <p className={`mt-2 text-sm leading-relaxed ${index === 0 ? "text-white/90" : "text-[var(--cf-muted)]"}`}>{item.text}</p>
+              <article className="border-t border-white/10 pt-5">
+                <h3 className="text-lg font-medium">{item.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
               </article>
             </Reveal>
           ))}
@@ -502,16 +507,16 @@ function BrandBody() {
     <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
       <section>
         <Reveal>
-          <h2 className="land-display max-w-3xl text-4xl sm:text-5xl">Making the ads that win has never been this easy.</h2>
-          <p className="mt-4 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">
+          <h2 className="land-display max-w-3xl text-3xl sm:text-4xl">Making the ads that win has never been this easy.</h2>
+          <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
             A script or storyboard with your idea, story, or angle. Your product. One click. A professional ad.
           </p>
         </Reveal>
-        <div className="mt-8 grid gap-4 md:grid-cols-3">
+        <div className="mt-8 grid gap-8 md:grid-cols-3">
           {BRAND_PAIN.map((item, index) => (
             <Reveal key={item.title} delay={index * 80}>
-              <article className="rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
-                <h3 className="text-lg font-semibold line-through decoration-[#ff8a3d]/70">{item.title}</h3>
+              <article className="border-t border-white/10 pt-5">
+                <h3 className="text-lg font-medium">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
               </article>
             </Reveal>
@@ -524,17 +529,17 @@ function BrandBody() {
 
       <section id="films" className="scroll-mt-24">
         <Reveal>
-          <h2 className="land-display text-4xl sm:text-5xl">Ads, ready to run.</h2>
+          <h2 className="land-display text-3xl sm:text-4xl">Ads, ready to run.</h2>
         </Reveal>
-        <FilmRail films={BRAND_FILMS} start={2} />
+        <FilmRail films={FILMS} />
       </section>
 
-      <Reveal className="cf-grad flex flex-col items-start justify-between gap-6 rounded-[2rem] p-8 text-white sm:flex-row sm:items-center sm:p-10">
+      <Reveal className="flex flex-col items-start justify-between gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-end">
         <div>
           <h2 className="land-display text-3xl sm:text-4xl">{BRAND_AGENCY.title}</h2>
-          <p className="mt-2 max-w-md text-white/90">{BRAND_AGENCY.text}</p>
+          <p className="mt-3 max-w-md text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
         </div>
-        <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="btn-primary shrink-0 rounded-xl bg-white px-5 py-3 text-sm font-semibold text-black">
+        <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="cf-btn btn-primary shrink-0 px-5 py-3 text-sm font-semibold">
           {BRAND_AGENCY.cta}
         </a>
       </Reveal>
@@ -548,13 +553,13 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
   return (
     <section id="pricing" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
       <Reveal>
-        <h2 className="land-display text-4xl sm:text-5xl">Pricing</h2>
+        <h2 className="land-display text-3xl sm:text-4xl">Pricing</h2>
         <p className="mt-3 max-w-xl text-sm text-[var(--cf-muted)]">1 credit = 1 second of video. Monthly plans. The month starts the day you pay.</p>
       </Reveal>
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
         {LEAD_PLANS.map((plan, index) => (
           <Reveal key={plan.id} delay={index * 80} className="flex">
-          <article className="flex flex-1 flex-col rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6">
+          <article className="flex flex-1 flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
             <h3 className="text-lg font-semibold">{plan.seconds.toLocaleString("en-US")} credits</h3>
             <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
             <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{plan.blurb}</p>
@@ -565,14 +570,14 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
           </Reveal>
         ))}
         <Reveal delay={160} className="flex">
-        <article className="cf-grad flex flex-1 flex-col rounded-3xl p-6 text-white">
+        <article className="flex flex-1 flex-col rounded-2xl border border-white/20 bg-[var(--cf-surface)] p-6">
           <h3 className="text-lg font-semibold">{flex.seconds.toLocaleString("en-US")} credits</h3>
           <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(flex.price)}<span className="text-lg font-medium">/mo</span></p>
           <div className="mt-5">
-            <CreditRange labels={["250", "Max", "Ultra"]} index={tier} onChange={setTier} label="Monthly plan size" idleClass="text-white/70" />
+            <CreditRange labels={["250", "Max", "Ultra"]} index={tier} onChange={setTier} label="Monthly plan size" />
           </div>
-          <p className="mt-3 flex-1 text-sm text-white/90">{flex.blurb}</p>
-          <button type="button" onClick={() => onBuy(flex.id)} className="btn-primary mt-5 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-black">
+          <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{flex.blurb}</p>
+          <button type="button" onClick={() => onBuy(flex.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
             {busy === flex.id ? "Opening…" : "Start plan"}
           </button>
         </article>
@@ -580,21 +585,21 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
       </div>
       {mode === "brands" ? (
         <div id="agency" className="mt-14 scroll-mt-24">
-          <h3 className="text-sm font-semibold uppercase tracking-[0.16em] text-[var(--cf-muted)]">Agency plans</h3>
+          <h3 className="land-display text-3xl">Agency plans</h3>
           <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">We come up with the concepts and make the ads for you. Book a call first.</p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             {DFY_PLANS.map((plan, index) => (
               <Reveal key={plan.id} delay={index * 80}>
-              <article className={`flex flex-col rounded-3xl p-6 ${index === 1 ? "cf-grad text-white" : "border border-white/10 bg-[var(--cf-surface)]"}`}>
-                <h3 className="text-lg font-semibold">{plan.name}</h3>
+              <article className="flex flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
+                <h3 className="text-lg font-medium">{plan.name}</h3>
                 <p className="mt-3 text-3xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
-                <p className={`mt-3 flex-1 text-sm leading-relaxed ${index === 1 ? "text-white/90" : "text-[var(--cf-muted)]"}`}>{plan.blurb}</p>
+                <p className="mt-3 flex-1 text-sm leading-relaxed text-[var(--cf-muted)]">{plan.blurb}</p>
                 <a
                   href={ZOOM_URL}
                   target="_blank"
                   rel="noopener noreferrer"
                   onClick={() => track("book_call_click", { mode, place: plan.id })}
-                  className={`btn-primary mt-5 inline-flex justify-center rounded-xl px-3 py-2 text-sm font-semibold ${index === 1 ? "bg-white text-black" : "cf-btn text-white"}`}
+                  className="cf-btn btn-primary mt-5 inline-flex justify-center rounded-xl px-3 py-2 text-sm font-semibold"
                 >
                   Book a call
                 </a>
