@@ -35,9 +35,7 @@ function portraitCraft(style: VisualStyle) {
 }
 
 function styleThroughout(style: VisualStyle) {
-  if (style === "realistic") {
-    return "Realistic live-action throughout the whole video. Real subjects, real places, real materials, and real light. A person stays a person and an animal stays that animal. Not a cartoon, not 3D animation, and not clay. Each person appears once in a shot. Never the same person in the foreground and again at a door or in the background.";
-  }
+  if (style === "realistic") return "Realistic live-action throughout the whole video.";
   return `${styleLookName(style)} style throughout the whole video.`;
 }
 
@@ -81,7 +79,7 @@ function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style(?: throughout the whole video)?\.?\s*/i, "")
     .replace(
-      /^Realistic live-action throughout the whole video\.?\s*Real (?:people|subjects), real places, real materials, and real light\.?\s*(?:A person stays a person and an animal stays that animal\.?\s*)?Not a cartoon, not 3D animation, and not clay\.?\s*(?:Each person appears once in a shot\.?\s*Never the same person in the foreground and again at a door or in the background\.?\s*)?/i,
+      /^Realistic live-action throughout the whole video\.?\s*(?:Real (?:people|subjects), real places, real materials, and real light\.?\s*(?:A person stays a person and an animal stays that animal\.?\s*)?Not a cartoon, not 3D animation, and not clay\.?\s*(?:Each person appears once in a shot\.?\s*Never the same person in the foreground and again at a door or in the background\.?\s*)?)?/i,
       "",
     )
     .replace(/^(?:Horizontal 16:9|Vertical 9:16) frame:[^.]*\.\s*/i, "")
@@ -150,30 +148,6 @@ function appearanceForLook(character: Character) {
   return `${name}, ${text}`;
 }
 
-function realisticLookLine(character: Character) {
-  const name = character.name.trim();
-  const text = (character.description || "")
-    .replace(/^\s*human\b[.,]?\s*/i, "")
-    .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
-    .replace(/\b(fight|fighting|scuffle|brawl)\b[\s\S]*/gi, "")
-    .replace(/\s{2,}/g, " ")
-    .trim()
-    .slice(0, 500);
-  if (!text || text.toLowerCase() === name.toLowerCase()) return name;
-  return `${name}, ${text}`;
-}
-
-function realisticSubjectCraft(description: string) {
-  const animal =
-    /\b(kittens?|cats?|puppies|puppy|dogs?|birds?|rabbits?|horses?|fish|robots?|dragons?|aliens?|creatures?|monsters?)\b/i.test(
-      description,
-    );
-  if (animal) {
-    return "Photograph that animal for real, looking at the camera. Not a human, not a person in a costume, not face paint, and not a mascot. Real proportions for that species.";
-  }
-  return "A real photograph of this subject, looking straight at the camera. Keep the age that is written: a child stays a child and an adult stays an adult. Do not age them up or down. Real skin, real hair, real clothes. If a heritage, nationality, or feature is written, show it.";
-}
-
 function shortLookAppearance(character: Character) {
   const name = character.name.trim();
   const text = (character.description || "")
@@ -192,24 +166,16 @@ function shortLookAppearance(character: Character) {
 }
 
 export function characterLookPrompt(character: Character, style: VisualStyle) {
-  if (style === "realistic") {
-    const appearance = realisticLookLine(character);
-    return `${imageStyleLead(style)} portrait of ${appearance}. ${realisticSubjectCraft(appearance)} Not illustrated, not 3D, not clay, and not a cartoon. One subject only, plain gray background.`;
-  }
   return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
 export function characterLookFromPhotoPrompt(character: Character, style: VisualStyle, lookNote = "") {
-  if (style === "realistic") {
-    const appearance = realisticLookLine(character);
-    const note = lookNote.trim().slice(0, 180);
-    const extra = note && !appearance.toLowerCase().includes(note.toLowerCase()) ? ` Look notes: ${note}.` : "";
-    return `${imageStyleLead(style)} portrait of ${appearance}. Use the attached photo only when it is the same subject. ${realisticSubjectCraft(`${appearance} ${note}`)}${extra} Not illustrated, not 3D, not clay, and not a cartoon. One subject only, plain gray background.`;
-  }
   const craft =
     style === "claymation"
       ? "Same person as the photo, rebuilt as a hand-sculpted clay puppet. Fingerprints, tool marks, matte clay. Not smooth skin with a clay texture."
-      : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
+      : style === "realistic"
+        ? "Same person as the photo, kept in this style. Real skin, real hair, real clothes. Not illustrated, not 3D, and not clay."
+        : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
   const note = lookNote.trim().slice(0, 180);
   const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
   return `${imageStyleLead(style)} portrait from the attached photo. ${craft}${extra} One character, plain gray background.`;
@@ -231,22 +197,14 @@ export function locationPlatePrompt(name: string, style: VisualStyle, fromPhoto:
     "Wide three-quarter view of this exact place, about three quarters of the room or street in frame. Never a flat head-on photo and never a tight corner. Keep the same walls, furniture, and layout so a later scene can return here and match.";
   const look = imageStyleLead(style);
   const time = "Neutral lighting. Do not lock this place to day or night. The video will change the time of day.";
-  const real =
-    style === "realistic"
-      ? " A real place, photographed. Real architecture, real materials, real light. Not a cartoon set, not a miniature, and not a 3D render."
-      : "";
   if (fromPhoto) {
-    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} ${time}${real} No people, no characters, no text.`;
+    return `${look}. Reframe this location, ${name}, from the attached photo. Keep the place recognizable. ${angle} ${time} No people, no characters, no text.`;
   }
-  return `${look}. Empty view of ${name}. ${angle} ${time}${real} No people, no characters, no text.`;
+  return `${look}. Empty view of ${name}. ${angle} ${time} No people, no characters, no text.`;
 }
 
 export function characterLookRevisionPrompt(character: Character, style: VisualStyle, notes: string) {
   const change = notes.trim().split(/[.!?]/)[0].slice(0, 120);
-  if (style === "realistic") {
-    const appearance = realisticLookLine(character);
-    return `${imageStyleLead(style)} portrait of ${appearance}. Change only this: ${change}. ${realisticSubjectCraft(appearance)} Keep the same species and the same age. One subject only, plain gray background.`;
-  }
   return `${imageStyleLead(style)} portrait of ${character.name}. ${change}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
@@ -452,7 +410,7 @@ export function sceneFramePrompt(project: Project, batch: Batch) {
   const onlyShot = opening.length
     ? `Only ${opening.join(" and ")} in this opening frame. Do not add any other characters.`
     : "Do not add any character who is not in this opening beat.";
-  const drawn = project.style === "realistic" ? "kept photoreal" : `drawn in ${lead}`;
+  const drawn = `drawn in ${lead}`;
   const refs = promptReadyReferences(project, firstIndex ? [firstIndex] : [])
     .map((item) =>
       item.kind === "logo"
@@ -670,10 +628,8 @@ export function narratorVoiceSample(project: Project) {
 export function narratorVoicePrompt(project: Project) {
   const language = spokenLanguage(project);
   return [
-    `4 seconds, one continuous shot. ${globalLookPhrase(project.style)}.${project.style === "realistic" ? " A real empty room. Not a cartoon set and not a miniature." : ""}`,
-    project.style === "realistic"
-      ? "An empty real room, softly lit, with a plain real wall. The frame holds no people, no characters, no faces and no mouths."
-      : "An empty, softly lit backdrop with gentle light drifting across a plain textured wall. The frame holds no people, no characters, no faces and no mouths.",
+    `4 seconds, one continuous shot. ${globalLookPhrase(project.style)}.`,
+    "An empty, softly lit backdrop with gentle light drifting across a plain textured wall. The frame holds no people, no characters, no faces and no mouths.",
     `NARRATOR — off-screen voice-over, heard only, with no lipsync. Voice: ${narratorVoiceNotes(project)}. Spoken in ${language.speech}: {${narratorVoiceSample(project)}}`,
     "Audio: the narrator's voice over a quiet room tone. No music, no score, no instruments.",
   ].join("\n");
@@ -986,7 +942,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
       replacements.push({
         pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
         tag,
-        first: `${tag} which is the ${name} logo, same mark as the attached photo, ${style === "realistic" ? "kept photoreal" : `drawn in ${look}`}`,
+        first: `${tag} which is the ${name} logo, same mark as the attached photo, drawn in ${look}`,
       });
       return;
     }
@@ -994,7 +950,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
       replacements.push({
         pattern: new RegExp(`\\b${escapeRegExp(name)}\\b`, "gi"),
         tag,
-        first: `${tag} which is the ${name} location from the attached photo, ${style === "realistic" ? "kept photoreal" : `drawn in ${look}`}`,
+        first: `${tag} which is the ${name} location from the attached photo, drawn in ${look}`,
       });
       return;
     }
@@ -2003,24 +1959,13 @@ export function packedScenePrompt(project: Project, sceneIndexes: number[], _exi
 }
 
 export function restyleReferencePrompt(kind: string, style: VisualStyle) {
-  if (style === "realistic") {
-    const job =
-      kind === "logo"
-        ? "Keep the logo mark recognizable on a real surface."
-        : kind === "product"
-          ? "Keep the exact packaging from the photo, photoreal. Pouch stays a pouch, bottle stays a bottle. Same silhouette, closure, label, colors, and branding."
-          : kind === "location"
-            ? "Keep this a real location. Same architecture and layout, real materials and real light. Not a cartoon set and not a miniature."
-            : "Keep the subject photoreal and recognizable.";
-    return [`Keep this ${kind} photoreal.`, job, "No cartoon, no 3D animation, no clay, no collage, no extra captions, no watermark."].join(" ");
-  }
   const job =
     kind === "logo"
       ? "Keep the logo mark recognizable, clean and on-model. Place it as a physical object or set dressing in-world."
       : kind === "product"
-        ? "Keep the exact packaging form from the photo: pouch stays a pouch, bottle stays a bottle. Same silhouette, closure, label, colors, and branding, restyled into the animation world."
+        ? "Keep the exact packaging form from the photo: pouch stays a pouch, bottle stays a bottle. Same silhouette, closure, label, colors, and branding, restyled into the project's style."
         : kind === "location"
-          ? "Keep the architecture and layout recognizable while converting materials, lighting and scale to the animation world."
+          ? "Keep the architecture and layout recognizable while converting materials, lighting and scale to the project's style."
           : "Keep the subject recognizable.";
   return [
     `Restyle this ${kind} into ${styleGuide(style)}.`,
