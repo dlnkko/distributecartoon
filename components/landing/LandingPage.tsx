@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
 import { CreditRange } from "@/components/pricing/CreditRange";
 import { DFY_PLANS, INTRO_OFFER, LEAD_PLANS, SLIDER_PLANS, formatPlanPrice } from "@/lib/plans";
@@ -8,21 +8,28 @@ import { CONTACT_EMAIL } from "@/lib/site";
 import { startCheckout } from "@/components/landing/checkout";
 import {
   BRAND_AGENCY,
-  BRAND_HERO,
   BRAND_PAIN,
   COPY,
-  FILMS,
+  DON_JULIO_FRAMES,
+  HERO_REEL,
   PERSONAL_EDGE,
-  PERSONAL_HERO,
   STEPS,
   TRIAL_OFFERS,
   ZOOM_URL,
   faqFor,
+  filmsFor,
   type Film,
   type Mode,
 } from "@/components/landing/copy";
 import { track } from "@/components/landing/track";
-import { VideoCard } from "@/components/landing/VideoCard";
+
+const EDGE_STILLS = ["/media/outback-signal.jpg", "/media/don-julio-and-canela.jpg", "/media/beto-and-osofuerte.jpg"];
+
+const STYLE_CHIPS = [
+  { name: "Pixar", poster: "/media/beto-and-osofuerte.jpg" },
+  { name: "Claymation", poster: "/media/lumabrew-brew-your-mood.jpg" },
+  { name: "Live action", poster: "/media/tigre-and-the-last-chance.jpg" },
+];
 
 export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: string }) {
   const [mode, setMode] = useState(initialMode);
@@ -35,6 +42,8 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
   const [sticky, setSticky] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
   const [busy, setBusy] = useState("");
+  const [openFilm, setOpenFilm] = useState<Film | null>(null);
+  const closeFilm = useCallback(() => setOpenFilm(null), []);
 
   useEffect(() => {
     const sync = () => {
@@ -49,6 +58,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
     setOffer(false);
     setClosing(false);
     closingRef.current = false;
+    setOpenFilm(null);
     document.title = COPY[mode].metaTitle;
   }, [mode]);
 
@@ -138,7 +148,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
       window.removeEventListener("scroll", update);
       window.removeEventListener("resize", update);
     };
-  }, []);
+  }, [mode]);
 
   async function buy(planId: string, event: string) {
     setBusy(planId);
@@ -151,89 +161,176 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
   }
 
   const trial = TRIAL_OFFERS[mode];
+  const films = filmsFor(mode);
 
   return (
-    <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+    <main className={`library-shell land-page min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
+      <header className="sticky top-0 z-30 grid grid-cols-[1fr_auto_1fr] items-center gap-2 border-b border-white/10 bg-[#110e0c]/80 px-3 py-3 backdrop-blur-md sm:px-6">
         <Brand tone="accent" />
         <ModeToggle mode={mode} base={base} onPick={pickMode} />
-        <nav className="flex items-center gap-2">
-          <a href="#pricing" className="hidden rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold sm:inline-flex">
+        <nav className="flex items-center justify-end gap-2">
+          <a href="#pricing" className="rounded-full px-2 py-2 text-sm font-medium text-[var(--cf-muted)] hover:text-white sm:px-3">
             Pricing
           </a>
-          <a href="/login" className="cf-btn btn-primary whitespace-nowrap px-3 py-2 text-sm font-semibold sm:px-4">
+          <a href="/login" className="whitespace-nowrap rounded-full border border-white/15 px-3 py-2 text-sm font-semibold hover:border-white/30">
             Sign in
           </a>
         </nav>
       </header>
 
       <div key={mode} className="land-swap">
-      <section id="hero" className={mode === "brands" ? "relative isolate min-h-[100svh] overflow-hidden" : "relative overflow-hidden"}>
-        {mode === "brands" ? <HeroVideo clip={BRAND_HERO} /> : null}
-        <div className={`pointer-events-none absolute inset-0 ${mode === "brands" ? "bg-gradient-to-t from-[#0b0b0d] via-[#0b0b0d]/70 to-[#0b0b0d]/25" : ""}`} />
-        {mode === "personal" ? (
-          <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 py-8 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:py-16">
-            <Reveal>
-              <HeroCopy copy={copy} mode={mode} />
-            </Reveal>
-            <Reveal delay={120}>
-              <VideoCard clip={PERSONAL_HERO} ratio="aspect-[9/16]" play="always" quiet className="land-film mx-auto w-full max-w-[280px] sm:max-w-xs" />
-            </Reveal>
-          </div>
-        ) : (
-          <Reveal className="relative mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-4xl flex-col items-start justify-end px-4 pb-16 sm:px-6">
-            <HeroCopy copy={copy} mode={mode} light />
+        <section id="hero" className="mx-auto grid max-w-6xl items-center gap-10 px-4 py-10 sm:px-6 lg:grid-cols-[1.05fr_0.95fr] lg:py-16">
+          <Reveal>
+            <h1 className="land-display max-w-xl text-5xl leading-[0.95] sm:text-6xl">{copy.title}</h1>
+            <p className="mt-5 max-w-xl text-lg leading-relaxed text-[var(--cf-muted)]">{copy.sub}</p>
+            <div className="mt-7 flex flex-wrap items-center gap-3">
+              <Primary href="#pricing" onClick={() => track("hero_cta_click", { mode })}>
+                {copy.cta}
+              </Primary>
+              <a href="#films" onClick={() => track("hero_films_click", { mode })} className="rounded-xl border border-white/15 px-5 py-3 text-sm font-semibold hover:border-white/30">
+                {copy.films}
+              </a>
+            </div>
+            <p className="mt-4 text-sm text-[var(--cf-muted)]">{copy.trust}</p>
           </Reveal>
-        )}
-      </section>
+          <Reveal delay={80}>
+            <HeroReel onPlay={setOpenFilm} />
+          </Reveal>
+        </section>
 
-      {mode === "personal" ? (
-        <PersonalBody />
-      ) : (
-        <BrandBody />
-      )}
+        <TrustStrip />
 
-      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">How it works</h2>
-        </Reveal>
-        <div className="mt-8 grid gap-8 md:grid-cols-3">
-          {STEPS.map((step, index) => (
-            <Reveal key={step.title} delay={index * 80}>
-              <article className="border-t border-white/10 pt-5">
-                <p className="text-sm tabular-nums text-[var(--cf-muted)]">{String(index + 1).padStart(2, "0")}</p>
-                <h3 className="mt-3 text-lg font-medium">{step.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{step.text}</p>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+        <section id="films" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
+          <Reveal>
+            <h2 className="land-display text-3xl sm:text-5xl">{mode === "brands" ? "Ads, ready to run." : "Stories, ready to watch."}</h2>
+            <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
+              {mode === "brands"
+                ? "A script or storyboard with your idea, story, or angle. Your product. One click. A professional ad."
+                : "Write it the way you would tell a friend. These films started that way."}
+            </p>
+          </Reveal>
+          <FilmStage films={films} onPlay={setOpenFilm} />
+          <div className="mt-8">
+            <Primary href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "films" })}>
+              {copy.cta}
+            </Primary>
+          </div>
+        </section>
 
-      <Pricing mode={mode} busy={busy} onBuy={(id) => void buy(id, "pricing_pack_click")} />
+        <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <Reveal>
+            <h2 className="land-display text-3xl sm:text-4xl">What no other tool gives you.</h2>
+          </Reveal>
+          <div className="mt-8 grid gap-4 md:grid-cols-3">
+            {PERSONAL_EDGE.map((item, index) => (
+              <Reveal key={item.title} delay={index * 70}>
+                <article className="land-still relative flex min-h-72 flex-col justify-end overflow-hidden p-6">
+                  <img src={EDGE_STILLS[index]} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black via-black/55 to-black/15" />
+                  <div className="relative">
+                    <h3 className="text-xl font-medium text-white">{item.title}</h3>
+                    <p className="mt-2 text-sm leading-relaxed text-white/85">{item.text}</p>
+                  </div>
+                </article>
+              </Reveal>
+            ))}
+          </div>
+        </section>
 
-      <Faq mode={mode} open={openFaq} onToggle={(q) => {
-        setOpenFaq((current) => (current === q ? null : q));
-        track("faq_open", { question: q, mode });
-      }} />
+        <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+          <Reveal>
+            <h2 className="land-display max-w-2xl text-3xl sm:text-4xl">Same man, same dog, from the first frame to the last.</h2>
+          </Reveal>
+          <div className="land-rail mt-8 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+            {DON_JULIO_FRAMES.map((src) => (
+              <img key={src} src={src} alt="Don Julio and Canela" className="land-still h-64 w-40 shrink-0 snap-start object-cover sm:h-80 sm:w-48" />
+            ))}
+          </div>
+        </section>
 
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-10 text-xs text-[var(--cf-muted)] sm:px-6">
-        <span>Clickframes</span>
-        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Legal">
-          <a href="/privacy" className="hover:text-white">Privacy</a>
-          <a href="/terms" className="hover:text-white">Terms</a>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-white">{CONTACT_EMAIL}</a>
-        </nav>
-      </footer>
+        <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
+          <Reveal>
+            <h2 className="land-display text-3xl sm:text-4xl">How it works</h2>
+          </Reveal>
+          <ol className="mt-8 grid gap-8 md:grid-cols-3">
+            {STEPS.map((step, index) => (
+              <Reveal key={step.title} delay={index * 70}>
+                <li className="border-t border-white/15 pt-5">
+                  <p className="land-display text-4xl text-white/35">{String(index + 1).padStart(2, "0")}</p>
+                  <h3 className="mt-3 text-lg font-medium">{step.title}</h3>
+                  <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{step.text}</p>
+                  {index === 2 ? (
+                    <div className="mt-4 flex gap-2">
+                      {STYLE_CHIPS.map((chip) => (
+                        <figure key={chip.name} className="w-16">
+                          <img src={chip.poster} alt="" className="h-20 w-16 rounded-lg object-cover" />
+                          <figcaption className="mt-1 text-[11px] text-[var(--cf-muted)]">{chip.name}</figcaption>
+                        </figure>
+                      ))}
+                    </div>
+                  ) : null}
+                </li>
+              </Reveal>
+            ))}
+          </ol>
+          <div className="mt-8">
+            <Primary href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "steps" })}>
+              {copy.cta}
+            </Primary>
+          </div>
+        </section>
+
+        <ModeBlock mode={mode} />
+
+        <Pricing mode={mode} busy={busy} onBuy={(id) => void buy(id, "pricing_pack_click")} />
+
+        <Faq
+          mode={mode}
+          open={openFaq}
+          onToggle={(question) => {
+            setOpenFaq((current) => (current === question ? null : question));
+            track("faq_open", { question, mode });
+          }}
+        />
+
+        <section className="mx-auto max-w-6xl px-4 py-10 sm:px-6">
+          <div className="land-still relative overflow-hidden px-6 py-16 text-center sm:px-12">
+            <img
+              src={mode === "brands" ? "/media/outback-signal.jpg" : "/media/don-julio-and-canela.jpg"}
+              alt=""
+              className="absolute inset-0 h-full w-full object-cover"
+            />
+            <div className="absolute inset-0 bg-black/60" />
+            <div className="relative">
+              <p className="land-display text-3xl text-white sm:text-5xl">Tell it like you would tell a friend.</p>
+              <div className="mt-6">
+                <Primary href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "close" })}>
+                  {copy.cta}
+                </Primary>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-10 text-xs text-[var(--cf-muted)] sm:px-6">
+          <span>Clickframes</span>
+          <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Legal">
+            <a href="/privacy" className="hover:text-white">Privacy</a>
+            <a href="/terms" className="hover:text-white">Terms</a>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-white">{CONTACT_EMAIL}</a>
+          </nav>
+        </footer>
       </div>
 
-      {sticky && !offer ? (
-        <div className="fixed inset-x-0 bottom-0 z-[80] border-t border-white/10 bg-[#0b0b0d]/95 p-3 md:hidden">
+      {sticky && !offer && !openFilm ? (
+        <div className="fixed inset-x-0 bottom-0 z-[80] border-t border-white/10 bg-[#110e0c]/95 p-3 md:hidden">
           <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
             {copy.cta}
           </a>
         </div>
       ) : null}
+
+      <FilmLightbox film={openFilm} onClose={closeFilm} />
 
       {offer ? (
         <div
@@ -321,12 +418,51 @@ function formatOfferTime(seconds: number) {
   return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
+function creditLength(seconds: number) {
+  const label = seconds.toLocaleString("en-US");
+  if (seconds < 60) return `${label} credits = about ${seconds} seconds`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  const minuteLabel = minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  if (!rest) return `${label} credits = about ${minuteLabel}`;
+  return `${label} credits = about ${minuteLabel} ${rest} seconds`;
+}
+
+function Primary({ href, onClick, children }: { href: string; onClick?: () => void; children: React.ReactNode }) {
+  return (
+    <a href={href} onClick={onClick} className="cf-btn btn-primary inline-flex px-5 py-3 text-sm font-semibold">
+      {children}
+    </a>
+  );
+}
+
+function PlayGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="ml-0.5 h-6 w-6" aria-hidden="true">
+      <path fill="currentColor" d="M8 5.5v13l11-6.5-11-6.5Z" />
+    </svg>
+  );
+}
+
+function PlayButton({ label, onClick, large = false }: { label: string; onClick: () => void; large?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`Play ${label}`}
+      className={`land-play absolute left-1/2 top-1/2 grid -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full bg-white text-black ${large ? "h-16 w-16" : "h-14 w-14"}`}
+    >
+      <PlayGlyph />
+    </button>
+  );
+}
+
 function ModeToggle({ mode, base, onPick }: { mode: Mode; base: string; onPick: (mode: Mode) => void }) {
   return (
-    <div className="relative grid grid-cols-2 rounded-xl bg-white/5 p-1" role="group" aria-label="Audience">
+    <div className="relative grid grid-cols-2 rounded-full bg-white/10 p-1" role="group" aria-label="Audience">
       <span
         aria-hidden
-        className={`pointer-events-none col-start-1 row-start-1 rounded-lg cf-grad transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${mode === "brands" ? "translate-x-full" : "translate-x-0"}`}
+        className={`pointer-events-none col-start-1 row-start-1 rounded-full cf-grad transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${mode === "brands" ? "translate-x-full" : "translate-x-0"}`}
       />
       {(["personal", "brands"] as const).map((item, index) => (
         <a
@@ -338,7 +474,7 @@ function ModeToggle({ mode, base, onPick }: { mode: Mode; base: string; onPick: 
             track("mode_toggle", { mode: item });
             onPick(item);
           }}
-          className={`relative z-10 row-start-1 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition-colors duration-300 sm:px-4 ${index === 0 ? "col-start-1" : "col-start-2"} ${mode === item ? "text-white" : "text-[var(--cf-muted)]"}`}
+          className={`relative z-10 row-start-1 rounded-full px-3 py-1.5 text-center text-sm font-medium transition-colors duration-300 sm:px-4 ${index === 0 ? "col-start-1" : "col-start-2"} ${mode === item ? "text-white" : "text-[var(--cf-muted)]"}`}
         >
           {COPY[item].label}
         </a>
@@ -373,224 +509,265 @@ function Reveal({ children, className = "", delay = 0 }: { children: React.React
   );
 }
 
-function HeroCopy({
-  copy,
-  mode,
-  light = false,
-}: {
-  copy: (typeof COPY)[Mode];
-  mode: Mode;
-  light?: boolean;
-}) {
-  const ghost = light
-    ? "border-white/25 text-white"
-    : "border-white/15";
+function HeroReel({ onPlay }: { onPlay: (film: Film) => void }) {
+  const [index, setIndex] = useState(0);
+  const box = useRef<HTMLDivElement>(null);
+  const video = useRef<HTMLVideoElement>(null);
+  const film = HERO_REEL[index] ?? HERO_REEL[0];
+
+  useEffect(() => {
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const timer = window.setInterval(() => {
+      setIndex((current) => (current + 1) % HERO_REEL.length);
+    }, 7000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const node = box.current;
+    const player = video.current;
+    if (!node || !player) return;
+    player.muted = true;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting || reduce) player.pause();
+        else void player.play().catch(() => undefined);
+      },
+      { threshold: 0.35 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [film.mp4]);
+
   return (
-    <>
-      <h1 className={`land-display max-w-3xl text-5xl leading-[0.95] sm:text-7xl ${light ? "text-white" : ""}`}>{copy.title}</h1>
-      <p className={`mt-5 max-w-xl text-lg leading-relaxed ${light ? "text-white/80" : "text-[var(--cf-muted)]"}`}>{copy.sub}</p>
-      <div className="mt-7 flex flex-wrap items-center gap-3">
-        <a href="#films" onClick={() => track("hero_films_click", { mode })} className={`rounded-xl border px-5 py-3 text-sm font-semibold ${ghost}`}>
-          {copy.films}
-        </a>
-        <a href="#pricing" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-center text-sm font-semibold">
-          {copy.cta}
-        </a>
-      </div>
-      <p className={`mt-4 text-sm ${light ? "text-white/70" : "text-[var(--cf-muted)]"}`}>{copy.trust}</p>
-    </>
+    <div ref={box} className="land-still relative mx-auto aspect-[3/4] w-full max-w-md overflow-hidden bg-black">
+      <video
+        key={film.mp4}
+        ref={video}
+        className="h-full w-full object-cover"
+        poster={film.poster}
+        muted
+        loop
+        playsInline
+        autoPlay
+        preload="metadata"
+        aria-label={film.label}
+      >
+        <source src={film.mp4} type="video/mp4" />
+      </video>
+      <PlayButton label={film.label} large onClick={() => onPlay(film)} />
+      <p className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-4 pb-4 pt-10 text-sm text-white">{film.label}</p>
+    </div>
   );
 }
 
-function HeroVideo({ clip }: { clip: Film }) {
-  const [failed, setFailed] = useState(false);
+function TrustStrip() {
+  const items = [
+    { title: "Cinematic on the first try", icon: "film" },
+    { title: "Continuity up to 2 minutes", icon: "time" },
+    { title: "You own all the rights", icon: "check" },
+  ] as const;
+  return (
+    <section className="border-y border-white/10">
+      <ul className="mx-auto grid max-w-6xl gap-4 px-4 py-5 sm:grid-cols-3 sm:px-6">
+        {items.map((item) => (
+          <li key={item.title} className="flex items-center gap-3 text-sm">
+            <TrustIcon name={item.icon} />
+            <span>{item.title}</span>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function TrustIcon({ name }: { name: "film" | "time" | "check" }) {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5 shrink-0 text-[var(--cf-muted)]" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth="1.6">
+      {name === "film" ? <path d="M4 7h16v10H4zM8 7v10M16 7v10M4 12h4M16 12h4" /> : null}
+      {name === "time" ? <path d="M12 6v6l4 2M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18Z" /> : null}
+      {name === "check" ? <path d="M5 12.5 9.2 17 19 7" /> : null}
+    </svg>
+  );
+}
+
+function FilmStage({ films, onPlay }: { films: Film[]; onPlay: (film: Film) => void }) {
+  const [index, setIndex] = useState(0);
+  const film = films[index] ?? films[0];
+  if (!film) return null;
+  const wide = film.ratio === "16:9";
+  return (
+    <div className="mt-8">
+      <div className={`grid items-end gap-6 ${wide ? "" : "lg:grid-cols-[minmax(220px,340px)_1fr]"}`}>
+        <Featured film={film} onPlay={() => onPlay(film)} />
+        <div>
+          <p className="text-sm text-[var(--cf-muted)]">{film.duration}</p>
+          <h3 className="mt-2 text-2xl font-medium">{film.title}</h3>
+          <p className="mt-2 max-w-md text-sm leading-relaxed text-[var(--cf-muted)]">{film.text}</p>
+          <a href="#pricing" className="mt-4 inline-block text-sm underline-offset-4 hover:underline">Make one like this</a>
+        </div>
+      </div>
+      <div className="land-rail mt-6 flex snap-x snap-mandatory gap-3 overflow-x-auto pb-2">
+        {films.map((item, itemIndex) => (
+          <Thumb key={item.mp4} film={item} active={itemIndex === index} onPick={() => setIndex(itemIndex)} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function Featured({ film, onPlay }: { film: Film; onPlay: () => void }) {
+  const box = useRef<HTMLDivElement>(null);
   const video = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const node = video.current;
-    if (!node) return;
-    node.muted = true;
-    node.defaultMuted = true;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    void node.play().catch(() => undefined);
-    const onScroll = () => {
-      node.style.transform = `translate3d(0, ${window.scrollY * 0.12}px, 0) scale(1.08)`;
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [clip.mp4]);
+    const node = box.current;
+    const player = video.current;
+    if (!node || !player) return;
+    player.muted = true;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry?.isIntersecting || reduce) player.pause();
+        else void player.play().catch(() => undefined);
+      },
+      { threshold: 0.45 },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [film.mp4]);
 
   return (
-    <div className="absolute inset-0 -z-10 overflow-hidden">
-      {failed ? (
-        <div className="h-full w-full bg-[url('/media/poster.svg')] bg-cover" />
+    <div ref={box} className={`land-still relative overflow-hidden bg-black ${film.ratio === "16:9" ? "aspect-video" : "aspect-[9/16]"}`}>
+      <video
+        key={film.mp4}
+        ref={video}
+        className="h-full w-full object-cover"
+        poster={film.poster}
+        muted
+        loop
+        playsInline
+        preload="none"
+        aria-label={film.label}
+      >
+        <source src={film.mp4} type="video/mp4" />
+      </video>
+      <span className="pointer-events-none absolute left-3 top-3 rounded-full bg-black/65 px-2 py-1 text-[11px] text-white">{film.duration}</span>
+      <PlayButton label={film.label} onClick={onPlay} />
+    </div>
+  );
+}
+
+function Thumb({ film, active, onPick }: { film: Film; active: boolean; onPick: () => void }) {
+  const [hot, setHot] = useState(false);
+  return (
+    <article className="w-36 shrink-0 snap-start sm:w-40">
+      <button
+        type="button"
+        onClick={onPick}
+        aria-pressed={active}
+        aria-label={film.label}
+        onMouseEnter={() => setHot(true)}
+        onMouseLeave={() => setHot(false)}
+        className={`relative block w-full overflow-hidden rounded-xl bg-black ${active ? "ring-2 ring-[#ff8a3d]" : ""} ${film.ratio === "16:9" ? "aspect-video" : "aspect-[9/16]"}`}
+      >
+        <img src={film.poster} alt="" className="h-full w-full object-cover" />
+        {hot ? (
+          <video className="absolute inset-0 h-full w-full object-cover" src={film.mp4} poster={film.poster} muted loop autoPlay playsInline preload="none" />
+        ) : null}
+        <span className="absolute bottom-2 left-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] text-white">{film.duration}</span>
+      </button>
+      <p className="mt-2 text-sm font-medium">{film.title}</p>
+      <a href="#pricing" className="mt-1 inline-block text-xs text-[var(--cf-muted)] underline-offset-4 hover:text-white hover:underline">
+        Make one like this
+      </a>
+    </article>
+  );
+}
+
+function ModeBlock({ mode }: { mode: Mode }) {
+  const picks = filmsFor(mode).slice(0, 3);
+  return (
+    <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+      {mode === "personal" ? (
+        <Reveal>
+          <h2 className="land-display max-w-2xl text-3xl sm:text-4xl">Write it the way you would tell a friend.</h2>
+          <p className="mt-3 max-w-xl text-[var(--cf-muted)]">These films started that way.</p>
+        </Reveal>
       ) : (
-        <video
-          ref={video}
-          className="h-full w-full scale-105 object-cover"
-          poster={clip.poster}
-          muted
-          loop
-          playsInline
-          autoPlay
-          preload="auto"
-          aria-hidden="true"
-          onError={() => setFailed(true)}
-        >
-          {clip.webm ? <source src={clip.webm} type="video/webm" /> : null}
-          <source src={clip.mp4} type="video/mp4" />
-        </video>
-      )}
-    </div>
-  );
-}
-
-function FilmRail({ films }: { films: Film[] }) {
-  return (
-    <div className="land-rail -mx-4 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-6 md:gap-x-5 md:gap-y-10 md:overflow-visible md:px-0">
-      {films.map((item, index) => {
-        const wide = item.ratio === "16:9";
-        return (
-          <Reveal key={item.mp4} delay={index * 50} className={`w-[78%] shrink-0 snap-center md:w-auto ${wide ? "md:col-span-6" : "md:col-span-2"}`}>
-            <VideoCard
-              clip={item}
-              ratio={wide ? "aspect-video" : "aspect-[9/16]"}
-              play="view"
-              quiet
-              className={wide ? "land-film mx-auto w-full max-w-4xl" : "land-film"}
-            />
-            <h3 className={`mt-3 font-medium ${wide ? "text-lg" : "text-[15px]"}`}>{item.title}</h3>
-            <p className="mt-1 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-          </Reveal>
-        );
-      })}
-    </div>
-  );
-}
-
-function PersonalBody() {
-  return (
-    <div className="mx-auto max-w-6xl space-y-20 px-4 py-10 sm:px-6">
-      <section id="films" className="scroll-mt-24">
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">Stories, ready to watch.</h2>
-          <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
-            Write it the way you would tell a friend. These films started that way.
-          </p>
-        </Reveal>
-        <FilmRail films={FILMS} />
-      </section>
-
-      <section>
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">What no other tool gives you.</h2>
-        </Reveal>
-        <div className="mt-8 grid gap-8 md:grid-cols-3">
-          {PERSONAL_EDGE.map((item, index) => (
-            <Reveal key={item.title} delay={index * 80}>
-              <article className="border-t border-white/10 pt-5">
-                <h3 className="text-lg font-medium">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-        <p className="mt-6 text-sm text-[var(--cf-muted)]">You own all the rights to every video you create.</p>
-      </section>
-    </div>
-  );
-}
-
-function BrandBody() {
-  return (
-    <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
-      <section>
         <Reveal>
           <h2 className="land-display max-w-3xl text-3xl sm:text-4xl">Making the ads that win has never been this easy.</h2>
-          <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
-            A script or storyboard with your idea, story, or angle. Your product. One click. A professional ad.
-          </p>
-        </Reveal>
-        <div className="mt-8 grid gap-8 md:grid-cols-3">
-          {BRAND_PAIN.map((item, index) => (
-            <Reveal key={item.title} delay={index * 80}>
-              <article className="border-t border-white/10 pt-5">
-                <h3 className="text-lg font-medium">{item.title}</h3>
+          <p className="mt-3 max-w-xl text-[var(--cf-muted)]">Your product, mascot, logo, and characters stay identical from shot to shot.</p>
+          <div className="mt-8 grid gap-6 md:grid-cols-3">
+            {BRAND_PAIN.map((item) => (
+              <article key={item.title} className="border-t border-white/15 pt-4">
+                <h3 className="text-base font-medium">{item.title}</h3>
                 <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
               </article>
-            </Reveal>
-          ))}
-        </div>
-        <Reveal>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed">The ad you had in mind, in minutes, with no third party.</p>
+            ))}
+          </div>
         </Reveal>
-      </section>
-
-      <section id="films" className="scroll-mt-24">
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">Ads, ready to run.</h2>
-        </Reveal>
-        <FilmRail films={FILMS} />
-      </section>
-
-      <Reveal className="flex flex-col items-start justify-between gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-end">
-        <div>
-          <h2 className="land-display text-3xl sm:text-4xl">{BRAND_AGENCY.title}</h2>
-          <p className="mt-3 max-w-md text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
-        </div>
-        <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="cf-btn btn-primary shrink-0 px-5 py-3 text-sm font-semibold">
-          {BRAND_AGENCY.cta}
-        </a>
-      </Reveal>
-    </div>
+      )}
+      <div className="mt-8 grid grid-cols-3 gap-3">
+        {picks.map((film) => (
+          <figure key={film.mp4}>
+            <img src={film.poster} alt="" className={`land-still w-full object-cover ${film.ratio === "16:9" ? "aspect-video" : "aspect-[9/16]"}`} />
+            <figcaption className="mt-2 text-sm">{film.title}</figcaption>
+          </figure>
+        ))}
+      </div>
+    </section>
   );
 }
 
 function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: string) => void }) {
   const [tier, setTier] = useState(0);
   const flex = SLIDER_PLANS[tier] ?? SLIDER_PLANS[0];
+  const recommended = LEAD_PLANS[1];
+  const starter = LEAD_PLANS[0];
   return (
     <section id="pricing" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
       <Reveal>
         <h2 className="land-display text-3xl sm:text-4xl">Pricing</h2>
-        <p className="mt-3 max-w-xl text-sm text-[var(--cf-muted)]">1 credit = 1 second of video. Monthly plans. The month starts the day you pay.</p>
+        <p className="mt-3 text-sm text-[var(--cf-muted)]">1 credit = 1 second of video.</p>
       </Reveal>
       <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        {LEAD_PLANS.map((plan, index) => (
-          <Reveal key={plan.id} delay={index * 80} className="flex">
+        {starter ? (
+          <Reveal className="order-2 flex lg:order-none">
+            <PlanCard plan={starter} busy={busy} onBuy={onBuy} />
+          </Reveal>
+        ) : null}
+        {recommended ? (
+          <Reveal className="order-1 flex lg:order-none">
+            <PlanCard plan={recommended} busy={busy} onBuy={onBuy} recommended />
+          </Reveal>
+        ) : null}
+        <Reveal className="order-3 flex lg:order-none">
           <article className="flex flex-1 flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
-            <h3 className="text-lg font-semibold">{plan.seconds.toLocaleString("en-US")} credits</h3>
-            <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
-            <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{plan.blurb}</p>
-            <button type="button" onClick={() => onBuy(plan.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
-              {busy === plan.id ? "Opening…" : "Start plan"}
+            <div className="flex items-center justify-between gap-3">
+              <h3 className="text-lg font-medium">{flex.seconds.toLocaleString("en-US")} credits</h3>
+              <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-[var(--cf-muted)]">{flex.badge ?? "Max / Ultra"}</span>
+            </div>
+            <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(flex.price)}<span className="text-lg font-medium">/mo</span></p>
+            <p className="mt-2 text-sm text-[var(--cf-muted)]">{creditLength(flex.seconds)}</p>
+            <div className="mt-5">
+              <CreditRange labels={["250", "Max", "Ultra"]} index={tier} onChange={setTier} label="Monthly plan size" />
+            </div>
+            <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{flex.blurb}</p>
+            <button type="button" onClick={() => onBuy(flex.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
+              {busy === flex.id ? "Opening…" : "Start plan"}
             </button>
           </article>
-          </Reveal>
-        ))}
-        <Reveal delay={160} className="flex">
-        <article className="flex flex-1 flex-col rounded-2xl border border-white/20 bg-[var(--cf-surface)] p-6">
-          <h3 className="text-lg font-semibold">{flex.seconds.toLocaleString("en-US")} credits</h3>
-          <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(flex.price)}<span className="text-lg font-medium">/mo</span></p>
-          <div className="mt-5">
-            <CreditRange labels={["250", "Max", "Ultra"]} index={tier} onChange={setTier} label="Monthly plan size" />
-          </div>
-          <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{flex.blurb}</p>
-          <button type="button" onClick={() => onBuy(flex.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
-            {busy === flex.id ? "Opening…" : "Start plan"}
-          </button>
-        </article>
         </Reveal>
       </div>
       {mode === "brands" ? (
         <div id="agency" className="mt-14 scroll-mt-24">
-          <h3 className="land-display text-3xl">Agency plans</h3>
-          <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">We come up with the concepts and make the ads for you. Book a call first.</p>
+          <h3 className="land-display text-3xl">{BRAND_AGENCY.title}</h3>
+          <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
           <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {DFY_PLANS.map((plan, index) => (
-              <Reveal key={plan.id} delay={index * 80}>
-              <article className="flex flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
+            {DFY_PLANS.map((plan) => (
+              <article key={plan.id} className="flex flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
                 <h3 className="text-lg font-medium">{plan.name}</h3>
                 <p className="mt-3 text-3xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
                 <p className="mt-3 flex-1 text-sm leading-relaxed text-[var(--cf-muted)]">{plan.blurb}</p>
@@ -604,12 +781,38 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
                   Book a call
                 </a>
               </article>
-              </Reveal>
             ))}
           </div>
         </div>
       ) : null}
     </section>
+  );
+}
+
+function PlanCard({
+  plan,
+  busy,
+  onBuy,
+  recommended = false,
+}: {
+  plan: (typeof LEAD_PLANS)[number];
+  busy: string;
+  onBuy: (id: string) => void;
+  recommended?: boolean;
+}) {
+  return (
+    <article className={`flex flex-1 flex-col rounded-2xl border bg-[var(--cf-surface)] p-6 ${recommended ? "border-[#ff8a3d]" : "border-white/10"}`}>
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-lg font-medium">{plan.seconds.toLocaleString("en-US")} credits</h3>
+        {recommended ? <span className="rounded-full bg-[#ff8a3d] px-2 py-0.5 text-[11px] font-semibold text-black">Recommended</span> : null}
+      </div>
+      <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
+      <p className="mt-2 text-sm text-[var(--cf-muted)]">{creditLength(plan.seconds)}</p>
+      <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{plan.blurb}</p>
+      <button type="button" onClick={() => onBuy(plan.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
+        {busy === plan.id ? "Opening…" : "Start plan"}
+      </button>
+    </article>
   );
 }
 
@@ -623,9 +826,8 @@ function Faq({
   onToggle: (question: string) => void;
 }) {
   return (
-    <Reveal>
     <section className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <h2 className="land-display text-4xl">Questions</h2>
+      <h2 className="land-display text-3xl sm:text-4xl">Questions</h2>
       <div className="mt-6 divide-y divide-white/10 border-y border-white/10">
         {faqFor(mode).map((item) => {
           const shown = open === item.q;
@@ -641,6 +843,43 @@ function Faq({
         })}
       </div>
     </section>
-    </Reveal>
+  );
+}
+
+function FilmLightbox({ film, onClose }: { film: Film | null; onClose: () => void }) {
+  useEffect(() => {
+    if (!film) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [film, onClose]);
+
+  if (!film) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={film.label}
+      className="fixed inset-0 z-[90] grid place-items-center bg-black/85 p-4"
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div className={`relative w-full ${film.ratio === "16:9" ? "max-w-5xl" : "max-w-sm"}`}>
+        <video className="max-h-[80vh] w-full rounded-2xl bg-black" poster={film.poster} controls autoPlay muted playsInline preload="metadata">
+          <source src={film.mp4} type="video/mp4" />
+        </video>
+        <button type="button" onClick={onClose} className="absolute -top-10 right-0 text-sm text-white/80 hover:text-white">
+          Close
+        </button>
+      </div>
+    </div>
   );
 }

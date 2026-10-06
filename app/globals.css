@@ -264,6 +264,16 @@ a.btn-primary {
   color: var(--cf-ink);
 }
 
+.library-shell.land-page {
+  --cf-bg: #110e0c;
+  --cf-surface: #1b1714;
+  --cf-surface-2: #241f1b;
+  --cf-ink: #f6f1ea;
+  --cf-muted: #b7aea4;
+  background: #110e0c;
+  color: #f6f1ea;
+}
+
 .library-shell::before {
   content: "";
   position: absolute;
@@ -541,6 +551,15 @@ a.btn-primary {
 .film-frame {
   border-radius: 1.15rem;
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.land-still {
+  border-radius: 1rem;
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.28);
+}
+
+.land-play {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
 }
 
 .land-rail {
