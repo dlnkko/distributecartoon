@@ -546,6 +546,24 @@ a.btn-primary {
     0 24px 60px rgba(0, 0, 0, 0.35);
 }
 
+.land-rail {
+  scrollbar-width: none;
+}
+
+.land-rail::-webkit-scrollbar {
+  display: none;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .land-film {
+    transition: transform 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .land-film:hover {
+    transform: translateY(-6px);
+  }
+}
+
 .land-link {
   background-image: linear-gradient(90deg, #ff8a3d, #ff5e62);
   background-position: 0 100%;
@@ -642,6 +660,7 @@ a.btn-primary {
   .land-orb,
   .land-marquee,
   .land-float,
+  .land-film,
   .land-clapper-sticks,
   .land-reveal,
   .land-swap,

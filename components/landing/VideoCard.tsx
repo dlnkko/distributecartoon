@@ -19,22 +19,39 @@ export function VideoCard({
 }) {
   const ref = useRef<HTMLVideoElement>(null);
   const box = useRef<HTMLElement>(null);
+  const held = useRef(false);
   const [ready, setReady] = useState(false);
   const [failed, setFailed] = useState(false);
+  const [playing, setPlaying] = useState(false);
   const framed = Boolean(clip.poster) && !clip.poster.endsWith("/poster.svg");
 
   useEffect(() => {
     const video = ref.current;
+    if (!video) return;
+    video.muted = true;
+    video.defaultMuted = true;
+  }, [clip.mp4]);
+
+  useEffect(() => {
+    const video = ref.current;
     const node = box.current;
-    if (!video || !node || failed || play === "always") return;
+    if (!video || !node || failed) return;
+    const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return;
+    if (play === "always") {
+      void video.play().catch(() => undefined);
+      return;
+    }
     const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     if (play === "hover" && fine) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry?.isIntersecting) void video.play().catch(() => undefined);
-        else video.pause();
+        if (entry?.isIntersecting && !held.current) {
+          video.muted = true;
+          void video.play().catch(() => undefined);
+        } else video.pause();
       },
-      { threshold: 0.55 },
+      { threshold: 0.35 },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -45,10 +62,25 @@ export function VideoCard({
     if (!video || failed || play !== "hover") return;
     const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
     if (!fine) return;
-    if (on) void video.play().catch(() => undefined);
-    else {
+    if (on) {
+      video.muted = true;
+      void video.play().catch(() => undefined);
+    } else {
       video.pause();
       video.currentTime = 0;
+    }
+  }
+
+  function toggle() {
+    const video = ref.current;
+    if (!video || failed) return;
+    if (video.paused) {
+      held.current = false;
+      video.muted = true;
+      void video.play().catch(() => undefined);
+    } else {
+      held.current = true;
+      video.pause();
     }
   }
 
@@ -72,6 +104,8 @@ export function VideoCard({
           autoPlay={play === "always"}
           aria-label={clip.label}
           onCanPlay={() => setReady(true)}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
           onError={() => setFailed(true)}
         >
           {clip.webm ? <source src={clip.webm} type="video/webm" /> : null}
@@ -83,6 +117,16 @@ export function VideoCard({
         <span>{clip.label.replace(/-/g, " ")}</span>
         <span>{frame}</span>
       </figcaption>
+      {failed ? null : (
+        <button
+          type="button"
+          onClick={toggle}
+          aria-pressed={playing}
+          className="absolute bottom-3 right-3 rounded-full bg-black/55 px-3 py-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-white backdrop-blur-sm"
+        >
+          {playing ? "Pause" : "Play"}
+        </button>
+      )}
     </figure>
   );
 }
