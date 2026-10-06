@@ -2,7 +2,7 @@ import { characterRole, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
-import type { Batch, Character, Project, Scene, VisualStyle } from "./types";
+import type { Batch, Character, DialogueLine, Project, Scene, VisualStyle } from "./types";
 import { planShots } from "./shots";
 
 export type PromptRef = {
@@ -310,15 +310,13 @@ const CAMERA_MOVES: Array<[RegExp, string]> = [
 
 const CAMERA_VARIETY = [
   "Eye level, medium shot",
-  "Dutch angle, full shot",
-  "Eye level, two-shot",
+  "Eye level, medium close-up",
   "Low angle, close-up",
   "High angle, wide shot",
-  "Eye level, insert",
+  "Eye level, close-up",
   "Tracking shot, full shot",
-  "Bird's eye, wide shot",
   "Handheld, medium shot",
-  "Worm's eye, close-up",
+  "Eye level, wide shot",
 ];
 
 function firstMatch(source: string, pairs: Array<[RegExp, string]>) {
@@ -1117,11 +1115,17 @@ type TagSwap = { names: string[]; tag: string; person?: boolean; exact?: boolean
 
 function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number) {
   const budget = maxSeconds && maxSeconds > 0 ? maxSeconds : 0;
-  const raw = scenes.map((scene) => Math.max(2, scene?.estimatedSeconds || 4));
+  const raw = scenes.map((scene) => Math.max(2, Math.round(scene?.estimatedSeconds || 4)));
   const sum = raw.reduce((total, value) => total + value, 0);
-  return budget > 0 && sum > budget
-    ? raw.map((value) => Math.max(2, Math.round((value / sum) * budget)))
-    : raw.map((value) => Math.round(value));
+  if (!(budget > 0) || !sum || Math.abs(sum - budget) < 0.5) return raw;
+  const scale = budget / sum;
+  let used = 0;
+  return raw.map((value, index) => {
+    if (index === raw.length - 1) return Math.max(2, Math.round(budget - used));
+    const next = Math.max(2, Math.round(value * scale));
+    used += next;
+    return next;
+  });
 }
 
 function cleanPlace(value: string) {
@@ -1268,6 +1272,9 @@ function applyTags(text: string, swaps: TagSwap[]) {
       ? new RegExp(`(?<![@\\w])(?:[Tt]he\\s+)?${escapeRegExp(name)}\\b`, "g")
       : new RegExp(`(?<![@\\w])(?:the\\s+)?${escapeRegExp(name)}\\b`, "gi");
     next = replaceOutsideQuotes(next, pattern, () => tag);
+    if (exact && name.toUpperCase() !== name) {
+      next = replaceOutsideQuotes(next, new RegExp(`(?<![@\\w])${escapeRegExp(name.toUpperCase())}\\b`, "g"), () => tag);
+    }
   }
   for (const swap of swaps) {
     if (!swap.person) continue;
@@ -1809,9 +1816,18 @@ function referenceLock(images: PromptRef[]) {
   return parts.length ? `Reference tags stay fixed for the whole film: ${parts.join(". ")}.` : "";
 }
 
+function scrubDirections(text: string) {
+  return text
+    .replace(/\s*\(\s*@(?:Image|Video)\d+\s*\)/g, "")
+    .replace(/\s*\((?![^)]*@)[^)]{0,80}\)/g, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+}
+
 function participateLine(names: string[], people: Map<string, string>, project: Project) {
   const tags = names.map((name) => people.get(name.toLowerCase()) || speakerLabel(project, name)).filter(Boolean);
-  if (!tags.length) return "";
+  if (!tags.length) return "No people in this shot.";
   if (tags.length === 1) return `Only ${tags[0]} participates in this scene.`;
   const list = tags.length === 2 ? `${tags[0]} and ${tags[1]}` : `${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]}`;
   return `Only ${list} participate in this scene.`;
@@ -1822,14 +1838,24 @@ function sceneSays(
   scene: Scene | undefined,
   people: Map<string, string>,
   narratorTag: string,
-  lines?: Array<{ speaker: string; line: string }>,
+  lines?: DialogueLine[],
 ) {
   const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
   const parts: string[] = [];
   for (const entry of lines || scene?.dialogue || []) {
-    const text = (entry.line || "").replace(/^["']+|["']+$/g, "").trim();
+    const text = (entry.line || "")
+      .replace(/\([^)]*\)/g, " ")
+      .replace(/^["']+|["']+$/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
     if (!entry.speaker || !text) continue;
-    if (isVoiceoverSpeaker(project, entry.speaker)) {
+    if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
+      const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
+      const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
+      parts.push(`Voiceover in ${who}'s voice, no lipsync, mouth stays closed: "${text}"`);
+      continue;
+    }
+    if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
       const voice = narratorTag ? `, voice as heard in ${narratorTag}` : "";
       parts.push(`Voiceover${voice}: "${text}"`);
       continue;
@@ -1881,6 +1907,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       camera =
         CAMERA_VARIETY.find((item) => !usedCameras.some((prev) => prev.toLowerCase() === item.toLowerCase())) || camera;
     }
+    if (/over the shoulder|two-shot/i.test(camera) && sceneOnScreenNames(scene, project).length < 2) {
+      camera = pickSingleSubjectCamera(usedCameras);
+    }
     usedCameras.push(camera);
     const summary = withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene);
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
@@ -1896,7 +1925,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project)),
       locationTags,
     );
-    const pictured = ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look);
+    const pictured = scrubDirections(
+      ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look),
+    );
     const visual = song ? pictured.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : pictured;
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
@@ -1911,7 +1942,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
         : ""
       : said
-        ? `${said} The line starts in the first second. Do not open or close on a silent look.`
+        ? `${said} The line starts in the first second and lasts to the end of this shot. Do not open or close on a silent look.`
         : (cutSeconds[i] || shot.seconds) > 3
           ? "From the first second the body keeps moving. Do not hold on a look."
           : "";
@@ -1951,7 +1982,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
             ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
             : "Places and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
-          tailLine || (continues ? "This clip picks up straight from the previous part." : ""),
+          tailLine ? "" : continues ? "This clip picks up straight from the previous part." : "",
           narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
         ]
   )

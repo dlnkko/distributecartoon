@@ -180,6 +180,68 @@ export function packScenesIntoParts(
     .filter((part) => part.sceneIndexes.length);
 }
 
+// Fit every part to its own length. Spoken shots absorb extra time; a silent shot stays short.
+// A locked shot (an end card the user timed) does not grow or shrink.
+export function balancePartSceneSeconds(
+  scenes: Array<{ index: number; estimatedSeconds: number; floor?: number; lock?: number }>,
+  parts: SeedancePartPlan[],
+) {
+  const next = new Map<number, number>();
+  const meta = new Map(scenes.map((scene) => [scene.index, scene]));
+  for (const scene of scenes) {
+    const locked = scene.lock && scene.lock > 0 ? Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, scene.lock)) : 0;
+    const floor = Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, scene.floor ?? 2));
+    const start = locked || Math.max(floor, sceneSpan(scene.estimatedSeconds));
+    next.set(scene.index, Math.min(SEEDANCE_MAX_SECONDS, start));
+  }
+  for (const part of parts) {
+    const indexes = part.sceneIndexes;
+    const sum = () => indexes.reduce((total, index) => total + (next.get(index) || 0), 0);
+    let overflow = sum() - part.duration;
+    const shrink = (minFor: (index: number) => number) => {
+      for (let position = indexes.length - 1; position >= 0 && overflow > 0.05; position -= 1) {
+        const index = indexes[position];
+        if ((meta.get(index)?.lock || 0) > 0) continue;
+        const current = next.get(index) || 2;
+        const room = current - minFor(index);
+        if (room <= 0) continue;
+        const cut = Math.min(room, overflow);
+        next.set(index, Math.round((current - cut) * 10) / 10);
+        overflow -= cut;
+      }
+    };
+    shrink((index) => Math.max(2, meta.get(index)?.floor ?? 2));
+    shrink(() => 2);
+    let slack = part.duration - sum();
+    const grow = (capFor: (index: number) => number) => {
+      const spoken = indexes.filter((index) => (meta.get(index)?.floor || 0) > 2 && !(meta.get(index)?.lock || 0));
+      const hosts = spoken.length ? spoken : indexes.filter((index) => !(meta.get(index)?.lock || 0));
+      for (const index of hosts) {
+        if (slack <= 0.05) break;
+        const current = next.get(index) || 2;
+        const room = capFor(index) - current;
+        if (room <= 0.05) continue;
+        const add = Math.min(room, slack);
+        next.set(index, Math.round((current + add) * 10) / 10);
+        slack -= add;
+      }
+    };
+    grow((index) => {
+      const floor = meta.get(index)?.floor ?? 2;
+      return floor > 2 ? Math.min(SEEDANCE_MAX_SECONDS, Math.max(floor + 2, 8)) : 4;
+    });
+    if (slack > 0.05) {
+      const host = [...indexes].reverse().find((index) => (meta.get(index)?.floor || 0) > 2 && !(meta.get(index)?.lock || 0))
+        ?? [...indexes].reverse().find((index) => !(meta.get(index)?.lock || 0));
+      if (host != null) {
+        const current = next.get(host) || 2;
+        next.set(host, Math.min(SEEDANCE_MAX_SECONDS, Math.round((current + slack) * 10) / 10));
+      }
+    }
+  }
+  return next;
+}
+
 export function capPartSceneSeconds(
   scenes: Array<{ index: number; estimatedSeconds: number }>,
   parts: SeedancePartPlan[],

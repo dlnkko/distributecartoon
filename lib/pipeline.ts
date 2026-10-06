@@ -12,7 +12,7 @@ import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { capPartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot } from "./timing";
+import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1275,19 +1275,24 @@ export function planSeedanceBatches(project: Project) {
     project.scenes = usable.map((scene, index) => ({ ...scene, index: index + 1 }));
   }
   const fallback = project.scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0) || 15;
-  const target = project.song
+  const requested = project.song
     ? Math.round(project.song.durationSeconds)
     : clampTotalDuration(project.targetDurationSeconds || fallback);
-  project.targetDurationSeconds = target;
+  project.targetDurationSeconds = requested;
+  const target = requested;
   const parts = packScenesIntoParts(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     target,
     project.song?.clips.map((clip) => clip.durationSeconds),
   );
-  const capped = capPartSceneSeconds(
-    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+  const capped = balancePartSceneSeconds(
+    project.scenes.map((scene) => ({
+      index: scene.index,
+      estimatedSeconds: scene.estimatedSeconds || 0,
+      floor: sceneSpeechFloor(scene),
+      lock: /end\s*card|tarjeta\s+final/i.test(scene.title || "") ? scene.estimatedSeconds : undefined,
+    })),
     parts,
-    new Map(project.scenes.map((scene) => [scene.index, Math.max(sceneSpeechFloor(scene), scene.estimatedSeconds || 0)])),
   );
   project.scenes.forEach((scene) => {
     const next = capped.get(scene.index);

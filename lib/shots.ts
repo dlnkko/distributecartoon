@@ -5,10 +5,10 @@ const ANGLES = [
   "High angle, wide shot",
   "Low angle, close-up",
   "Tracking shot, full shot",
-  "Dutch angle, medium shot",
-  "Eye level, insert",
+  "Eye level, close-up",
   "Handheld, medium shot",
-  "Worm's eye, close-up",
+  "Eye level, wide shot",
+  "Eye level, medium shot",
 ];
 
 function sizeOf(camera: string) {

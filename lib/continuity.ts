@@ -260,7 +260,13 @@ export function continuityPass(project: Project) {
     const locks: string[] = [];
     const flags: string[] = [];
     const place = (scene.location || "").trim();
-    const continuous = Boolean(previous && place && previous.location && samePlace(place, previous.location));
+    const timeOf = (item?: Scene) =>
+      `${item?.title || ""} ${item?.summary || ""}`.match(
+        /\b(next morning|the next day|days later|that night|at night|in the morning|morning light|this morning|evening|moments later|weeks later|hours later)\b/i,
+      )?.[1]?.toLowerCase() || "";
+    const continuous = Boolean(
+      previous && place && previous.location && samePlace(place, previous.location) && timeOf(scene) === timeOf(previous),
+    );
     const cast = onScreenLeads(scene, project);
     const castKeys = new Set(cast.map((name) => name.toLowerCase()));
     const text = sceneText(scene);
@@ -374,11 +380,11 @@ export function continuityPass(project: Project) {
     const key = place.toLowerCase();
     const looked = new Set<string>();
     let side = [...sides.entries()].find(([name]) => name && place && samePlace(name, place))?.[1];
-    if (!side && cast.length >= 2 && place) {
+    if (!side && cast.length === 2 && place) {
       side = { left: cast[0], right: cast[1] };
       sides.set(key, side);
     }
-    if (side) {
+    if (side && cast.length < 3) {
       const hasLeft = castKeys.has(side.left.toLowerCase());
       const hasRight = castKeys.has(side.right.toLowerCase());
       if (hasLeft && hasRight) {

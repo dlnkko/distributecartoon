@@ -31,6 +31,7 @@ export type ChatMessage = {
 export type DialogueLine = {
   speaker: string;
   line: string;
+  voiceover?: boolean;
 };
 
 export type SceneShot = {
