@@ -5,5 +5,8 @@
   "display": "standalone",
   "background_color": "#f6f4f0",
   "theme_color": "#1c1917",
-  "lang": "en"
+  "lang": "en",
+  "icons": [
+    { "src": "/brand/clickframes-mark.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ]
 }
