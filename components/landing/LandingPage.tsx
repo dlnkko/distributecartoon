@@ -446,25 +446,85 @@ function HeroVideo({ clip }: { clip: Film }) {
   );
 }
 
-function FilmRail({ films }: { films: Film[] }) {
+function FilmRail({ films, start = 0 }: { films: Film[]; start?: number }) {
+  const [active, setActive] = useState(start);
+  const scroller = useRef<HTMLDivElement>(null);
+  const film = films[active] ?? films[0];
+  if (!film) return null;
+  const wide = film.ratio === "16:9";
+
+  function pick(index: number) {
+    const next = (index + films.length) % films.length;
+    setActive(next);
+    const node = scroller.current?.children[next];
+    if (node instanceof HTMLElement) node.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
+  }
+
   return (
-    <div className="land-rail -mx-4 mt-10 flex snap-x snap-mandatory gap-4 overflow-x-auto px-4 pb-2 md:mx-0 md:grid md:grid-cols-6 md:gap-x-5 md:gap-y-10 md:overflow-visible md:px-0">
-      {films.map((item, index) => {
-        const wide = item.ratio === "16:9";
-        return (
-          <Reveal key={item.mp4} delay={index * 50} className={`w-[78%] shrink-0 snap-center md:w-auto ${wide ? "md:col-span-6" : "md:col-span-2"}`}>
-            <VideoCard
-              clip={item}
-              ratio={wide ? "aspect-video" : "aspect-[9/16]"}
-              play="view"
-              quiet
-              className={wide ? "land-film mx-auto w-full max-w-4xl" : "land-film"}
-            />
-            <h3 className={`mt-3 font-medium ${wide ? "text-lg" : "text-[15px]"}`}>{item.title}</h3>
-            <p className="mt-1 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-          </Reveal>
-        );
-      })}
+    <div className="mt-8">
+      <div
+        className={`land-stage group relative overflow-hidden rounded-[1.35rem] bg-[#101014] ${wide ? "is-wide" : ""}`}
+        tabIndex={0}
+        aria-label={film.title}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowRight") {
+            event.preventDefault();
+            pick(active + 1);
+          }
+          if (event.key === "ArrowLeft") {
+            event.preventDefault();
+            pick(active - 1);
+          }
+        }}
+      >
+        <div key={film.mp4} className="land-stage-in absolute inset-0">
+          <img src={film.poster} alt="" className="land-stage-blur absolute inset-0 h-full w-full object-cover" />
+          <div className="absolute inset-0 bg-black/30" />
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className={`relative ${wide ? "h-full w-full" : "land-stage-portrait"}`}>
+              <VideoCard clip={film} ratio="h-full w-full" play="always" quiet className="land-film h-full w-full" />
+              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-4 pb-4 pt-16 sm:px-5 sm:pb-5">
+                <p key={film.title} className="land-stage-copy max-w-xl pr-10">
+                  <span className="text-[11px] tabular-nums tracking-[0.18em] text-white/55">
+                    {String(active + 1).padStart(2, "0")} / {String(films.length).padStart(2, "0")}
+                  </span>
+                  <span className="land-display mt-1 block text-2xl text-white sm:text-3xl">{film.title}</span>
+                  <span className="mt-1 block text-sm leading-relaxed text-white/75">{film.text}</span>
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <button type="button" aria-label="Previous film" onClick={() => pick(active - 1)} className="land-stage-nav left-3">
+          <span aria-hidden="true">‹</span>
+        </button>
+        <button type="button" aria-label="Next film" onClick={() => pick(active + 1)} className="land-stage-nav right-3">
+          <span aria-hidden="true">›</span>
+        </button>
+      </div>
+      <div className="mt-4 flex justify-start sm:justify-center">
+        <div ref={scroller} className="land-rail flex max-w-full gap-2.5 overflow-x-auto px-0.5 pb-1 sm:gap-3" role="tablist" aria-label="Films">
+          {films.map((item, index) => {
+            const on = index === active;
+            const itemWide = item.ratio === "16:9";
+            return (
+              <button
+                key={item.mp4}
+                type="button"
+                role="tab"
+                aria-label={item.title}
+                aria-selected={on}
+                onClick={() => pick(index)}
+                className={`land-thumb shrink-0 ${on ? "is-on" : ""} ${itemWide ? "w-36 sm:w-44" : "w-[4.5rem] sm:w-[5.25rem]"}`}
+              >
+                <span className={`land-thumb-media block overflow-hidden rounded-xl ${itemWide ? "aspect-video" : "aspect-[9/16]"}`}>
+                  <img src={item.poster} alt="" className="h-full w-full object-cover" />
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
     </div>
   );
 }
@@ -531,7 +591,7 @@ function BrandBody() {
         <Reveal>
           <h2 className="land-display text-3xl sm:text-4xl">Ads, ready to run.</h2>
         </Reveal>
-        <FilmRail films={FILMS} />
+        <FilmRail films={FILMS} start={1} />
       </section>
 
       <Reveal className="flex flex-col items-start justify-between gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-end">

@@ -543,6 +543,84 @@ a.btn-primary {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
 }
 
+.land-stage {
+  height: min(70svh, 560px);
+  transition: height 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.land-stage.is-wide {
+  height: min(58vw, 420px);
+}
+
+@media (min-width: 640px) {
+  .land-stage {
+    height: min(68svh, 620px);
+  }
+
+  .land-stage.is-wide {
+    height: min(42vw, 480px);
+  }
+}
+
+.land-stage-portrait {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 9 / 16;
+}
+
+.land-stage-blur {
+  transform: scale(1.12);
+  filter: blur(28px) saturate(1.15);
+}
+
+.land-stage-nav {
+  position: absolute;
+  top: 42%;
+  z-index: 10;
+  display: grid;
+  height: 2.5rem;
+  width: 2.5rem;
+  place-items: center;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(0, 0, 0, 0.45);
+  color: white;
+  font-size: 1.35rem;
+  line-height: 1;
+  backdrop-filter: blur(8px);
+  transition: background 0.3s ease, transform 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.land-stage-nav:hover {
+  background: rgba(0, 0, 0, 0.7);
+}
+
+.land-stage .film-frame > button {
+  z-index: 20;
+  top: 0.75rem;
+  right: 0.75rem;
+  bottom: auto;
+}
+
+.land-thumb {
+  opacity: 0.62;
+  transition: opacity 0.4s ease, transform 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.land-thumb-media {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  transition: box-shadow 0.4s ease;
+}
+
+.land-thumb.is-on {
+  opacity: 1;
+}
+
+.land-thumb.is-on .land-thumb-media {
+  box-shadow: 0 0 0 2px #0b0b0d, 0 0 0 4px #ff8a3d;
+}
+
 .land-rail {
   scrollbar-width: none;
 }
@@ -560,6 +638,11 @@ a.btn-primary {
     box-shadow:
       inset 0 0 0 1px rgba(255, 255, 255, 0.16),
       0 16px 40px rgba(0, 0, 0, 0.28);
+  }
+
+  .land-thumb:hover {
+    opacity: 1;
+    transform: translateY(-3px);
   }
 }
 
@@ -611,6 +694,24 @@ a.btn-primary {
   .land-swap {
     animation: land-swap 0.5s cubic-bezier(0.22, 1, 0.36, 1);
   }
+
+  .land-stage-in {
+    animation: land-stage-in 0.55s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .land-stage-copy {
+    animation: land-stage-copy 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+  }
+}
+
+@keyframes land-stage-in {
+  from { transform: scale(1.02); }
+  to { transform: none; }
+}
+
+@keyframes land-stage-copy {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
 }
 
 @keyframes land-swap {
@@ -660,6 +761,11 @@ a.btn-primary {
   .land-marquee,
   .land-float,
   .land-film,
+  .land-stage,
+  .land-stage-in,
+  .land-stage-copy,
+  .land-stage-nav,
+  .land-thumb,
   .land-clapper-sticks,
   .land-reveal,
   .land-swap,
