@@ -412,8 +412,9 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
         referenceImageUrls: [portrait],
         generateAudio: true,
         resolution: "480p",
-        model: "bytedance/seedance-2.0-fast",
-        provider: "openrouter",
+        ...(project.style === "realistic"
+          ? { provider: "kie" as const }
+          : { model: "bytedance/seedance-2.0-fast" as const, provider: "openrouter" as const }),
         seed: projectSeed(project),
         onTaskCreated: async (id) => {
           character.anchorVideoTaskId = id;
