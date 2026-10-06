@@ -50,7 +50,7 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - Física y continuidad: escríbelas EN LA ACCIÓN, no como un párrafo de reglas en cada escena. Gravedad, sólidos que no se atraviesan, puertas que se abren por aire vacío. Si alguien está acorralado en un rincón, la siguiente escena sigue en ese rincón. Edad/tamaño igual: tiny se queda tiny hasta el beat que crece; misma escala vs silla, mesa y puerta entre cortes. Si A le habla a B, A mira a B, no al lente, salvo cuarta pared. Si alguien persigue, avanza hacia esa posición. Si hay glow, luces u ojos brillantes detrás, el cuerpo de enfrente los tapa: nada de brillo a través del pelo o la piel. Si agarra una puerta o cubiertos, los dedos tocan el objeto; no flota. La ropa puede cambiar: sigue siendo la misma persona, no un segundo cuerpo. Conserva quién está adelante, atrás, a la izquierda y a la derecha hasta que la acción los mueva. El tiempo avanza. El lugar no cambia hasta que la escena cambie de locación. En 16:9 el cuadro ancho es un solo espacio: no uses el ancho para duplicar a nadie ni para invertir el layout. El sistema puede añadir una frase corta solo cuando esa escena lo necesita; no copies esas reglas en cada SCENE.
 - Actuación: caras, ojos, orejas, colas y cuerpo muestran emoción (miedo, alivio, cariño, alegría). Nada de personajes rígidos.
 - Quién está en cuadro: en character_names solo los principals de ESA escena; en extra_names secundarios visibles. El sistema escribe una frase breve: "Only Luna and Milo participate in this scene." o "Only the dogs, cats and Luna participate in this scene."
-- Time-lapse / varias acciones en una escena: NUNCA bullets. Cada beat es una frase física completa. El sistema inserta "CUT to" entre beats para que se lean como clips separados (día/noche, distinto set), no como una acción seguida de 2s. Ejemplo: "Young Milo falls asleep on a desk, tiny body on the papers. CUT to a stop-motion growth change showing him larger on the same desk. CUT to older Milo batting at a toy across the floor. CUT to movie night, older Milo curling up beside Luna on the couch."
+- Time-lapse / varias acciones: NUNCA bullets y NUNCA varios beats dentro de una sola escena. Cada beat es su propia escena, con su propia cámara y sus propios segundos. Un montage de tres lugares son tres escenas. No escribas "CUT to" dentro del summary.
 - El video_prompt va 100% en inglés, salvo las comillas del diálogo si el guion está en otro idioma. Nombres cortos en inglés (Luna, Milo, the man). Nunca "Hombre de 40 años".
 - Cada línea de diálogo una sola vez. No repeated lines. Cierra CADA SCENE con "[NO BGM]". Nunca soundtrack ni BGM. Si un producto adjunto sale en la escena, una sola frase dice cómo: puesto en el personaje, en la mano, primer vistazo y aún no puesto, cerca, o lejos.
 - Super breve. Nada de "cinematic masterpiece". No repitas el párrafo de física/clones, oclusión, eyeline, escala ni props en cada SCENE; el sistema lo pone una sola vez al final y solo añade una frase concreta si esa escena lo pide.
@@ -65,7 +65,7 @@ Storyboard continuity:
 - The storyboard is one continuous animated film. Same story in Spanish or English keeps the same causal order and the same space. Do not merge, skip, or reorder a cause.
 - Each scene starts where the previous one ended: same place, same distance between bodies, same screen sides, same body state. A new scene is the next moment, not a new staging.
 - Who can see whom is blocking. If A sees B and B does not see A, that beat states the distance, who is in frame, and the eyelines. The next beat starts from that exact distance.
-- "CUT to" inside a summary only changes the angle on the same continuous action. It does not teleport, skip an approach, or arrive somewhere the bodies have not traveled. A location changes only when this scene shows the travel.
+- A new place, a new time, or a montage beat is a new scene. Do not write "CUT to" inside one summary. A location changes only when that scene shows the travel.
 - Time moves forward. Nothing happens before its cause.
 - Be cinematic: wide when distance matters, closer when emotion or a small action matters, a new angle when the story turns. Vary size and angle, and do not repeat the same shot size on consecutive scenes. Every new angle continues the same blocking. Never a second body, a second location, or an extra character.
 - Write each summary as physical blocking: where each body is, how far, who looks at whom, what the body does next, and the emotion in face and posture. A character talking to himself is on screen and the line is his, not the narrator. Narrator stays off-screen on the beat it belongs to. No bullet lists and no physics lectures.
@@ -348,7 +348,7 @@ const tools: OpenAI.Responses.Tool[] = [
               video_prompt: {
                 type: "string",
                 description:
-                  "English only. Starts with Pixar/Claymation style throughout the whole video. Then SCENE 1 (Xs). English camera. Brief Only X participate line. Action with names later injected as @Image. CUT between scenes. Several actions in one scene use CUT to between beats, not a physics lecture after every scene. Physics and no-clone once at the end. Dialogue once. No first frame. No soundtrack.",
+                  "English only. Starts with Pixar/Claymation style throughout the whole video. Then SCENE 1 (Xs). English camera. Brief Only X participate line. Action with names later injected as @Image. CUT between scenes. One action per scene. Do not put CUT to inside a scene. Physics and no-clone once at the end. Dialogue once. No first frame. No soundtrack.",
               },
               frame_prompt: {
                 type: "string",
@@ -711,6 +711,79 @@ function openingBeat(summary: string, location: string) {
   return `${beat.replace(/[. ]+$/, "").trim()}. Only the lines in this scene. Cut before the rest of the exchange.`;
 }
 
+function contentSeconds(scene: Pick<Scene, "summary" | "dialogue">) {
+  const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
+  if (lines.length) return Math.min(30, Math.max(3, sceneSpeechFloor(scene)));
+  const words = (scene.summary || "").split(/\s+/).filter(Boolean).length;
+  return words > 22 ? 4 : 3;
+}
+
+function beatParts(summary: string) {
+  const clean = summary.replace(/\s*The attached product only appears as this action says[^.]*\.\s*/gi, " ").trim();
+  const cuts = clean
+    .split(/\s*\bCUT to\s+/i)
+    .map((part) => part.replace(/^[,.\s]+/, "").trim())
+    .filter((part) => part.length > 12);
+  if (cuts.length > 1) return cuts;
+  return [];
+}
+
+function longParts(summary: string) {
+  return summary
+    .replace(/\s*The attached product only appears as this action says[^.]*\.\s*/gi, " ")
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 24 && !/^the attached product\b/i.test(part));
+}
+
+function lineBuckets(lines: Array<{ speaker: string; line: string }>, count: number) {
+  const buckets = Array.from({ length: count }, () => [] as Array<{ speaker: string; line: string }>);
+  if (!lines.length) return buckets;
+  if (lines.length === 1) {
+    buckets[0].push(lines[0]);
+    return buckets;
+  }
+  lines.forEach((line, index) => {
+    const at = Math.min(count - 1, Math.floor((index * count) / lines.length));
+    buckets[at].push(line);
+  });
+  return buckets;
+}
+
+function splitPackedBeats(project: Project) {
+  if (project.song) return;
+  const next: Scene[] = [];
+  for (const scene of project.scenes) {
+    const summary = scene.summary || "";
+    const cuts = beatParts(summary);
+    const sentences =
+      cuts.length > 1 ? cuts : scriptIsStoryboard(project.scriptText) && (scene.estimatedSeconds || 0) >= 8 ? longParts(summary) : [];
+    if (sentences.length < 2) {
+      next.push(scene);
+      continue;
+    }
+    const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
+    const buckets = lineBuckets(lines, sentences.length);
+    let camera = scene.camera;
+    sentences.forEach((part, index) => {
+      if (index > 0) camera = nextAngle(camera);
+      const dialogue = buckets[index] || [];
+      const piece: Scene = {
+        ...scene,
+        id: index === 0 ? scene.id : createId("scene"),
+        summary: /[.!?]$/.test(part) ? part : `${part}.`,
+        dialogue,
+        camera,
+        shots: [],
+        estimatedSeconds: 0,
+      };
+      piece.estimatedSeconds = contentSeconds(piece);
+      next.push(piece);
+    });
+  }
+  project.scenes = next.map((scene, index) => ({ ...scene, index: index + 1 }));
+}
+
 function splitLongExchanges(project: Project) {
   if (project.song || scriptIsStoryboard(project.scriptText)) return;
   const next: Scene[] = [];
@@ -752,21 +825,41 @@ function scaleScenesToTarget(project: Project) {
   const target = project.song ? Math.round(project.song.durationSeconds) : clampTotalDuration(project.targetDurationSeconds);
   project.targetDurationSeconds = target;
   if (!project.scenes.length) return;
-  if (!timed) {
-    for (const scene of project.scenes) {
-      const written = scene.estimatedSeconds || estimateSceneSeconds(scene);
-      if (project.song) {
-        scene.dialogue = [];
-        scene.estimatedSeconds = Math.max(2, Math.min(30, Math.round(written * 10) / 10));
-      } else {
-        const spoken = (scene.dialogue || []).some((line) => line.line?.trim());
-        scene.estimatedSeconds = spoken
-          ? sceneSpeechFloor(scene)
-          : Math.max(2, Math.min(3, Math.round(written * 10) / 10));
-      }
+  for (const scene of project.scenes) {
+    const written = scene.estimatedSeconds || estimateSceneSeconds(scene);
+    if (project.song) {
+      scene.dialogue = [];
+      scene.estimatedSeconds = Math.max(2, Math.min(30, Math.round(written * 10) / 10));
+    } else if (!timed) {
+      const spoken = (scene.dialogue || []).some((line) => line.line?.trim());
+      scene.estimatedSeconds = spoken
+        ? sceneSpeechFloor(scene)
+        : Math.max(3, Math.min(4, Math.round(written * 10) / 10));
+    } else {
+      scene.estimatedSeconds = contentSeconds(scene);
+      scene.shots = [];
     }
   }
   if (timed) {
+    const explicit = storyboardBlocks(project.scriptText).filter((block) => block.seconds != null && lineSeconds(block.label));
+    const used = new Set<number>();
+    for (const block of explicit) {
+      const action = actionText(block);
+      let best = -1;
+      let score = 0;
+      project.scenes.forEach((scene, index) => {
+        if (used.has(index)) return;
+        const nextScore = overlapScore(`${scene.title} ${scene.summary}`, action);
+        if (nextScore > score) {
+          score = nextScore;
+          best = index;
+        }
+      });
+      if (best < 0 || score < 0.3 || !block.seconds) continue;
+      used.add(best);
+      project.scenes[best].estimatedSeconds = Math.min(30, Math.max(2, block.seconds));
+      fitLinesToSeconds(project.scenes[best]);
+    }
     const sum = project.scenes.reduce((total, scene) => total + (scene.estimatedSeconds || 0), 0);
     const needed = DURATION_CHOICES.find((choice) => choice >= Math.ceil(sum)) || DURATION_CHOICES[DURATION_CHOICES.length - 1];
     if (project.targetDurationSeconds < needed) project.targetDurationSeconds = needed;
@@ -889,6 +982,7 @@ async function executeTool(
       applySpeechMode(project);
       splitLongExchanges(project);
       applyUserStoryboard(project);
+      splitPackedBeats(project);
       refineStoryLeads(project);
       diversifyInventedCast(project);
       applyScriptLooks(project);
@@ -1115,7 +1209,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(project.scriptText) ||
     /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(project.scriptText);
   const opening = ordered
-    ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip, merge, split, or replace one. Copy every action they wrote into that scene. If they gave seconds, on the scene or as a range over an act, those seconds are the scene length. Do not change them to 2 or 3. If the lines are shorter than that time and the picture would freeze, add a short line in a voice already in the scene. If the lines are longer than that time, drop a middle line and keep the first and the last. A montage plays each beat they listed. An end card shows the objects and the words they wrote for the full time they gave."
+    ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. Each scene lasts only as long as its own line, or about 3 or 4 seconds when nobody speaks. If a heading itself says how many seconds that one card lasts, keep that. An end card shows the objects and the words they wrote."
     : "The user gave a concept, not a scene list. Keep the cause order they told, name each person once, and reuse that name. Open on the problem in the first scenes, before a long setup. Then the middle, with enough scenes that the story can be followed. Then the turn. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not rush the middle into one shot. Do not leave a quiet stretch where nothing happens.";
   const known = castBrief(project);
   const speech = speechPlan(project.speechMode);
