@@ -23,10 +23,10 @@ export function parseDurationFromText(text: string): number | undefined {
 export function estimateDialogueSeconds(line: string): number {
   const words = (line || "").trim().split(/\s+/).filter(Boolean).length;
   if (!words) return 0;
-  const spoken = words / 2.15 + 0.45;
-  if (words <= 2) return Math.max(1.8, Math.min(2.8, spoken));
-  if (words <= 6) return Math.max(2.2, Math.min(3.6, spoken));
-  return Math.min(8, Math.max(2.8, spoken));
+  const spoken = words / 2.5 + 0.2;
+  if (words <= 2) return Math.max(1.6, Math.min(2.4, spoken));
+  if (words <= 6) return Math.max(2, Math.min(3.4, spoken));
+  return Math.min(8, Math.max(2.4, spoken));
 }
 
 export function estimateActionSeconds(summary: string): number {
@@ -37,11 +37,17 @@ export function estimateActionSeconds(summary: string): number {
   return Math.min(6, Math.max(2.6, words * 0.13 + 2.1));
 }
 
+export function sceneSpeechFloor(scene: Pick<Scene, "dialogue">): number {
+  const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
+  const talk = lines.reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
+  if (talk <= 0) return 2;
+  return Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, Math.round(talk * 10) / 10));
+}
+
 export function estimateSceneSeconds(scene: Pick<Scene, "summary" | "dialogue">): number {
-  const talk = (scene.dialogue || []).reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
-  const action = estimateActionSeconds(scene.summary || "");
-  if (talk > 0) return Math.round((talk + Math.min(1.6, action * 0.35)) * 10) / 10;
-  return Math.round(action * 10) / 10;
+  const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
+  if (lines.length) return sceneSpeechFloor(scene);
+  return Math.round(estimateActionSeconds(scene.summary || "") * 10) / 10;
 }
 
 export function dialogueFloorSeconds(scenes: Array<Pick<Scene, "summary" | "dialogue">>): number {
@@ -177,22 +183,30 @@ export function packScenesIntoParts(
 export function capPartSceneSeconds(
   scenes: Array<{ index: number; estimatedSeconds: number }>,
   parts: SeedancePartPlan[],
+  floors?: Map<number, number>,
 ) {
   const next = new Map(scenes.map((scene) => [scene.index, sceneSpan(scene.estimatedSeconds)]));
   for (const part of parts) {
     const values = part.sceneIndexes.map((index) => next.get(index) || 2);
     const sum = values.reduce((total, value) => total + value, 0);
     if (sum <= part.duration + 0.05) continue;
-    const fitted = scaleEstimatedSeconds(values, part.duration).map((value) => Math.min(part.duration, value));
-    let overflow = fitted.reduce((total, value) => total + value, 0) - part.duration;
-    for (let position = fitted.length - 1; position >= 0 && overflow > 0.05; position -= 1) {
-      const floor = 0.5;
-      const room = fitted[position] - floor;
-      if (room <= 0) continue;
-      const cut = Math.min(room, overflow);
-      fitted[position] = Math.round((fitted[position] - cut) * 10) / 10;
-      overflow -= cut;
-    }
+    const fitted = values.slice();
+    let overflow = sum - part.duration;
+    const cutSlack = (floorFor: (index: number) => number) => {
+      for (let position = fitted.length - 1; position >= 0 && overflow > 0.05; position -= 1) {
+        const floor = floorFor(part.sceneIndexes[position]);
+        const room = fitted[position] - floor;
+        if (room <= 0) continue;
+        const cut = Math.min(room, overflow);
+        fitted[position] = Math.round((fitted[position] - cut) * 10) / 10;
+        overflow -= cut;
+      }
+    };
+    cutSlack((index) => {
+      const floor = floors?.get(index);
+      return floor == null ? 2 : Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, floor));
+    });
+    if (overflow > 0.05) cutSlack(() => 2);
     part.sceneIndexes.forEach((index, position) => {
       next.set(index, fitted[position]);
     });

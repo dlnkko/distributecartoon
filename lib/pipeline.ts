@@ -12,7 +12,7 @@ import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { capPartSceneSeconds, packScenesIntoParts, sceneHasStory, shouldGenerateOneShot } from "./timing";
+import { capPartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1285,6 +1285,7 @@ export function planSeedanceBatches(project: Project) {
   const capped = capPartSceneSeconds(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     parts,
+    new Map(project.scenes.map((scene) => [scene.index, sceneSpeechFloor(scene)])),
   );
   project.scenes.forEach((scene) => {
     const next = capped.get(scene.index);
