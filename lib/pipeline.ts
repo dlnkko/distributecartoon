@@ -413,6 +413,7 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
         generateAudio: true,
         resolution: "480p",
         model: "bytedance/seedance-2.0-fast",
+        provider: "openrouter",
         seed: projectSeed(project),
         onTaskCreated: async (id) => {
           character.anchorVideoTaskId = id;
@@ -726,13 +727,13 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
   );
   const oneShot = shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
   const narrator = storyStarted || oneShot ? { ready: true } : await stepNarratorVoice(project);
-  if (!oneShot) {
-    const intros: StepResult = project.style === "realistic" ? { ready: true } : await stepCharacterIntros(project);
+  if (!oneShot || (project.style === "realistic" && !project.song)) {
+    const intros: StepResult = await stepCharacterIntros(project);
     if (intros.failed && !storyStarted) {
       failProduce(project, intros.failed);
       return "failed";
     }
-    if (!project.platesTried) {
+    if (!oneShot && !project.platesTried) {
       await ensureLocationPlates(project, onStatus);
       project.platesTried = true;
       await saveSoon(project);
@@ -1147,7 +1148,7 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal) {
     if (!character || character.isExtra || isUnseenVoice(character)) continue;
     const speaks = characterHasDialogue(project, character);
     const hasVoice = speaks && Boolean(character.anchorVideoRemoteUrl || character.anchorVideoPublicPath);
-    if (hasVoice && project.style !== "realistic") continue;
+    if (hasVoice) continue;
     const photo = sources.get(character.id);
     const generated = await resolveUploadUrl(character.portraitRemoteUrl, character.portraitPublicPath, abortSignal);
     const uploaded = generated || !photo ? "" : await resolveUploadUrl(photo.originalRemoteUrl, photo.originalPublicPath, abortSignal);
@@ -1197,7 +1198,7 @@ async function previousTailRef(project: Project, batch: Batch, abortSignal?: Abo
 
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
-  const videoEntries = project.style === "realistic" ? [] : await stableCharacterVideos(project, abortSignal);
+  const videoEntries = await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
   const tail = await previousTailRef(project, batch, abortSignal);
   const reserve = (narrator ? 1 : 0) + (tail ? 1 : 0);
@@ -1217,7 +1218,7 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
     return collectLongformReferences(project, batch, abortSignal);
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
-  const videoEntries = project.style === "realistic" ? [] : await stableCharacterVideos(project, abortSignal);
+  const videoEntries = await stableCharacterVideos(project, abortSignal);
   return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
 }
 
@@ -1285,7 +1286,7 @@ export function planSeedanceBatches(project: Project) {
   const capped = capPartSceneSeconds(
     project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
     parts,
-    new Map(project.scenes.map((scene) => [scene.index, sceneSpeechFloor(scene)])),
+    new Map(project.scenes.map((scene) => [scene.index, Math.max(sceneSpeechFloor(scene), scene.estimatedSeconds || 0)])),
   );
   project.scenes.forEach((scene) => {
     const next = capped.get(scene.index);

@@ -26,9 +26,9 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
       reasoning: { effort: "medium" },
       instructions: [
         "Revise this Seedance video prompt. Return only the prompt. Do not add a physics essay or explain what tags mean.",
-        "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Speaking characters stay @Video. Silent characters, places, and products stay @Image.",
+        "Keep every SCENE heading, its duration, every @Video and @Image tag, and every quoted line. Do not rename a tag and do not add one. A character written as @Video stays @Video. A character written as @Image stays @Image.",
         "If the draft includes @Audio1, keep @Audio1. That is this part's song slice and it plays from the first frame of this video. Keep every 'While @Audio1 plays' cue with the lyric in quotes and the action that follows it. Do not drop a lyric or move it to another scene. Do not add @Audio2. The previous ending is the video reference only: do not regenerate those 5 seconds. Do not add a silent intro, a title card, or spoken dialogue when the draft has none. If a scene says a character sings along or mouths a lyric, keep it: that mouth matches @Audio1 only. Do not add a second voice and do not close that mouth.",
-        "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks.",
+        "Each scene is one action and one camera move. If one scene walks through many places, you may not merge them; leave the scene breaks. A line starts in the first second of its scene. Do not add a silent look, a freeze, or people staring before or after a line. Do not leave more than 2 seconds where nobody speaks and nothing moves.",
         "If the draft is realistic live-action, keep this rule: each person appears once in a shot, never in the foreground and again at a door or in the background.",
         "Do not add the product to a scene that does not already show it. Problem scenes stay without the product. Keep the camera and the place already written.",
         "Name which way a screen or object faces the camera. Each character speaks only their own line.",
@@ -44,7 +44,10 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     const revised = (response.output_text || "").trim();
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;
     if (!sameQuotes(trimmed, revised)) return trimmed;
-    if (/@Video\d|@Image\d/.test(trimmed) && !/@Video\d|@Image\d/.test(revised)) return trimmed;
+    const tagsIn = (value: string) => [...value.matchAll(/@(?:Video|Image)\d+/gi)].map((match) => match[0].toLowerCase());
+    const draftTags = tagsIn(trimmed);
+    const revisedTags = tagsIn(revised);
+    if (draftTags.some((tag) => !revisedTags.includes(tag)) || revisedTags.some((tag) => !draftTags.includes(tag))) return trimmed;
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     if (/@Audio2\b/.test(revised)) return trimmed;

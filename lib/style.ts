@@ -1817,10 +1817,16 @@ function participateLine(names: string[], people: Map<string, string>, project: 
   return `Only ${list} participate in this scene.`;
 }
 
-function sceneSays(project: Project, scene: Scene | undefined, people: Map<string, string>, narratorTag: string) {
+function sceneSays(
+  project: Project,
+  scene: Scene | undefined,
+  people: Map<string, string>,
+  narratorTag: string,
+  lines?: Array<{ speaker: string; line: string }>,
+) {
   const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
   const parts: string[] = [];
-  for (const entry of scene?.dialogue || []) {
+  for (const entry of lines || scene?.dialogue || []) {
     const text = (entry.line || "").replace(/^["']+|["']+$/g, "").trim();
     if (!entry.speaker || !text) continue;
     if (isVoiceoverSpeaker(project, entry.speaker)) {
@@ -1857,7 +1863,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const flat = sceneIndexes.flatMap((index, i) => {
     const scene = scenes[i];
     const cuts = scene?.shots?.length ? scene.shots : planShots(scene || { summary: "", camera: "", estimatedSeconds: seconds[i] || 3 });
-    return cuts.map((shot, shotIndex) => ({ scene, index, shot, shotIndex }));
+    return cuts.map((shot, shotIndex) => ({ scene, index, shot, shotIndex, shotCount: cuts.length }));
   });
   const cutSeconds = fittedSeconds(
     flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
@@ -1895,15 +1901,19 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
-    const said = sceneSays(project, scene, people, narratorTag);
+    const sceneLines = (scene?.dialogue || []).filter((line) => line.speaker && line.line?.trim());
+    const share = Math.max(1, item.shotCount);
+    const take = Math.ceil(sceneLines.length / share);
+    const slice = sceneLines.slice(shotIndex * take, shotIndex * take + take);
+    const said = sceneSays(project, scene, people, narratorTag, slice);
     const spoken = song
       ? singsAlong
         ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
         : ""
-      : shotIndex === 0
-        ? said
-        : said
-          ? "The same line continues over this cut."
+      : said
+        ? `${said} The line starts in the first second. Do not open or close on a silent look.`
+        : (cutSeconds[i] || shot.seconds) > 3
+          ? "From the first second the body keeps moving. Do not hold on a look."
           : "";
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
@@ -1934,7 +1944,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ]
       : [
           styleThroughout(project.style),
-          "People look at each other. A reaction turns toward the other person, not into a pose at the lens.",
+          "A speaker looks at the person they address while the line is coming out. Do not play a silent stare before the line or after it. No shot stays quiet, with nothing happening, for more than 2 seconds.",
           previousLine,
           tailLine,
           characterVideos

@@ -11,20 +11,6 @@ const ANGLES = [
   "Worm's eye, close-up",
 ];
 
-function shotSizes(total: number) {
-  const whole = Math.max(2, Math.round(total));
-  if (whole <= 6) return [whole];
-  const parts: number[] = [];
-  let left = whole;
-  while (left > 6) {
-    const take = left - 6 === 1 ? 5 : 6;
-    parts.push(take);
-    left -= take;
-  }
-  if (left > 0) parts.push(left);
-  return parts;
-}
-
 function sizeOf(camera: string) {
   return camera.match(/wide shot|full shot|medium close-up|medium shot|close-up|insert/i)?.[0].toLowerCase() || "";
 }
@@ -58,54 +44,84 @@ function clauses(text: string) {
   return bits.length > 1 ? bits : sentences;
 }
 
-function actionsFor(summary: string, count: number) {
+function isHeldLook(text: string) {
+  const clean = text.trim();
+  if (!clean) return true;
+  if (/\b(walks?|runs?|grabs?|opens?|closes?|hands|inhales?|exhales?|pours?|stands?|sits?|turns?|slams?|signs?|steps?|reaches?|picks?|puts?|sets?|lifts?|pushes?|pulls?|enters?|leaves?|packs?|uncaps?|breathes?|speaks?|says|asks|shouts?|leans?|clicks?|types?|writes?|drags?|lies|alarms?|blares?)\b/i.test(clean)) {
+    return false;
+  }
+  return /\b(looks?|stares?|gazes?|eyes (?:drop|meet|lock|close)|freezes?|frozen|nods?|pauses?|watches?|studies|silence|silent|expression|goes pale)\b/i.test(clean);
+}
+
+function storyBeats(summary: string) {
   const parts = clauses(summary);
-  const seed = parts.length ? parts : ["The action continues in the same place."];
-  return Array.from({ length: count }, (_, index) => {
-    if (index === count - 1 && seed.length > count) {
-      return `${seed.slice(index).map((part) => part.replace(/[. ]+$/, "")).join(". ")}.`;
+  const beats: string[] = [];
+  for (const part of parts.length ? parts : ["The action continues in the same place."]) {
+    const sentence = /[.!?]$/.test(part) ? part : `${part}.`;
+    if (isHeldLook(sentence) && beats.length) {
+      const lead = beats[beats.length - 1].replace(/[. ]+$/, "");
+      beats[beats.length - 1] = `${lead}. During the line, ${sentence.charAt(0).toLowerCase()}${sentence.slice(1)}`;
+      continue;
     }
-    if (index >= seed.length) return "The same moment continues from a new angle.";
-    return `${seed[index].replace(/[. ]+$/, "")}.`;
-  });
+    beats.push(sentence);
+  }
+  return beats;
+}
+
+function shareSeconds(total: number, count: number) {
+  const safe = Math.max(2, Math.round(total));
+  const room = Math.max(1, Math.floor(safe / 2));
+  const used = Math.min(count, room);
+  const each = Math.floor(safe / used);
+  const values = Array.from({ length: used }, () => each);
+  values[values.length - 1] += safe - each * used;
+  return values.map((value) => Math.max(2, value));
 }
 
 export function planShots(scene: Pick<Scene, "summary" | "camera" | "estimatedSeconds">): SceneShot[] {
   const seconds = Math.max(2, Math.round(scene.estimatedSeconds || 3));
-  const sizes = shotSizes(seconds);
+  const beats = storyBeats(scene.summary || "");
+  const onlyLook = beats.length === 1 && isHeldLook(beats[0]);
+  const sizes = shareSeconds(onlyLook ? Math.min(3, seconds) : seconds, beats.length);
   const cameras = camerasFor(scene.camera || "", sizes.length);
-  const actions = actionsFor(scene.summary || "", sizes.length);
+  const used = beats.slice(0, sizes.length);
+  if (beats.length > used.length) {
+    used[used.length - 1] = `${used[used.length - 1].replace(/[. ]+$/, "")}. ${beats.slice(used.length).join(" ")}`;
+  }
   return sizes.map((value, index) => ({
     seconds: value,
     camera: cameras[index],
-    action: actions[index],
+    action: used[index],
   }));
 }
 
 export function ensureSceneShots(scene: Scene): Scene {
   const seconds = Math.max(2, Math.round(Number(scene.estimatedSeconds) || 3));
-  const sizes = shotSizes(seconds);
   const seeded = (scene.shots || []).filter((shot) => shot.action?.trim() || shot.camera?.trim());
   const planned = planShots({ summary: scene.summary, camera: scene.camera, estimatedSeconds: seconds });
-  const shots = sizes.map((value, index) => {
-    const source = seeded[index] || planned[index];
-    return {
-      seconds: value,
-      camera: (source?.camera || planned[index].camera).trim(),
-      action: (source?.action || planned[index].action).trim(),
-    };
+  const base = seeded.length
+    ? seeded.map((shot) => ({
+        seconds: Math.max(2, Math.round(shot.seconds || 3)),
+        camera: shot.camera.trim(),
+        action: shot.action.trim(),
+      }))
+    : planned;
+  const spoken = (scene.dialogue || []).some((line) => line.line?.trim());
+  const shots = base.map((shot) => {
+    if (!isHeldLook(shot.action)) return shot;
+    if (spoken && base.length === 1) return shot;
+    return { ...shot, seconds: Math.min(3, shot.seconds) };
   });
-  if (seeded.length > sizes.length) {
-    const extra = seeded
-      .slice(sizes.length)
-      .map((shot) => shot.action.trim())
-      .filter(Boolean)
-      .join(" ");
-    if (extra) shots[shots.length - 1].action = `${shots[shots.length - 1].action} ${extra}`.replace(/\s{2,}/g, " ").trim();
+  const sum = shots.reduce((total, shot) => total + shot.seconds, 0);
+  const gap = seconds - sum;
+  if (gap > 0) {
+    const host = shots.findIndex((shot) => !isHeldLook(shot.action));
+    const index = host >= 0 ? host : 0;
+    shots[index] = { ...shots[index], seconds: shots[index].seconds + gap };
   }
   return {
     ...scene,
-    estimatedSeconds: sizes.reduce((sum, value) => sum + value, 0),
+    estimatedSeconds: shots.reduce((total, shot) => total + shot.seconds, 0),
     camera: shots[0]?.camera || scene.camera,
     shots,
   };
