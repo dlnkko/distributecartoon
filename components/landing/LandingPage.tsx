@@ -176,7 +176,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
         {mode === "personal" ? (
           <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 py-8 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:py-16">
             <Reveal>
-              <HeroCopy copy={copy} mode={mode} busy={busy} onBuy={() => void buy(INTRO_OFFER.id, "hero_cta_click")} />
+              <HeroCopy copy={copy} mode={mode} />
             </Reveal>
             <Reveal delay={120}>
               <VideoCard clip={PERSONAL_HERO} ratio="aspect-[9/16]" play="always" frame="01" className="land-film mx-auto w-full max-w-[280px] sm:max-w-xs" />
@@ -184,7 +184,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
           </div>
         ) : (
           <Reveal className="relative mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-4xl flex-col items-start justify-end px-4 pb-16 sm:px-6">
-            <HeroCopy copy={copy} mode={mode} busy={busy} onBuy={() => void buy(INTRO_OFFER.id, "hero_cta_click")} light />
+            <HeroCopy copy={copy} mode={mode} light />
           </Reveal>
         )}
       </section>
@@ -231,15 +231,9 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
 
       {sticky && !offer ? (
         <div className="fixed inset-x-0 bottom-0 z-[80] border-t border-white/10 bg-[#0b0b0d]/95 p-3 md:hidden">
-          {mode === "brands" ? (
-            <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
-              {copy.cta}
-            </a>
-          ) : (
-            <button type="button" onClick={() => void buy(INTRO_OFFER.id, "sticky_cta_click")} className="cf-btn btn-primary w-full py-3 text-center text-sm font-semibold">
-              {busy === INTRO_OFFER.id ? "Opening…" : copy.cta}
-            </button>
-          )}
+          <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
+            {copy.cta}
+          </a>
         </div>
       ) : null}
 
@@ -384,32 +378,25 @@ function Reveal({ children, className = "", delay = 0 }: { children: React.React
 function HeroCopy({
   copy,
   mode,
-  busy,
-  onBuy,
   light = false,
 }: {
   copy: (typeof COPY)[Mode];
   mode: Mode;
-  busy: string;
-  onBuy: () => void;
   light?: boolean;
 }) {
+  const ghost = light
+    ? "border-white/25 text-white"
+    : "border-white/15";
   return (
     <>
       <h1 className={`land-display max-w-3xl text-5xl leading-[0.95] sm:text-7xl ${light ? "text-white" : ""}`}>{copy.title}</h1>
       <p className={`mt-5 max-w-xl text-lg leading-relaxed ${light ? "text-white/80" : "text-[var(--cf-muted)]"}`}>{copy.sub}</p>
-      <div className="mt-7 flex flex-wrap items-center gap-4">
-        {mode === "brands" ? (
-          <a href="#pricing" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
-            {copy.cta}
-          </a>
-        ) : (
-          <button type="button" onClick={onBuy} className="cf-btn btn-primary px-5 py-3 text-sm font-semibold">
-            {busy === INTRO_OFFER.id ? "Opening…" : copy.cta}
-          </button>
-        )}
-        <a href={mode === "brands" ? "#agency" : "#films"} className={`land-link text-sm font-semibold ${light ? "text-white" : ""}`}>
-          {copy.secondary}
+      <div className="mt-7 flex flex-wrap items-center gap-3">
+        <a href="#films" onClick={() => track("hero_films_click", { mode })} className={`rounded-xl border px-5 py-3 text-sm font-semibold ${ghost}`}>
+          {copy.films}
+        </a>
+        <a href="#pricing" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-center text-sm font-semibold">
+          {copy.cta}
         </a>
       </div>
       <p className={`mt-4 text-sm ${light ? "text-white/70" : "text-[var(--cf-muted)]"}`}>{copy.trust}</p>
@@ -559,7 +546,7 @@ function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: 
   const [tier, setTier] = useState(0);
   const flex = SLIDER_PLANS[tier] ?? SLIDER_PLANS[0];
   return (
-    <section id="pricing" className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+    <section id="pricing" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
       <Reveal>
         <h2 className="land-display text-4xl sm:text-5xl">Pricing</h2>
         <p className="mt-3 max-w-xl text-sm text-[var(--cf-muted)]">1 credit = 1 second of video. Monthly plans. The month starts the day you pay.</p>
