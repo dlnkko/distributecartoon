@@ -44,7 +44,8 @@ export function VideoCard({
       void video.play().catch(() => undefined);
       return;
     }
-    if (play === "hover") return;
+    const fine = window.matchMedia("(hover: hover) and (pointer: fine)").matches;
+    if (play === "hover" && fine) return;
     const observer = new IntersectionObserver(
       ([entry]) => {
         if (entry?.isIntersecting && !held.current) {

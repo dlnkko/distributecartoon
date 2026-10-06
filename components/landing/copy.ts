@@ -7,7 +7,6 @@ export type Film = {
   label: string;
   title: string;
   text: string;
-  duration: string;
   ratio: "9:16" | "16:9";
 };
 
@@ -15,7 +14,7 @@ export function modeFromQuery(value: string | string[] | undefined): Mode {
   return value === "brands" ? "brands" : "personal";
 }
 
-function film(name: string, label: string, title: string, text: string, duration: string, ratio: Film["ratio"] = "9:16"): Film {
+function film(name: string, label: string, title = "", text = "", ratio: Film["ratio"] = "9:16"): Film {
   return {
     mp4: `/media/${name}.mp4`,
     webm: "",
@@ -23,7 +22,6 @@ function film(name: string, label: string, title: string, text: string, duration
     label,
     title,
     text,
-    duration,
     ratio,
   };
 }
@@ -34,7 +32,6 @@ export const FILMS: Film[] = [
     "Outback Signal",
     "Outback Signal",
     "A brand story with one look from the first shot to the last.",
-    "1:00",
     "16:9",
   ),
   film(
@@ -42,77 +39,32 @@ export const FILMS: Film[] = [
     "Tigre and the last chance",
     "Tigre and the last chance",
     "A mother, a child, and a kitten. The same faces the whole way through.",
-    "0:45",
   ),
   film(
     "don-julio-and-canela",
     "Don Julio and Canela",
     "Don Julio and Canela",
     "Same man, same dog, from the first frame to the last.",
-    "1:00",
   ),
   film(
     "beto-and-osofuerte",
     "Beto and OsoFuerte",
     "Beto and OsoFuerte",
     "Two minutes, one look, no reshoots.",
-    "2:00",
   ),
   film(
     "lumabrew-brew-your-mood",
     "LumaBrew",
     "LumaBrew",
     "A product, a morning, and a mood. Told in clay.",
-    "1:00",
   ),
   film(
     "calm-in-your-ears",
     "Calm in your ears",
     "Calm in your ears",
     "The problem, then the product, in one short film.",
-    "0:31",
   ),
 ];
-
-const PERSONAL_ORDER = [
-  "Tigre and the last chance",
-  "Don Julio and Canela",
-  "Beto and OsoFuerte",
-  "Outback Signal",
-  "LumaBrew",
-  "Calm in your ears",
-];
-
-const BRAND_ORDER = [
-  "Outback Signal",
-  "LumaBrew",
-  "Calm in your ears",
-  "Tigre and the last chance",
-  "Don Julio and Canela",
-  "Beto and OsoFuerte",
-];
-
-export function filmsFor(mode: Mode): Film[] {
-  const order = mode === "brands" ? BRAND_ORDER : PERSONAL_ORDER;
-  return order.map((label) => {
-    const found = FILMS.find((item) => item.label === label);
-    if (!found) throw new Error(`Missing film ${label}`);
-    return found;
-  });
-}
-
-export const HERO_REEL = [
-  "Tigre and the last chance",
-  "Don Julio and Canela",
-  "LumaBrew",
-  "Outback Signal",
-].map((label) => {
-  const found = FILMS.find((item) => item.label === label);
-  if (!found) throw new Error(`Missing film ${label}`);
-  return found;
-});
-
-export const DON_JULIO_FRAMES = [3, 22, 34, 46, 55].map((mark) => `/media/consistency/don-julio-${mark}.jpg`);
 
 export const PERSONAL_HERO = FILMS[1];
 export const BRAND_HERO = FILMS[0];
