@@ -53,7 +53,7 @@ export function projectIsGenerating(
 }
 
 export function isProviderContentUrl(value?: string) {
-  return Boolean(value && /openrouter\.ai\/api\/v1\/videos\//i.test(value));
+  return Boolean(value && /(?:openrouter\.ai\/api\/v1\/videos\/|tempfile\.aiquickdraw\.com\/)/i.test(value));
 }
 
 // A part counts as saved only when the file lives outside the provider URL, which expires.

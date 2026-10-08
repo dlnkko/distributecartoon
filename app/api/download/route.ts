@@ -10,6 +10,23 @@ export const maxDuration = 120;
 
 const OPENROUTER_VIDEO = /^https:\/\/openrouter\.ai\/api\/v1\/videos\/[^/?#]+\/content(?:\?|$)/i;
 
+function hostedVideoUrl(src: string) {
+  let url: URL;
+  try {
+    url = new URL(src);
+  } catch {
+    return "";
+  }
+  if (url.protocol !== "https:") return "";
+  const host = url.hostname;
+  const allowed =
+    host === "tempfile.aiquickdraw.com" ||
+    host === "fal.media" ||
+    host.endsWith(".fal.media") ||
+    (host.endsWith(".supabase.co") && url.pathname.startsWith("/storage/v1/object/"));
+  return allowed ? url.toString() : "";
+}
+
 function filenameOf(value: string) {
   const cleaned = value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
   const base = cleaned || "video.mp4";
@@ -55,10 +72,10 @@ export async function GET(request: Request) {
     return new Response(data, { headers });
   }
 
-  const remote = r2Url(src) || (OPENROUTER_VIDEO.test(src) ? src : "");
+  const remote = r2Url(src) || (OPENROUTER_VIDEO.test(src) ? src : "") || hostedVideoUrl(src);
   const fromProxy = src.startsWith("/api/video?url=") ? new URLSearchParams(src.slice("/api/video?".length)).get("url") || "" : "";
   const openrouter = OPENROUTER_VIDEO.test(fromProxy) ? fromProxy : remote && OPENROUTER_VIDEO.test(remote) ? remote : "";
-  const fileUrl = openrouter || r2Url(remote);
+  const fileUrl = openrouter || r2Url(remote) || hostedVideoUrl(remote);
 
   if (!fileUrl) return NextResponse.json({ error: "Invalid video." }, { status: 400 });
 
@@ -69,7 +86,12 @@ export async function GET(request: Request) {
     upstreamHeaders.Authorization = `Bearer ${openrouterApiKey}`;
   }
 
-  const upstream = await fetch(fileUrl, { headers: upstreamHeaders, redirect: "error" });
+  let upstream: Response;
+  try {
+    upstream = await fetch(fileUrl, { headers: upstreamHeaders, redirect: "error" });
+  } catch {
+    return NextResponse.json({ error: "Couldn't download that video." }, { status: 502 });
+  }
   if (!upstream.ok || !upstream.body) {
     return NextResponse.json({ error: "Couldn't download that video." }, { status: 502 });
   }

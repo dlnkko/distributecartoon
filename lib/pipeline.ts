@@ -178,6 +178,12 @@ export async function recoverPendingVideos(project: Project, options?: { wait?: 
       continue;
     }
     if (batch.videoRemoteUrl) {
+      if (batch.status === "done") {
+        const before = project.archivedVideos?.length || 0;
+        ensureArchivedVideo(project, batch);
+        if ((project.archivedVideos?.length || 0) !== before) changed = true;
+        continue;
+      }
       try {
         await attachGeneratedVideo(project, batch, batch.videoRemoteUrl);
       } catch {
