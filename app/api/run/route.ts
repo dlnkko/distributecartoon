@@ -4,10 +4,10 @@ import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
 import { resetInFlightBatches, startProduce } from "@/lib/pipeline";
 import { driveProduce } from "@/lib/produce";
-import { getProject, saveProject } from "@/lib/store";
+import { getProject, listProjects, saveProject } from "@/lib/store";
 import { activeTask } from "@/lib/tasks";
 import type { AgentMode, Project, StudioEvent } from "@/lib/types";
-import { projectDeliveredSrc } from "@/lib/video-jobs";
+import { MAX_CONCURRENT_RENDERS, projectDeliveredSrc, projectIsGenerating } from "@/lib/video-jobs";
 import { activeMembership } from "@/lib/billing";
 import { generationCreditCost } from "@/lib/credits";
 import { spendCredits } from "@/lib/spend-credits";
@@ -108,7 +108,7 @@ export async function POST(request: Request) {
 
   const loaded = await loadOwnedProject(body.projectId);
   if ("response" in loaded) return loaded.response;
-  const { project } = loaded;
+  const { user, project } = loaded;
 
   if (body.mode === "plan" && !project.scriptText.trim()) {
     return new Response(JSON.stringify({ error: "Add a script first." }), { status: 400 });
@@ -121,6 +121,14 @@ export async function POST(request: Request) {
   }
 
   if (body.mode === "produce" && !project.keepGenerating && !projectDeliveredSrc(project)) {
+    const list = await listProjects(user.id);
+    const rendering = list.filter((item) => item.id !== project.id && projectIsGenerating(item)).length;
+    if (rendering >= MAX_CONCURRENT_RENDERS) {
+      return new Response(
+        JSON.stringify({ error: "Three videos are already rendering. This one can wait in drafts." }),
+        { status: 429 },
+      );
+    }
     const cost = generationCreditCost(project);
     const spent = await spendCredits(cost);
     if (!spent.ok) {

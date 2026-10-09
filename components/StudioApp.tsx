@@ -8,7 +8,7 @@ import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
 import { ensureSceneShots } from "@/lib/shots";
-import { durableVideoSrc, isProviderContentUrl, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
+import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
 import { generationCreditCost } from "@/lib/credits";
@@ -405,6 +405,8 @@ export function StudioApp() {
   const [scenesDraft, setScenesDraft] = useState<Scene[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
+  const [busyOwner, setBusyOwner] = useState<string | null>(null);
+  const busyOwnerRef = useRef<string | null>(null);
   const [songUploadName, setSongUploadName] = useState("");
   const [uploadingSlotId, setUploadingSlotId] = useState("");
   const [readingPageId, setReadingPageId] = useState("");
@@ -416,6 +418,7 @@ export function StudioApp() {
   const songRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const abortOwnerRef = useRef<string | null>(null);
   const projectsRef = useRef<Project[]>([]);
   const refInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const projectRef = useRef<Project | null>(null);
@@ -440,7 +443,8 @@ export function StudioApp() {
 
   projectsRef.current = projects;
   const task = activeTask(project);
-  const working = busy || Boolean(task);
+  const viewBusy = busy && (!busyOwner || busyOwner === project?.id);
+  const working = viewBusy || Boolean(task);
   busyRef.current = working;
 
   useEffect(() => {
@@ -552,6 +556,42 @@ export function StudioApp() {
       const rest = current.filter((item) => item.id !== next.id);
       return [next, ...rest];
     });
+  }
+
+  function adopt(next: Project) {
+    if (projectRef.current?.id === next.id) {
+      remember(next);
+      if (next.scenes.length) setScenesDraft(next.scenes.map(cloneScene));
+      return;
+    }
+    setProjects((current) => {
+      if (!current.some((item) => item.id === next.id)) return [next, ...current];
+      return current.map((item) => (item.id === next.id ? next : item));
+    });
+  }
+
+  function lockBusy(ownerId: string) {
+    busyOwnerRef.current = ownerId;
+    setBusyOwner(ownerId);
+    setBusy(true);
+  }
+
+  function unlockBusy(ownerId: string) {
+    if (busyOwnerRef.current !== ownerId) return;
+    busyOwnerRef.current = null;
+    setBusyOwner(null);
+    setBusy(false);
+  }
+
+  function renderingOthers(exceptId: string) {
+    const ids = new Set<string>();
+    for (const item of projectsRef.current) {
+      if (item.id !== exceptId && projectIsGenerating(item)) ids.add(item.id);
+    }
+    for (const id of generatingIds) {
+      if (id !== exceptId) ids.add(id);
+    }
+    return ids.size;
   }
 
   async function persistLatestSettings() {
@@ -673,43 +713,54 @@ export function StudioApp() {
   }
 
   async function run(mode: AgentMode) {
-    if (!project || busy) return;
-    setBusy(true);
+    const started = projectRef.current;
+    if (!started) return;
+    if (mode !== "produce" && busy && busyOwnerRef.current === started.id) return;
+    const note = (text: string) => {
+      if (projectRef.current?.id === started.id) setStatus(text);
+    };
     if (mode === "produce") {
-      markGenerating(project.id, true);
+      if (renderingOthers(started.id) >= MAX_CONCURRENT_RENDERS) {
+        setStatus("Three videos are already rendering. This one can wait in drafts.");
+        return;
+      }
+      markGenerating(started.id, true);
       setPane("library");
       setStatus("Generating your video…");
     } else if (mode === "plan") {
+      lockBusy(started.id);
       setStatus("Writing your scenes…");
-    } else setStatus("");
+    } else {
+      lockBusy(started.id);
+      setStatus("");
+    }
     const controller = mode === "produce" ? null : new AbortController();
-    if (controller) {
+    if (controller && (!abortRef.current || abortOwnerRef.current === started.id)) {
       abortRef.current?.abort();
       abortRef.current = controller;
+      abortOwnerRef.current = started.id;
     }
     try {
       const res = await fetch("/api/run", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, mode }),
+        body: JSON.stringify({ projectId: started.id, mode }),
         signal: controller?.signal,
       });
       if (!res.ok) {
         const json = (await res.json().catch(() => null)) as { error?: string } | null;
-        if (mode === "produce") {
-          markGenerating(project.id, false);
-          setPane("studio");
+        if (mode === "produce") markGenerating(started.id, false);
+        if (projectRef.current?.id === started.id) {
+          if (mode === "produce") setPane("studio");
+          setStatus(json?.error || "Couldn't start that.");
         }
-        setStatus(json?.error || "Couldn't start that.");
         await refreshProfile();
         return;
       }
       if (mode === "produce") void refreshProfile();
       if (!res.body) {
-        if (mode === "produce") {
-          markGenerating(project.id, true);
-          setStatus("Generating your video…");
-        } else setStatus("No response from the server.");
+        if (mode === "produce") markGenerating(started.id, true);
+        note(mode === "produce" ? "Generating your video…" : "No response from the server.");
         return;
       }
       const reader = res.body.getReader();
@@ -727,61 +778,63 @@ export function StudioApp() {
           if (!line) continue;
           const event = JSON.parse(line) as { type: string; text?: string; project?: Project };
           if (event.type === "status" && event.text) {
-            if (mode === "produce") setStatus(/couldn't|failed|error|stopped/i.test(event.text) ? event.text : "Generating your video…");
-            else if (mode === "plan") setStatus("Writing your scenes…");
+            if (mode === "produce") note(/couldn't|failed|error|stopped/i.test(event.text) ? event.text : "Generating your video…");
+            else if (mode === "plan") note("Writing your scenes…");
           }
-          if (event.type === "project" && event.project) {
-            remember(event.project);
-            if (event.project.scenes.length) setScenesDraft(event.project.scenes.map(cloneScene));
-          }
+          if (event.type === "project" && event.project) adopt(event.project);
           if (event.type === "error" && event.text) {
             lastError = event.text;
-            setStatus(event.text);
+            note(event.text);
           }
         }
       }
-        if (!lastError) {
-        const refreshed = await loadProjectById(project.id, controller?.signal || new AbortController().signal);
-        if (refreshed) {
-          remember(refreshed);
-          if (mode === "plan" && refreshed.scenes.length) setScenesDraft(refreshed.scenes.map(cloneScene));
-        }
+      if (!lastError) {
+        const refreshed = await loadProjectById(started.id, controller?.signal || new AbortController().signal);
+        if (refreshed) adopt(refreshed);
         if (mode === "produce") {
-          const latest = projectRef.current;
+          const latest = refreshed || projectsRef.current.find((item) => item.id === started.id) || started;
           const videoReady = Boolean(projectDeliveredSrc(latest));
           if (videoReady) {
-            markGenerating(project.id, false);
-            setStatus("");
+            markGenerating(started.id, false);
+            note("");
           } else {
-            markGenerating(project.id, true);
-            setStatus("Generating your video…");
+            markGenerating(started.id, true);
+            note("Generating your video…");
           }
-          if (notifyReadyRef.current && videoReady) {
-            void showReadyNotification(latest?.title || "New video");
-          }
-        } else {
-          markGenerating(project.id, false);
+          if (notifyReadyRef.current && videoReady) void showReadyNotification(latest.title || "New video");
+        } else if (projectRef.current?.id === started.id) {
+          markGenerating(started.id, false);
           setStatus("");
           setPane("studio");
+        } else {
+          markGenerating(started.id, false);
         }
       }
     } catch (error) {
       if (mode === "produce") {
-        if (projectDeliveredSrc(projectRef.current)) markGenerating(project.id, false);
-        else markGenerating(project.id, true);
-        setStatus(projectDeliveredSrc(projectRef.current) ? "" : "Generating your video…");
-      } else {
-        markGenerating(project.id, false);
+        const here = projectRef.current?.id === started.id ? projectRef.current : null;
+        if (here && projectDeliveredSrc(here)) {
+          markGenerating(started.id, false);
+          note("");
+        } else {
+          markGenerating(started.id, true);
+          note("Generating your video…");
+        }
+      } else if (projectRef.current?.id === started.id) {
+        markGenerating(started.id, false);
         setStatus((error as Error).name === "AbortError" ? "Stopped." : error instanceof Error ? error.message : "Request failed.");
         setPane("studio");
+      } else {
+        markGenerating(started.id, false);
       }
-      if (project?.id) {
-        const recovered = await loadProjectById(project.id, new AbortController().signal).catch(() => null);
-        if (recovered) remember(recovered);
-      }
+      const recovered = await loadProjectById(started.id, new AbortController().signal).catch(() => null);
+      if (recovered) adopt(recovered);
     } finally {
-      if (controller && abortRef.current === controller) abortRef.current = null;
-      setBusy(false);
+      if (controller && abortRef.current === controller) {
+        abortRef.current = null;
+        abortOwnerRef.current = null;
+      }
+      if (mode !== "produce") unlockBusy(started.id);
     }
   }
 
