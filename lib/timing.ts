@@ -23,10 +23,9 @@ export function parseDurationFromText(text: string): number | undefined {
 export function estimateDialogueSeconds(line: string): number {
   const words = (line || "").trim().split(/\s+/).filter(Boolean).length;
   if (!words) return 0;
-  const spoken = words / 2.5 + 0.2;
-  if (words <= 2) return Math.max(1.6, Math.min(2.4, spoken));
-  if (words <= 6) return Math.max(2, Math.min(3.4, spoken));
-  return Math.min(8, Math.max(2.4, spoken));
+  const spoken = words / 4 + 0.25;
+  if (words <= 8) return Math.max(1.5, Math.min(2.4, spoken));
+  return Math.min(5, Math.max(2, Math.round(spoken * 10) / 10));
 }
 
 export function estimateActionSeconds(summary: string): number {
@@ -212,34 +211,15 @@ export function balancePartSceneSeconds(
     };
     shrink((index) => Math.max(2, meta.get(index)?.floor ?? 2));
     shrink(() => 2);
-    let slack = part.duration - sum();
-    const grow = (capFor: (index: number) => number) => {
-      const spoken = indexes.filter((index) => (meta.get(index)?.floor || 0) > 2 && !(meta.get(index)?.lock || 0));
-      const hosts = spoken.length ? spoken : indexes.filter((index) => !(meta.get(index)?.lock || 0));
-      for (const index of hosts) {
-        if (slack <= 0.05) break;
-        const current = next.get(index) || 2;
-        const room = capFor(index) - current;
-        if (room <= 0.05) continue;
-        const add = Math.min(room, slack);
-        next.set(index, Math.round((current + add) * 10) / 10);
-        slack -= add;
-      }
-    };
-    grow((index) => {
-      const floor = meta.get(index)?.floor ?? 2;
-      return floor > 2 ? Math.min(SEEDANCE_MAX_SECONDS, Math.max(floor + 2, 8)) : 4;
-    });
-    if (slack > 0.05) {
-      const host = [...indexes].reverse().find((index) => (meta.get(index)?.floor || 0) > 2 && !(meta.get(index)?.lock || 0))
-        ?? [...indexes].reverse().find((index) => !(meta.get(index)?.lock || 0));
-      if (host != null) {
-        const current = next.get(host) || 2;
-        next.set(host, Math.min(SEEDANCE_MAX_SECONDS, Math.round((current + slack) * 10) / 10));
-      }
-    }
   }
   return next;
+}
+
+export function userTimedSeconds(title: string, seconds: number) {
+  if (/\d{1,2}:\d{2}\s*(?:to|–|—|-)\s*\d{1,2}:\d{2}/i.test(title) || /end\s*card|tarjeta\s+final/i.test(title)) {
+    return seconds > 0 ? seconds : undefined;
+  }
+  return undefined;
 }
 
 export function capPartSceneSeconds(

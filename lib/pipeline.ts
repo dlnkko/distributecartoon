@@ -12,7 +12,7 @@ import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot } from "./timing";
+import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1321,7 +1321,7 @@ export function planSeedanceBatches(project: Project) {
       index: scene.index,
       estimatedSeconds: scene.estimatedSeconds || 0,
       floor: sceneSpeechFloor(scene),
-      lock: /end\s*card|tarjeta\s+final/i.test(scene.title || "") ? scene.estimatedSeconds : undefined,
+      lock: userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined),
     })),
     parts,
   );
@@ -1331,7 +1331,6 @@ export function planSeedanceBatches(project: Project) {
   });
   const previous = project.batches;
   project.batches = parts.map((part, index) => {
-    const duration = part.duration;
     const sceneIndexes = part.sceneIndexes.length
       ? part.sceneIndexes
       : project.song
@@ -1340,12 +1339,14 @@ export function planSeedanceBatches(project: Project) {
     const scenes = sceneIndexes
       .map((sceneIndex) => project.scenes.find((scene) => scene.index === sceneIndex))
       .filter((scene): scene is Project["scenes"][number] => Boolean(scene));
+    const spoken = scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0);
+    const fitted = project.song ? part.duration : Math.min(30, Math.max(4, Math.round(spoken || part.duration)));
     const prior = previous.find(
       (batch) =>
-        batch.duration === duration &&
         sameSceneList(batch.sceneIndexes, sceneIndexes) &&
         Boolean(batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)),
     );
+    const duration = prior?.duration || fitted;
     const names = [...new Set(scenes.flatMap((scene) => scene.characterNames || []))];
     return {
       id: prior?.id || createId("batch"),

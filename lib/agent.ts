@@ -5,7 +5,7 @@ import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
-import { balancePartSceneSeconds, estimateDialogueSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot } from "./timing";
+import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { saveProject } from "./store";
@@ -180,7 +180,7 @@ const tools: OpenAI.Responses.Tool[] = [
               },
               dialogue: {
                 type: "array",
-                description: "Spoken lines in this scene. About two lines. Three is the maximum. A longer exchange continues in the next scene, same place, new camera. Empty when the beat is a silence, a pause, or someone alone. Scene 1 must include the opening hook so audio starts at 0s. Never repeat the same line twice.",
+                description: "Every spoken line in this scene. If the user timed the row, include every line in that row. Otherwise about two or three lines share the scene. Empty only when nobody speaks. Scene 1 must include the opening hook so audio starts at 0s. Never repeat the same line twice. Never drop a line the user wrote.",
                 items: {
                   type: "object",
                   additionalProperties: false,
@@ -194,7 +194,7 @@ const tools: OpenAI.Responses.Tool[] = [
               estimated_seconds: {
                 type: "number",
                 description:
-                  "Seconds to say only the lines in this scene, at a natural pace. No extra silence after the last word, and no shorter than the lines take. A scene with no line stays at 2 or 3. Do not use 6, 7, or 8 as the normal length.",
+                  "If the user wrote a clock range on this row, use that exact length. Otherwise time the lines briskly: a short line is about 2 seconds, and two or three lines share about 4 to 6 seconds. No extra silence after the last word. Do not use 6, 7, or 8 for a single line.",
               },
               camera: {
                 type: "string",
@@ -484,7 +484,11 @@ function uniqueList(names: string[]) {
 }
 
 function scriptIsStoryboard(script: string) {
-  return /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(script) || /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(script);
+  return (
+    /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(script) ||
+    /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(script) ||
+    timestampRows(script).length >= 2
+  );
 }
 
 type StoryBlock = { label: string; text: string; seconds?: number; headingSeconds?: number };
@@ -517,41 +521,64 @@ function cleanSpokenLine(line: string) {
 }
 
 function actionText(block: StoryBlock) {
-  return block.text
-    .split(/\n/)
-    .map((line) => line.trim())
-    .filter((line) => {
-      if (!line) return false;
-      const match = line.match(/^([^:]{2,48}):\s+\S/);
-      if (!match) return true;
-      const speaker = match[1].replace(/\([^)]*\)/g, "").trim();
-      return /^(text|title|super|caption)$/i.test(speaker);
-    })
-    .join(" ")
-    .replace(/\s*\(\s*\d{1,3}\s*\)/g, "")
+  const columns = block.text.split(/\t/).map((part) => part.trim()).filter(Boolean);
+  const last = columns[columns.length - 1] || "";
+  const speech = columns.length >= 2 && /[“"]/.test(last);
+  const supers = speech
+    ? [...last.matchAll(/\b(?:Super|Small print|Text|Title|Caption)\s*:\s*[“"]([^”"]+)[”"]/gi)].map((match) => match[1])
+    : [];
+  const body = speech ? columns.slice(0, -1).join(" ") : block.text;
+  const cleaned = body
+    .replace(/\b([A-Z][A-Za-z'’-]{1,24}(?:\s+[A-Z][A-Za-z'’-]{1,24}){0,2})\s*(?:\([^)]*\))?\s*:\s*[“"][^”"]+[”"]/g, (full, who: string) =>
+      looksLikeSpeaker(who) && !/^(?:super|small print|text|title|caption)$/i.test(who.trim()) ? " " : full,
+    )
     .replace(/\s+/g, " ")
     .trim();
+  return [...(cleaned ? [cleaned] : []), ...supers].join(" ").replace(/\s+/g, " ").trim();
 }
 
 function linesFromBlock(text: string) {
-  const out: Array<{ speaker: string; line: string; voiceover?: boolean }> = [];
+  const out: Array<{ speaker: string; line: string; voiceover?: boolean; offscreen?: boolean }> = [];
+  const skip = /^(?:scene|escena|act|acto|int|ext|end|text|title|super|caption|small print|beat)$/i;
+  const quoteRe = /[“"]([^”"]+)[”"]/g;
+  let found: RegExpExecArray | null;
+  while ((found = quoteRe.exec(text))) {
+    const line = cleanSpokenLine(found[1]);
+    if (!line) continue;
+    const tagged = speakerAt(text.slice(0, found.index));
+    if (tagged && skip.test(tagged.name)) continue;
+    if (!tagged && !out.length) continue;
+    const speaker = tagged ? tagged.name : out[out.length - 1].speaker;
+    const note = tagged ? tagged.note : out[out.length - 1].voiceover ? "(VO)" : "";
+    if (!speaker || skip.test(speaker) || !looksLikeSpeaker(speaker)) continue;
+    const bareVoice = /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker);
+    const offscreen = bareVoice || /\b(?:o\.?\s*s\.?|off[- ]?screen)\b/i.test(note);
+    const voiceover = offscreen || /\b(?:vo|v\.o\.|voice-?over)\b/i.test(note);
+    out.push({
+      speaker: bareVoice ? "Narrator" : spokenName(speaker),
+      line,
+      ...(voiceover ? { voiceover: true } : {}),
+      ...(offscreen ? { offscreen: true } : {}),
+    });
+  }
+  if (out.length) return out;
   for (const raw of text.split(/\n/)) {
     const namedVoice = raw.trim().match(/^(?:vo|v\.o\.|voice-?over)\s*\(([^)]+)\)\s*:\s*(.+)$/i);
     if (namedVoice) {
       const line = cleanSpokenLine(namedVoice[2]);
-      const speaker = englishSpeakerName(namedVoice[1].trim());
+      const speaker = spokenName(namedVoice[1].trim());
       if (line && speaker) out.push({ speaker, line, voiceover: true });
       continue;
     }
-    const match = raw.trim().match(/^([^:]{2,48}):\s*(.+)$/);
+    const match = raw.trim().match(/^([^:]{2,40}):\s*(.+)$/);
     if (!match) continue;
     const speaker = match[1].replace(/\([^)]*\)/g, "").trim();
-    if (!speaker || /^(scene|escena|act|acto|int|ext|end|text|title|super|caption)$/i.test(speaker)) continue;
+    if (!speaker || skip.test(speaker) || !looksLikeSpeaker(speaker)) continue;
     const line = cleanSpokenLine(match[2]);
     if (!line) continue;
-    const voiceover = /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker);
+    const voiceover = /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker) || offScreenCue(match[1]);
     out.push({
-      speaker: voiceover ? "Narrator" : englishSpeakerName(speaker),
+      speaker: voiceover && /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker) ? "Narrator" : spokenName(speaker),
       line,
       ...(voiceover ? { voiceover: true } : {}),
     });
@@ -577,7 +604,50 @@ function namesMentioned(project: Project, text: string) {
     .map((character) => character.name);
 }
 
+function looksLikeSpeaker(raw: string) {
+  const words = raw.trim().split(/\s+/).filter(Boolean);
+  if (!words.length || words.length > 3) return false;
+  if (words.some((word) => /^(?:hook|reverse|insert|close-up|closeup|wide|medium|dolly|mirror|dawn|time-lapse|timelapse|super|caption|beat|int|ext|quick|two-shot)$/i.test(word))) return false;
+  return words.every((word) => /^[A-Z][A-Z'’-]*$/.test(word) || /^[A-Z][a-z'’-]+$/.test(word));
+}
+
+function speakerAt(before: string) {
+  const match = before.match(/(?:^|[^\w])([A-Z][A-Za-z'’-]{1,24}(?:\s+[A-Z][A-Za-z'’-]{1,24}){0,2})\s*(\([^)]{0,80}\))?\s*:\s*$/);
+  if (!match || !looksLikeSpeaker(match[1])) return undefined;
+  return { name: match[1].trim(), note: match[2] || "" };
+}
+
+function spokenName(raw: string) {
+  const name = englishSpeakerName(raw.trim());
+  if (name === name.toUpperCase() && /[A-Z]/.test(name)) return name.charAt(0) + name.slice(1).toLowerCase();
+  return name;
+}
+
+function offScreenCue(note: string) {
+  return /\b(?:o\.?\s*s\.?|vo|v\.o\.|voice-?over|off[- ]?screen)\b/i.test(note);
+}
+
+function timestampRows(script: string): StoryBlock[] {
+  const rows: StoryBlock[] = [];
+  for (const line of script.split(/\n/)) {
+    const match = line.trim().match(/^(\d+)\s+(\d{1,2}:\d{2})\s*(?:to|–|—|-|a)\s*(\d{1,2}:\d{2})\s+([\s\S]+)$/i);
+    if (!match) continue;
+    const start = clockSeconds(match[2]);
+    const end = clockSeconds(match[3]);
+    if (start == null || end == null || end <= start || end - start > 120) continue;
+    rows.push({
+      label: `${match[1]} ${match[2]}-${match[3]}`,
+      text: match[4].trim(),
+      seconds: end - start,
+      headingSeconds: end - start,
+    });
+  }
+  return rows;
+}
+
 function storyboardBlocks(script: string): StoryBlock[] {
+  const rows = timestampRows(script);
+  if (rows.length >= 2) return rows;
   const heading = /^\s*(?:(?:scene|escena)\s*\d+\b|end\s*card\b|tarjeta\s+final\b)/i;
   const act = /^\s*(?:act|acto)\s*\d+\b/i;
   const blocks: StoryBlock[] = [];
@@ -636,34 +706,15 @@ function overlapScore(summary: string, action: string) {
   return need.filter((word) => has.has(word)).length / need.length;
 }
 
-function fitLinesToSeconds(scene: Scene) {
-  const budget = scene.estimatedSeconds;
-  if (!budget) return;
-  const next = (scene.dialogue || []).filter((line) => line.line?.trim());
-  if (next.length < 2) return;
-  let talk = next.reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
-  while (next.length > 2 && talk > budget + 0.8) {
-    let drop = 1;
-    let shortest = Infinity;
-    for (let index = 1; index < next.length - 1; index += 1) {
-      const weight = estimateDialogueSeconds(next[index].line);
-      if (weight < shortest) {
-        shortest = weight;
-        drop = index;
-      }
-    }
-    talk -= estimateDialogueSeconds(next[drop].line);
-    next.splice(drop, 1);
-  }
-  if (next.length === 2 && talk > budget + 0.8 && estimateDialogueSeconds(next[0].line) <= budget + 0.8) next.pop();
-  scene.dialogue = next;
+function isCardBlock(block: StoryBlock) {
+  return isCardLabel(block.label) || /^\s*(?:end\s*card|tarjeta\s+final)\b/i.test(block.text);
 }
 
 function sceneFromBlock(block: StoryBlock): Scene {
   const action = actionText(block);
   const dialogue = linesFromBlock(block.text);
   const place = `${block.label} ${block.text}`.match(/\b(?:INT|EXT)\.?\s+([^.\n]+)/i)?.[1]?.trim() || "";
-  const card = isCardLabel(block.label);
+  const card = isCardBlock(block);
   const seconds = Math.min(30, Math.max(2, block.headingSeconds || estimateSceneSeconds({ summary: action, dialogue: card ? [] : dialogue })));
   return {
     id: createId("scene"),
@@ -673,17 +724,42 @@ function sceneFromBlock(block: StoryBlock): Scene {
     location: card ? placeNamedIn(action) || place : place,
     characterNames: card
       ? []
-      : [...new Set(dialogue.map((line) => line.speaker).filter((speaker) => speaker && !NARRATOR_NAME.test(speaker)))],
+      : [...new Set(dialogue.filter((line) => !line.offscreen).map((line) => line.speaker).filter((speaker) => speaker && !NARRATOR_NAME.test(speaker)))],
     extraNames: [],
-    dialogue: card ? [] : dialogue,
+    dialogue: card ? [] : dialogue.map(({ speaker, line, voiceover }) => ({ speaker, line, ...(voiceover ? { voiceover: true } : {}) })),
     estimatedSeconds: seconds,
     camera: "",
     shots: [],
   };
 }
 
+function castOnScreen(scenes: Scene[]) {
+  const names = [...new Set(scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.speaker)).filter((name) => name && !NARRATOR_NAME.test(name)))];
+  for (const scene of scenes) {
+    if (isCardLabel(scene.title) || /^\s*(?:end\s*card|tarjeta\s+final)\b/i.test(scene.summary || "")) continue;
+    const present = names.filter((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(scene.summary || ""));
+    scene.characterNames = [...new Set([...(scene.characterNames || []), ...present])];
+  }
+}
+
 function applyUserStoryboard(project: Project) {
   if (project.song || !scriptIsStoryboard(project.scriptText)) return;
+  const rows = timestampRows(project.scriptText);
+  if (rows.length >= 2) {
+    const scenes = rows.map((block) => {
+      const scene = sceneFromBlock(block);
+      if (project.speechMode === "dialogue") {
+        scene.dialogue = (scene.dialogue || []).filter((line) => line.voiceover || !NARRATOR_NAME.test(line.speaker));
+      }
+      return scene;
+    });
+    castOnScreen(scenes);
+    project.scenes = scenes.map((scene, index) => ({ ...scene, index: index + 1 }));
+    const clocks = [...rows[rows.length - 1].label.matchAll(/(\d{1,2}:\d{2})/g)];
+    const endClock = clocks.length ? clockSeconds(clocks[clocks.length - 1][1]) : undefined;
+    if (endClock) project.targetDurationSeconds = clampTotalDuration(endClock);
+    return;
+  }
   const blocks = storyboardBlocks(project.scriptText);
   if (blocks.length < 2) return;
   const used = new Set<number>();
@@ -721,7 +797,6 @@ function applyUserStoryboard(project: Project) {
       if (block.headingSeconds) {
         scene.estimatedSeconds = Math.min(30, Math.max(2, block.headingSeconds));
         scene.shots = [];
-        fitLinesToSeconds(scene);
       }
       const mentioned = namesMentioned(project, `${action} ${(scene.dialogue || []).map((line) => line.speaker).join(" ")}`);
       if (!card && mentioned.length) scene.characterNames = [...new Set(mentioned)];
@@ -731,7 +806,7 @@ function applyUserStoryboard(project: Project) {
       if (project.speechMode === "dialogue") {
         created.dialogue = created.dialogue.filter((line) => !NARRATOR_NAME.test(line.speaker));
       }
-      if (block.headingSeconds) fitLinesToSeconds(created);
+      if (block.headingSeconds) created.estimatedSeconds = Math.min(30, Math.max(2, block.headingSeconds));
       next.push(created);
     }
   }
@@ -803,6 +878,10 @@ function splitPackedBeats(project: Project) {
   if (project.song) return;
   const next: Scene[] = [];
   for (const scene of project.scenes) {
+    if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0)) {
+      next.push(scene);
+      continue;
+    }
     const summary = scene.summary || "";
     const cuts = beatParts(summary);
     const sentences =
@@ -845,6 +924,10 @@ function splitLongExchanges(project: Project) {
   const board = scriptIsStoryboard(project.scriptText);
   const next: Scene[] = [];
   for (const scene of project.scenes) {
+    if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0)) {
+      next.push(scene);
+      continue;
+    }
     const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
     if (lines.length < 4) {
       next.push(scene);
@@ -884,9 +967,12 @@ function scaleScenesToTarget(project: Project) {
   if (!project.scenes.length) return;
   for (const scene of project.scenes) {
     const written = scene.estimatedSeconds || estimateSceneSeconds(scene);
+    const kept = userTimedSeconds(scene.title, written);
     if (project.song) {
       scene.dialogue = [];
       scene.estimatedSeconds = Math.max(2, Math.min(30, Math.round(written * 10) / 10));
+    } else if (kept) {
+      scene.estimatedSeconds = Math.min(30, Math.max(2, kept));
     } else if (!timed) {
       const spoken = (scene.dialogue || []).some((line) => line.line?.trim());
       scene.estimatedSeconds = spoken
@@ -897,7 +983,7 @@ function scaleScenesToTarget(project: Project) {
       scene.shots = [];
     }
   }
-  if (timed) {
+  if (timed && timestampRows(project.scriptText).length < 2) {
     const explicit = storyboardBlocks(project.scriptText).filter((block) => block.seconds != null && lineSeconds(block.label));
     const used = new Set<number>();
     for (const block of explicit) {
@@ -915,11 +1001,10 @@ function scaleScenesToTarget(project: Project) {
       if (best < 0 || score < 0.3 || !block.seconds) continue;
       used.add(best);
       project.scenes[best].estimatedSeconds = Math.min(30, Math.max(2, block.seconds));
-      fitLinesToSeconds(project.scenes[best]);
     }
   }
   const durationOf = (scene: Scene) => {
-    const lock = /end\s*card|tarjeta\s+final/i.test(scene.title || "") ? scene.estimatedSeconds : undefined;
+    const lock = userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined);
     return {
       index: scene.index,
       estimatedSeconds: scene.estimatedSeconds || 0,
@@ -1253,7 +1338,7 @@ function speechPlan(mode: SpeechMode | undefined) {
     return "SPEECH MODE both. This mode overrides every other speech rule. Use off-screen narrator voice-over and on-screen dialogue in the same film. Narrator lines describe the action, stay off-screen, and are never lipsync. A line written VO (Name) is that person's voice over the picture: mouth closed, no lipsync, and the words stay exactly as written. Dialogue lines are a real exchange between the characters in the shot, and each speaker looks at the other person while the line is coming out. Do not play a silent stare before or after a line. No shot stays quiet, with nothing happening, for more than 2 or 3 seconds. If a beat has no line in the script and would only be a frozen look, add one short line. If the script already has the line, copy it. Do not paraphrase it and do not add a second line on top of it. A parenthetical such as (beat) or (quiet) is not spoken. Scene 1 opens with a spoken line.";
   }
   if (mode === "dialogue") {
-    return "SPEECH MODE dialogue. This mode overrides every other speech rule. Write the talk the story actually needs. A pause or a character alone can last 2 or 3 seconds, and the body still does something. Do not leave people looking at each other with nothing happening. An argument, a confession, a negotiation, or any beat where the words are the point needs every line the user wrote, back and forth, each said by the person who says it. Do not shrink that exchange to a single line and do not replace it with a new line. Do not put the whole exchange in one scene. About two lines per scene, three at most, then the next scene in the same place with a different angle or camera move for the rest. Each scene lasts only as long as its own lines, with no held silence after the last word and no faster delivery. Copy the user's words. A parenthetical such as (beat), (quiet), or (small smile) is a direction, not speech. A line written VO (Name) is that person's voice over the picture: mouth closed, no lipsync, and it is not also spoken on screen. Add a short line only when that beat has no speech in the script and would otherwise be a frozen look. Do not use an unnamed narrator. Scene 1 opens with the first line.";
+    return "SPEECH MODE dialogue. This mode overrides every other speech rule. If the user wrote numbered rows with a clock range, such as 0:00-0:03, each row is one scene. Keep every line in that row, in their words, and set estimated_seconds to that range. Do not split the row and do not change its length. O.S. and VO stay off-screen. If the user gave a concept with no clock ranges, write a dense short: two or three lines share one scene of about 4 to 6 seconds, a short line is about 2 seconds, and one line never gets its own 6, 7, or 8 second scene. Write enough of those beats to cover the requested runtime. A pause or a character alone can last 2 or 3 seconds, and the body still does something. Do not leave people looking at each other with nothing happening. Keep every line the user wrote, said by the person who says it. Do not shrink an exchange to a single line and do not replace it with a new line. Copy the user's words. A parenthetical such as (beat), (quiet), or (small smile) is a direction, not speech. A line written VO or O.S. is voice over the picture: mouth closed, no lipsync. Add a short line only when that beat has no speech in the script and would otherwise be a frozen look. Do not use an unnamed narrator. Scene 1 opens with the first line.";
   }
   return "";
 }
@@ -1277,18 +1362,20 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const parts = seedancePartDurations(project.targetDurationSeconds || 15).map(
     (duration, index) => `part ${index + 1} (max ${duration}s)`,
   );
-  const ordered =
-    /(?:^|\n)\s*(?:scene|escena)\s*\d+\b/i.test(project.scriptText) ||
-    /(?:^|\n)\s*\d+\s*[.)]\s+\S/.test(project.scriptText);
-  const opening = ordered
+  const ordered = scriptIsStoryboard(project.scriptText);
+  const timedRows = timestampRows(project.scriptText).length >= 2;
+  const opening = timedRows
+    ? "The user wrote a timed script. Each numbered row with a clock range is exactly one scene. Keep the rows in order. Copy the action and every spoken line in that row, in their words. A row with two or three lines stays one scene. estimated_seconds is the clock range, for example 0:00-0:03 is 3 seconds. Do not split a row. Do not change its length. Do not drop a line. O.S. stays off-screen. VO is voice-over with the mouth closed. An end card is the last row, objects and the written words only, no people."
+    : ordered
     ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not invent a substitute line. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. Each scene lasts only as long as its own line, or about 3 or 4 seconds when nobody speaks. If a heading itself says how many seconds that one card lasts, keep that. An end card shows only the objects and the words they wrote. No people in the end card."
-    : "The user gave a concept, not a scene list. Keep the cause order they told, name each person once, and reuse that name. Open on the problem in the first scenes, before a long setup. Then the middle, with enough scenes that the story can be followed. Then the turn. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not rush the middle into one shot. Do not leave a quiet stretch where nothing happens.";
+    : "The user gave a concept, not a timed scene list. Keep the cause order they told, name each person once, and reuse that name. Write it like a dense short ad: two or three lines share one scene of about 4 to 6 seconds. A short line is about 2 seconds. Do not give one line its own 6, 7, or 8 second scene. Open on the problem, then the middle, then the turn, with enough of those short beats to cover the requested runtime. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not leave a quiet stretch where nothing happens.";
   const known = castBrief(project);
   const speech = speechPlan(project.speechMode);
-  const timing =
-    project.speechMode === "dialogue"
-      ? "A silent beat stays 2 or 3 seconds and the body still moves. Nobody only looks at someone else for longer than that. Split a discussion across scenes in the same place, about two lines each and a new camera on the next scene. Keep every line the user wrote. Time each scene to its lines. No dead air after the last word, and do not rush the lines. Add a short line only when the script left that beat with no speech. Do not default every scene to 6, 7, or 8."
-      : "Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. A longer exchange is two scenes, not one rushed shot. No extra silence after the last word, and no quiet look longer than 2 or 3 seconds. Add a line when a beat would otherwise be empty. Do not default to 6, 7, or 8.";
+  const timing = timedRows
+    ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
+    : project.speechMode === "dialogue"
+      ? "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene. Add a short line only when the script left that beat with no speech."
+      : "Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Two short lines can share one scene. No extra silence after the last word, and no quiet look longer than 2 or 3 seconds. Add a line when a beat would otherwise be empty. Do not default to 6, 7, or 8.";
   return `${speech} ${opening} ${known} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 
