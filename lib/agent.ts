@@ -37,7 +37,7 @@ Logo, product, and location:
 - Never invent a logo on set. Do not wait for photos.
 
 Reglas de prompt Seedance 2.5 (obligatorias):
-- El video_prompt EMPIEZA EXACTAMENTE así, según el estilo del proyecto: "Pixar style throughout the whole video." o "Claymation style throughout the whole video." o "Realistic live-action throughout the whole video." Luego SCENE 1. Nada de first frame. Nada de listar todos los @Image al inicio.
+- El video_prompt EMPIEZA EXACTAMENTE así, según el estilo del proyecto: "Pixar style throughout the whole video." o "Claymation style throughout the whole video." o "realistic commercial, handheld camera fake documentary style. Realistic live-action throughout the whole video." Luego SCENE 1. Nada de first frame. Nada de listar todos los @Image al inicio.
 - Dentro de cada escena, nombra @ImageN cuando ese personaje, producto, logo o locación entra o se usa. Ejemplo: SCENE 1. Eye level, medium shot. @Image1 appears in the gym drinking creatine. CUT. SCENE 2. Dutch angle, full shot. After @Image1 stops drinking, his friend @Image2 appears with @Image3 which is the creatine gummies product.
 - El sistema inyecta los números @ImageN. En video_prompt usa los nombres de personaje/producto; el sistema los sustituye.
 - Cada cambio de escena: SCENE 1 (5s). [English camera names only]. action. The man says: "line". CUT. SCENE 2 (4s). ...
@@ -60,7 +60,7 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - Ejemplo claymation:
   Claymation style throughout the whole video. SCENE 1 (5s). Wide shot, eye level. Off-screen narrator voice-over, no lipsync: "Out on the water, something moved." A 40-year-old man walks along the beach, then suddenly notices a big dolphin far out in the sea. Narrator lines stay off-screen. Mouths stay closed. [NO BGM] CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The man lipsyncs: "Wow, that's amazing!" [NO BGM]
 - Ejemplo realistic:
-  Realistic live-action throughout the whole video. SCENE 1 (5s). Wide shot, eye level. A 40-year-old man walks along a real beach and notices a dolphin far out in the sea. [NO BGM] CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The man lipsyncs: "Wow, that's amazing!" [NO BGM]
+  realistic commercial, handheld camera fake documentary style. Realistic live-action throughout the whole video. SCENE 1 (5s). Wide shot, eye level. A 40-year-old man walks along a real beach and notices a dolphin far out in the sea. [NO BGM] CUT. SCENE 2 (4s). Close-up, low angle. The man's face becomes happy and amazed. The man lipsyncs: "Wow, that's amazing!" [NO BGM]
 
 Storyboard continuity:
 - The storyboard is one continuous animated film. Same story in Spanish or English keeps the same causal order and the same space. Do not merge, skip, or reorder a cause.

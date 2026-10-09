@@ -36,12 +36,14 @@ function portraitCraft(style: VisualStyle) {
 }
 
 function styleThroughout(style: VisualStyle) {
-  if (style === "realistic") return "Realistic live-action throughout the whole video.";
+  if (style === "realistic") {
+    return "realistic commercial, handheld camera fake documentary style. Realistic live-action throughout the whole video.";
+  }
   return `${styleLookName(style)} style throughout the whole video.`;
 }
 
 function globalLookPhrase(style: VisualStyle) {
-  if (style === "realistic") return "Realistic live-action";
+  if (style === "realistic") return "realistic commercial, handheld camera fake documentary style. Realistic live-action";
   return `${styleLookName(style)} style`;
 }
 
@@ -79,6 +81,7 @@ export function styleGuide(style: VisualStyle) {
 function stripVideoStyleLead(text: string) {
   return text
     .replace(/^(?:pixar|claymation) style(?: throughout the whole video)?\.?\s*/i, "")
+    .replace(/^realistic commercial, handheld camera fake documentary style\.?\s*/i, "")
     .replace(
       /^Realistic live-action throughout the whole video\.?\s*(?:Real (?:people|subjects), real places, real materials, and real light\.?\s*(?:A person stays a person and an animal stays that animal\.?\s*)?Not a cartoon, not 3D animation, and not clay\.?\s*(?:Each person appears once in a shot\.?\s*Never the same person in the foreground and again at a door or in the background\.?\s*)?)?/i,
       "",
@@ -1636,7 +1639,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
   const constraints = [
     `CONSTRAINTS — hold for the entire ${Math.round(total)} seconds`,
     [
-      `${project.style === "realistic" ? "Realistic live-action throughout." : `${look} style throughout.`}`,
+      `${project.style === "realistic" ? "realistic commercial, handheld camera fake documentary style. Realistic live-action throughout." : `${look} style throughout.`}`,
       cuts.length > 1
         ? `The cuts at ${cutList.join(", ")} are the complete cut list.`
         : cuts.length
@@ -2036,7 +2039,7 @@ export function labeledReferencePrompt(options: {
   if (priorClip && !/@Video1\b/.test(body)) {
     body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
   }
-  if (!/^(?:(?:pixar|claymation) style|realistic live-action) throughout/i.test(body)) {
+  if (!/^(?:realistic commercial, handheld camera fake documentary style\.?\s*)?(?:(?:pixar|claymation) style|realistic live-action) throughout/i.test(body)) {
     body = `${videoStyleLead(options.style, options.project?.aspectRatio)} ${body}`;
   }
   if (!/obey real-world physics/i.test(body)) body = `${body} ${videoCloseLead()}`;
