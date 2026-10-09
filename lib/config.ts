@@ -7,6 +7,7 @@ export type Secrets = {
   kieApiKey: string;
   falKey: string;
   openrouterApiKey: string;
+  firecrawlApiKey: string;
 };
 
 export const TEXT_MODEL = "gpt-5.6-luna";
@@ -30,6 +31,7 @@ export function getSecrets(): Secrets {
     kieApiKey: process.env.KIE_API_KEY || file.kieApiKey || "",
     falKey: process.env.FAL_KEY || file.falKey || "",
     openrouterApiKey: process.env.OPENROUTER_API_KEY || file.openrouterApiKey || "",
+    firecrawlApiKey: process.env.FIRECRAWL_API_KEY || file.firecrawlApiKey || "",
   };
 }
 
@@ -54,10 +56,12 @@ export function providerStatus() {
     kie: Boolean(secrets.kieApiKey),
     fal: Boolean(secrets.falKey),
     openrouter: Boolean(secrets.openrouterApiKey),
+    firecrawl: Boolean(secrets.firecrawlApiKey),
     model: secrets.openaiModel,
     openaiMasked: maskSecret(secrets.openaiApiKey),
     kieMasked: maskSecret(secrets.kieApiKey),
     falMasked: maskSecret(secrets.falKey),
     openrouterMasked: maskSecret(secrets.openrouterApiKey),
+    firecrawlMasked: maskSecret(secrets.firecrawlApiKey),
   };
 }

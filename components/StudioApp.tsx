@@ -408,6 +408,7 @@ export function StudioApp() {
   const [busy, setBusy] = useState(false);
   const [songUploadName, setSongUploadName] = useState("");
   const [uploadingSlotId, setUploadingSlotId] = useState("");
+  const [readingPageId, setReadingPageId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [panel, setPanel] = useState<"account" | "membership" | "credits" | null>(null);
   const panelRef = useRef(panel);
@@ -923,6 +924,23 @@ export function StudioApp() {
     });
     const json = (await res.json()) as { project?: Project; error?: string };
     if (json.project) remember(json.project);
+  }
+
+  async function onProductPage(slot: ReferenceAsset, url: string) {
+    if (!project) return;
+    const next = url.trim();
+    if (next === (slot.pageUrl || "").trim()) return;
+    setReadingPageId(slot.id);
+    setStatus("");
+    const res = await fetch("/api/product-page", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: project.id, slotId: slot.id, url: next }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+    if (json.project) remember(json.project);
+    else setStatus(json.error || "Couldn't read that product page.");
+    setReadingPageId("");
   }
 
   async function onUploadSong(file: File) {
@@ -1596,6 +1614,13 @@ export function StudioApp() {
                 if (slot) void onClearRef(slot);
               }}
               productUploading={Boolean(products[0] && uploadingSlotId === products[0].id)}
+              productPageUrl={products[0]?.pageUrl || ""}
+              productPageReady={Boolean(products[0]?.pageContext)}
+              productPageReading={Boolean(products[0] && readingPageId === products[0].id)}
+              onProductPage={(url) => {
+                const slot = products[0];
+                if (slot) void onProductPage(slot, url);
+              }}
               onUseScript={() => void (project.song ? clearScriptFile() : patchProject({ workflowStep: "script" }))}
               onContinue={(brief) => void continueFromSong(brief)}
             />
@@ -1619,6 +1644,8 @@ export function StudioApp() {
               castOptions={project.song ? [] : project.scriptCast || []}
               onLabelSlot={(slot, label) => void onLabelRef(slot, label)}
               onLookSlot={(slot, look) => void onLookRef(slot, look)}
+              readingPageId={readingPageId}
+              onProductPage={(slot, url) => void onProductPage(slot, url)}
               onContinue={() => void continueFromSetup()}
             />
           ) : null}
@@ -2054,6 +2081,10 @@ function SongStep({
   onPickProduct,
   onClearProduct,
   productUploading,
+  productPageUrl,
+  productPageReady,
+  productPageReading,
+  onProductPage,
   onUseScript,
   onContinue,
 }: {
@@ -2069,6 +2100,10 @@ function SongStep({
   onPickProduct: () => void;
   onClearProduct: () => void;
   productUploading: boolean;
+  productPageUrl: string;
+  productPageReady: boolean;
+  productPageReading: boolean;
+  onProductPage: (url: string) => void;
   onUseScript: () => void;
   onContinue: (brief: string) => void;
 }) {
@@ -2115,6 +2150,13 @@ function SongStep({
           onClick={onPickProduct}
           onRemove={productPreview ? onClearProduct : undefined}
         />
+        <ProductPageField
+          url={productPageUrl}
+          ready={productPageReady}
+          reading={productPageReading}
+          disabled={busy && !productPageReading}
+          onSave={onProductPage}
+        />
       </div>
 
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">What is this product about?</label>
@@ -2160,6 +2202,8 @@ function SetupStep({
   castOptions,
   onLabelSlot,
   onLookSlot,
+  readingPageId,
+  onProductPage,
   onContinue,
 }: {
   project: Project;
@@ -2178,6 +2222,8 @@ function SetupStep({
   castOptions: ScriptCastMember[];
   onLabelSlot: (slot: ReferenceAsset, label: string) => void;
   onLookSlot: (slot: ReferenceAsset, look: string) => void;
+  readingPageId: string;
+  onProductPage: (slot: ReferenceAsset, url: string) => void;
   onContinue: () => void;
 }) {
   return (
@@ -2256,18 +2302,27 @@ function SetupStep({
 
       {project.song ? null : (
         <section className="setup-card">
-          <p className="mb-3 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
+          <p className="mt-1 mb-3 text-xs text-[var(--muted)]">Add a product page so the story knows how it is used and how it should look.</p>
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {products.map((slot) => (
-              <UploadTile
-                key={slot.id}
-                label={slot.label}
-                preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-                disabled={busy && uploadingSlotId !== slot.id}
-                uploading={uploadingSlotId === slot.id}
-                onClick={() => onPickSlot(slot)}
-                onRemove={() => onClearSlot(slot)}
-              />
+              <div key={slot.id} className="min-w-0">
+                <UploadTile
+                  label={slot.label}
+                  preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
+                  disabled={busy && uploadingSlotId !== slot.id}
+                  uploading={uploadingSlotId === slot.id}
+                  onClick={() => onPickSlot(slot)}
+                  onRemove={() => onClearSlot(slot)}
+                />
+                <ProductPageField
+                  url={slot.pageUrl || ""}
+                  ready={Boolean(slot.pageContext)}
+                  reading={readingPageId === slot.id}
+                  disabled={busy && readingPageId !== slot.id}
+                  onSave={(url) => onProductPage(slot, url)}
+                />
+              </div>
             ))}
           </div>
         </section>
@@ -3045,6 +3100,47 @@ function CharacterSlot({
         className="min-h-[52px] w-full resize-none rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
       />
     </div>
+  );
+}
+
+function ProductPageField({
+  url,
+  ready,
+  reading,
+  disabled,
+  onSave,
+}: {
+  url: string;
+  ready: boolean;
+  reading: boolean;
+  disabled?: boolean;
+  onSave: (url: string) => void;
+}) {
+  const [value, setValue] = useState(url);
+  useEffect(() => setValue(url), [url]);
+  return (
+    <label className="mt-1.5 block">
+      <span className="sr-only">Product page URL</span>
+      <input
+        value={value}
+        disabled={disabled || reading}
+        placeholder="Product page URL"
+        inputMode="url"
+        onChange={(event) => setValue(event.target.value)}
+        onBlur={() => {
+          if (value.trim() !== url.trim()) onSave(value);
+        }}
+        onKeyDown={(event) => {
+          if (event.key !== "Enter") return;
+          event.preventDefault();
+          if (value.trim() !== url.trim()) onSave(value);
+        }}
+        className="w-full rounded-lg border border-white/10 bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-[var(--cf-muted)] disabled:opacity-50"
+      />
+      <span className="mt-1 block text-[11px] text-[var(--muted)]">
+        {reading ? "Reading the page…" : ready ? "Page added." : "Optional."}
+      </span>
+    </label>
   );
 }
 

@@ -107,6 +107,8 @@ export type ReferenceAsset = {
   label: string;
   notes: string;
   lookNotes?: string;
+  pageUrl?: string;
+  pageContext?: string;
   includeInVideo: boolean;
   originalFileName?: string;
   originalPublicPath?: string;

@@ -1,6 +1,7 @@
 import { characterRole, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
+import { productUseHint } from "./product-page";
 import { isUnseenVoice, promptReadyReferences } from "./refs";
 import type { Batch, Character, DialogueLine, Project, Scene, VisualStyle } from "./types";
 import { planShots } from "./shots";
@@ -1539,7 +1540,8 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     } else if (item.kind === "location") {
       assets.push(`${tag} as the location — ${placeCore(name) || name}. Geography and layout are law in every shot set here; each shot sets its own light.`);
     } else if (item.kind === "product") {
-      assets.push(`${tag} as the product — ${productCueLabel(name, item.notes || "")}. Same packaging form, label, colours and branding every time it appears.`);
+      const use = productUseHint(project, name);
+      assets.push(`${tag} as the product — ${productCueLabel(name, item.notes || "")}. Same packaging form, label, colours and branding every time it appears.${use ? ` Use it this way: ${use}` : ""}`);
     } else if (item.kind === "logo") {
       assets.push(`${tag} as the logo — ${name}. Same mark and colours wherever it appears, placed as a physical object in the world.`);
     } else if (name) {

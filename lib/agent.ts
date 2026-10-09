@@ -8,6 +8,7 @@ import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScen
 import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
+import { productPageBrief } from "./product-page";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue, type SpeechMode } from "./types";
@@ -1372,13 +1373,16 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not invent a substitute line. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. Each scene lasts only as long as its own line, or about 3 or 4 seconds when nobody speaks. If a heading itself says how many seconds that one card lasts, keep that. An end card shows only the objects and the words they wrote. No people in the end card."
     : "The user gave a concept, not a timed scene list. Keep the cause order they told, name each person once, and reuse that name. Write it like a dense short ad: two or three lines share one scene of about 4 to 6 seconds. A short line is about 2 seconds. Do not give one line its own 6, 7, or 8 second scene. Open on the problem, then the middle, then the turn, with enough of those short beats to cover the requested runtime. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not leave a quiet stretch where nothing happens.";
   const known = castBrief(project);
+  const pages = productPageBrief(project)
+    ? "A product page is included. Use it for how the product is used and how it should look. When the product is on screen, show that use and that look. Do not invent a different container, dose, or ritual than the page describes. Keep the user's spoken lines."
+    : "";
   const speech = speechPlan(project.speechMode);
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
     : project.speechMode === "dialogue"
       ? "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene. Add a short line only when the script left that beat with no speech."
       : "Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Two short lines can share one scene. No extra silence after the last word, and no quiet look longer than 2 or 3 seconds. Add a line when a beat would otherwise be empty. Do not default to 6, 7, or 8.";
-  return `${speech} ${opening} ${known} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+  return `${speech} ${opening} ${known} ${pages} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 
 export async function runAgent(options: {
@@ -1441,6 +1445,7 @@ export async function runAgent(options: {
             options.project.scriptText
               ? `\n\nSCRIPT (${options.project.scriptName || "pasted"}):\n${options.project.scriptText.slice(0, 40000)}`
               : "",
+            productPageBrief(options.project) ? `\n\n${productPageBrief(options.project)}` : "",
             `\n\nTASK:\n${userText}`,
           ].join(""),
         },
