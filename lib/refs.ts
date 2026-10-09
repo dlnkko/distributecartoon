@@ -360,19 +360,21 @@ export function scriptCallsForReference(
   if (sceneIndexes && sceneIndexes.length === 0) return false;
 
   const cues = project.scriptRefCues || [];
-  if (
-    cues.some(
-      (cue) =>
-        cue.kind === asset.kind &&
-        (!sceneIndexes ||
-          cue.sceneIndexes.length === 0 ||
-          cue.sceneIndexes.some((index) => sceneIndexes.includes(index))),
-    )
-  ) {
+  if (sceneIndexes) {
+    if (
+      cues.some(
+        (cue) => cue.kind === asset.kind && cue.sceneIndexes.some((index) => sceneIndexes.includes(index)),
+      )
+    ) {
+      return true;
+    }
+  } else if (cues.some((cue) => cue.kind === asset.kind)) {
     return true;
   }
 
-  const text = `${sceneBlob(project, sceneIndexes)}\n${scriptFallback ? project.scriptText || "" : ""}`;
+  const text = sceneIndexes
+    ? sceneBlob(project, sceneIndexes)
+    : `${sceneBlob(project, sceneIndexes)}\n${scriptFallback ? project.scriptText || "" : ""}`;
   if (!text.trim()) return false;
 
   const label = asset.label.trim().toLowerCase();

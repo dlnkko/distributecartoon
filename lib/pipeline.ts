@@ -9,7 +9,7 @@ import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoT
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads } from "./refs";
+import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, scriptCallsForReference } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, userTimedSeconds } from "./timing";
@@ -1219,6 +1219,7 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
     const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" || asset.kind === "character" ? asset.kind : "other";
     imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
   }
+  dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   if (imageEntries.length > 30) imageEntries.length = 30;
   if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     return { imageEntries, videoEntries: [] as PromptRef[] };
@@ -1227,8 +1228,21 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
   return { imageEntries, videoEntries: tail ? [tail] : [] };
 }
 
+function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexes: number[]) {
+  for (let index = entries.length - 1; index >= 0; index -= 1) {
+    const entry = entries[index];
+    if (entry.kind !== "product" && entry.kind !== "logo") continue;
+    const asset = project.references.find(
+      (item) => item.kind === entry.kind && item.label.trim().toLowerCase() === entry.name.trim().toLowerCase(),
+    );
+    if (asset && scriptCallsForReference(project, asset, sceneIndexes, false)) continue;
+    entries.splice(index, 1);
+  }
+}
+
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
+  dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
   const tail = await previousTailRef(project, batch, abortSignal);
@@ -1250,6 +1264,7 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
     return collectLongformReferences(project, batch, abortSignal);
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
+  dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
 }

@@ -1951,7 +1951,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   )
     .filter(Boolean)
     .join(" ");
-  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."}`
+  const lastScene = scenes[scenes.length - 1];
+  const endCard = /^\s*(?:end\s*card|tarjeta\s+final)\b/i.test(`${lastScene?.title || ""} ${lastScene?.summary || ""}`);
+  const carryOn = endCard
+    ? ""
+    : "The last frame stays inside the last scene, still moving. Do not add an end card, a pack shot, a logo sting, a freeze, or a beauty frame of anyone holding the product. Do not turn the product toward the lens. The next part continues from this action.";
+  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."} ${carryOn}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();

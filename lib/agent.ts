@@ -1313,7 +1313,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     : "The user gave a concept, not a timed scene list. Keep the cause order they told, name each person once, and reuse that name. Write it like a dense short ad: two or three lines share one scene of about 4 to 6 seconds. A short line is about 2 seconds. Do not give one line its own 6, 7, or 8 second scene. Open on the problem, then the middle, then the turn, with enough of those short beats to cover the requested runtime. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not leave a quiet stretch where nothing happens.";
   const known = castBrief(project);
   const pages = productPageBrief(project)
-    ? "A product page is included. Use it for how the product is used and how it should look. When the product is on screen, show that use and that look. Do not invent a different container, dose, or ritual than the page describes. Keep the user's spoken lines."
+    ? "A product page is included. Use it for how the product is used and how it should look, only in a scene the user already puts the product in. Do not invent a different container, dose, or ritual than the page describes. Do not add a product shot, and do not end a part on someone holding the product up. Keep the user's spoken lines."
     : "";
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
