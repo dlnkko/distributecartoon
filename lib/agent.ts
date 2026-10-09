@@ -629,14 +629,16 @@ function offScreenCue(note: string) {
 
 function timestampRows(script: string): StoryBlock[] {
   const rows: StoryBlock[] = [];
+  const rowRe = /^(?:(?:scene|escena)\s+)?(?:(\d+)\s*[.)]?\s+)?(\d{1,2}:\d{2})\s*(?:to|–|—|-|a)\s*(\d{1,2}:\d{2})\s+([\s\S]+)$/i;
   for (const line of script.split(/\n/)) {
-    const match = line.trim().match(/^(\d+)\s+(\d{1,2}:\d{2})\s*(?:to|–|—|-|a)\s*(\d{1,2}:\d{2})\s+([\s\S]+)$/i);
+    const match = line.trim().match(rowRe);
     if (!match) continue;
     const start = clockSeconds(match[2]);
     const end = clockSeconds(match[3]);
     if (start == null || end == null || end <= start || end - start > 120) continue;
+    const number = match[1] || String(rows.length + 1);
     rows.push({
-      label: `${match[1]} ${match[2]}-${match[3]}`,
+      label: `${number} ${match[2]}-${match[3]}`,
       text: match[4].trim(),
       seconds: end - start,
       headingSeconds: end - start,
