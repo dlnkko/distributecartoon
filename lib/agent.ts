@@ -11,7 +11,7 @@ import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStory
 import { productPageBrief } from "./product-page";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
-import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue, type SpeechMode } from "./types";
+import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
 
 const SYSTEM_PROMPT = `You are the director-agent of distribute.to, a studio that turns scripts into Pixar, claymation, or realistic live-action shorts.
 
@@ -422,7 +422,6 @@ function projectSnapshot(project: Project) {
     aspectRatio: project.aspectRatio,
     scriptName: project.scriptName,
     scriptChars: project.scriptText.length,
-    speechMode: project.speechMode || null,
     pendingQuestions: project.pendingQuestions,
     characters: project.characters.map((character) => ({
       name: character.name,
@@ -751,9 +750,6 @@ function applyUserStoryboard(project: Project) {
   if (rows.length >= 2) {
     const scenes = rows.map((block) => {
       const scene = sceneFromBlock(block);
-      if (project.speechMode === "dialogue") {
-        scene.dialogue = (scene.dialogue || []).filter((line) => line.voiceover || !NARRATOR_NAME.test(line.speaker));
-      }
       return scene;
     });
     castOnScreen(scenes);
@@ -787,9 +783,7 @@ function applyUserStoryboard(project: Project) {
         scene.summary = action;
         scene.shots = [];
       }
-      const parsed = linesFromBlock(block.text).filter(
-        (line) => project.speechMode !== "dialogue" || line.voiceover || !NARRATOR_NAME.test(line.speaker),
-      );
+      const parsed = linesFromBlock(block.text);
       scene.dialogue = card ? [] : parsed;
       if (card) {
         scene.characterNames = [];
@@ -806,9 +800,6 @@ function applyUserStoryboard(project: Project) {
       next.push(scene);
     } else {
       const created = sceneFromBlock(block);
-      if (project.speechMode === "dialogue") {
-        created.dialogue = created.dialogue.filter((line) => !NARRATOR_NAME.test(line.speaker));
-      }
       if (block.headingSeconds) created.estimatedSeconds = Math.min(30, Math.max(2, block.headingSeconds));
       next.push(created);
     }
@@ -1137,7 +1128,6 @@ async function executeTool(
       if (withStory.length) {
         project.scenes = withStory.map((scene, index) => ({ ...scene, index: index + 1 }));
       }
-      applySpeechMode(project);
       applyUserStoryboard(project);
       splitPackedBeats(project);
       splitLongExchanges(project);
@@ -1295,57 +1285,6 @@ function asRecord(value: string) {
 
 const NARRATOR_NAME = /^(the\s+)?(narrator|narradora|voice[- ]?over|voiceover|vo|off[- ]?screen|voz en off)$/i;
 
-function applySpeechMode(project: Project) {
-  if (project.song || !project.speechMode) return;
-  if (project.speechMode === "voiceover") {
-    for (const scene of project.scenes) {
-      scene.dialogue = (scene.dialogue || [])
-        .filter((line) => line.line?.trim())
-        .map((line) => ({ speaker: "Narrator", line: line.line.trim() }));
-    }
-    const narrator = project.characters.find((character) => NARRATOR_NAME.test(character.name.trim()));
-    if (narrator) {
-      narrator.name = "Narrator";
-      narrator.slug = "narrator";
-      narrator.isExtra = true;
-      if (!narrator.description.trim()) narrator.description = "Off-screen voice-over. Never on screen.";
-    } else if (project.scenes.some((scene) => scene.dialogue.length)) {
-      project.characters.push({
-        id: createId("char"),
-        name: "Narrator",
-        slug: "narrator",
-        description: "Off-screen voice-over. Never on screen.",
-        voiceNotes: "a warm, close, even storyteller voice",
-        isExtra: true,
-        lookConfirmed: false,
-        clips: [],
-      });
-    }
-    return;
-  }
-  if (project.speechMode === "dialogue") {
-    for (const scene of project.scenes) {
-      scene.dialogue = (scene.dialogue || []).filter(
-        (line) => line.line?.trim() && (Boolean(line.voiceover && !NARRATOR_NAME.test(line.speaker.trim())) || !NARRATOR_NAME.test(line.speaker.trim())),
-      );
-    }
-    project.characters = project.characters.filter((character) => !NARRATOR_NAME.test(character.name.trim()));
-  }
-}
-
-function speechPlan(mode: SpeechMode | undefined) {
-  if (mode === "voiceover") {
-    return "SPEECH MODE voiceover. This mode overrides every other speech rule. Write only off-screen narrator voice-over over the actions in each summary. Every dialogue line uses speaker Narrator and describes what is happening. The picture keeps moving while the line plays. Do not leave a silent face for more than 2 or 3 seconds. If the shot is longer than the line, add another narrator line that tells the next action. Do not write a conversation. Do not give a line to an on-screen character. No lipsync. Mouths stay closed. Scene 1 opens with the first narrator line.";
-  }
-  if (mode === "both") {
-    return "SPEECH MODE both. This mode overrides every other speech rule. Use off-screen narrator voice-over and on-screen dialogue in the same film. Narrator lines describe the action, stay off-screen, and are never lipsync. A line written VO (Name) is that person's voice over the picture: mouth closed, no lipsync, and the words stay exactly as written. Dialogue lines are a real exchange between the characters in the shot, and each speaker looks at the other person while the line is coming out. Do not play a silent stare before or after a line. No shot stays quiet, with nothing happening, for more than 2 or 3 seconds. If a beat has no line in the script and would only be a frozen look, add one short line. If the script already has the line, copy it. Do not paraphrase it and do not add a second line on top of it. A parenthetical such as (beat) or (quiet) is not spoken. Scene 1 opens with a spoken line.";
-  }
-  if (mode === "dialogue") {
-    return "SPEECH MODE dialogue. This mode overrides every other speech rule. If the user wrote numbered rows with a clock range, such as 0:00-0:03, each row is one scene. Keep every line in that row, in their words, and set estimated_seconds to that range. Do not split the row and do not change its length. O.S. and VO stay off-screen. If the user gave a concept with no clock ranges, write a dense short: two or three lines share one scene of about 4 to 6 seconds, a short line is about 2 seconds, and one line never gets its own 6, 7, or 8 second scene. Write enough of those beats to cover the requested runtime. A pause or a character alone can last 2 or 3 seconds, and the body still does something. Do not leave people looking at each other with nothing happening. Keep every line the user wrote, said by the person who says it. Do not shrink an exchange to a single line and do not replace it with a new line. Copy the user's words. A parenthetical such as (beat), (quiet), or (small smile) is a direction, not speech. A line written VO or O.S. is voice over the picture: mouth closed, no lipsync. Add a short line only when that beat has no speech in the script and would otherwise be a frozen look. Do not use an unnamed narrator. Scene 1 opens with the first line.";
-  }
-  return "";
-}
-
 function planTask(project: Project) {
   const styleLine = `Style: ${project.style}. Aspect: ${project.aspectRatio}. Call extract_storyboard once, then stop.`;
   if (project.song) {
@@ -1376,13 +1315,10 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const pages = productPageBrief(project)
     ? "A product page is included. Use it for how the product is used and how it should look. When the product is on screen, show that use and that look. Do not invent a different container, dose, or ritual than the page describes. Keep the user's spoken lines."
     : "";
-  const speech = speechPlan(project.speechMode);
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
-    : project.speechMode === "dialogue"
-      ? "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene. Add a short line only when the script left that beat with no speech."
-      : "Most scenes are 2 or 3 seconds. A camera move is still usually 2 or 3. Use more than 3 only when the spoken line does not fit. Two short lines can share one scene. No extra silence after the last word, and no quiet look longer than 2 or 3 seconds. Add a line when a beat would otherwise be empty. Do not default to 6, 7, or 8.";
-  return `${speech} ${opening} ${known} ${pages} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+    : "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. A line marked VO or O.S. stays off-screen, mouth closed. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
+  return `${opening} ${known} ${pages} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 
 export async function runAgent(options: {
