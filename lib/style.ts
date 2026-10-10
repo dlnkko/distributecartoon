@@ -1126,7 +1126,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       refs.push(
         project.song
           ? `${tag} is a reference only: the last 5 seconds of the previous part, picture and the music already playing. Do not generate those 5 seconds again. This video is the next slice and starts on the moment after that ending. Use the reference so the cut is not abrupt, matching clothes, anything in their hands, and the music at that ending. If this part opens in a new place, bring those details into the new place.`
-          : `${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. Keep the camera cinematic.`,
+          : `${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. A product image named in a scene of this part still appears in that scene, even when ${tag} does not show it. Keep the camera cinematic.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
@@ -1693,8 +1693,9 @@ function imageKind(images: PromptRef[], tag: string) {
   return images[index]?.kind || "";
 }
 
-function seenPhrase(tag: string, kind: string, look: string) {
-  if (kind === "product") return `as seen in ${tag}, in ${look} style`;
+function seenPhrase(tag: string, kind: string, _look: string) {
+  if (kind === "product") return `The package on screen is ${tag}`;
+  if (kind === "logo") return `The logo on screen is ${tag}`;
   return `as seen in ${tag}`;
 }
 
@@ -1704,7 +1705,9 @@ const PLACE_SPOT =
 function markAsSeen(text: string, tags: string[], images: PromptRef[], look: string) {
   let next = text;
   for (const tag of tags) {
-    const phrase = seenPhrase(tag, imageKind(images, tag), look);
+    const kind = imageKind(images, tag);
+    if (kind === "product" || kind === "logo") continue;
+    const phrase = seenPhrase(tag, kind, look);
     next = next.replace(new RegExp(`\\b(?:a|an|the|at|in|inside|within|same)\\s+${escapeRegExp(tag)}\\b`, "gi"), phrase);
     next = next.replace(new RegExp(`(?<!as seen in )${escapeRegExp(tag)}\\b`, "g"), phrase);
   }
@@ -1737,7 +1740,12 @@ function ensureAsSeen(text: string, tags: string[], images: PromptRef[], look: s
       next = spot.text;
       if (spot.attached) continue;
     }
-    if (new RegExp(`as seen in ${escapeRegExp(tag)}\\b`, "i").test(next)) continue;
+    const kind = imageKind(images, tag);
+    const already =
+      kind === "product" || kind === "logo"
+        ? new RegExp(escapeRegExp(tag), "i").test(next)
+        : new RegExp(`as seen in ${escapeRegExp(tag)}\\b`, "i").test(next);
+    if (already) continue;
     missing.push(tag);
   }
   if (!missing.length) return next;
@@ -1889,7 +1897,15 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const pictured = scrubDirections(
       ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look),
     );
-    const visual = song ? pictured.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : pictured;
+    const packageTag = images.map((item, imageIndex) => (item.kind === "product" ? `@Image${imageIndex + 1}` : "")).find(Boolean) || "";
+    const mentionsPackage = /\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packshot|end\s*card|the product)\b/i.test(
+      `${scene?.summary || ""} ${scene?.title || ""} ${pictured}`,
+    );
+    const withPackage =
+      packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
+        ? `${pictured.replace(/[. ]+$/, "")}. The package on screen is ${packageTag}.`
+        : pictured;
+    const visual = song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage;
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
@@ -1951,10 +1967,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   )
     .filter(Boolean)
     .join(" ");
-  const lastScene = scenes[scenes.length - 1];
-  const endCard = /^\s*(?:end\s*card|tarjeta\s+final)\b/i.test(`${lastScene?.title || ""} ${lastScene?.summary || ""}`);
-  const carryOn = endCard
-    ? ""
+  const writtenCard = scenes.some((scene) => /\b(?:end\s*card|packshot|pack shot|tarjeta\s+final)\b/i.test(`${scene?.title || ""} ${scene?.summary || ""}`));
+  const carryOn = writtenCard
+    ? "Play the end card scenes already written. The package in those scenes is the product image named there. Do not add another frame after the last scene."
     : "The last frame stays inside the last scene, still moving. Do not add an end card, a pack shot, a logo sting, a freeze, or a beauty frame of anyone holding the product. Do not turn the product toward the lens. The next part continues from this action.";
   return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."} ${carryOn}`
     .replace(/[ \t]{2,}/g, " ")

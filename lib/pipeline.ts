@@ -1235,6 +1235,13 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
     const asset = project.references.find(
       (item) => item.kind === entry.kind && item.label.trim().toLowerCase() === entry.name.trim().toLowerCase(),
     );
+    const blob = sceneIndexes
+      .map((index) => {
+        const scene = project.scenes.find((item) => item.index === index);
+        return `${scene?.title || ""} ${scene?.summary || ""}`;
+      })
+      .join(" ");
+    if (/\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packshot|end\s*card|the product|producto)\b/i.test(blob)) continue;
     if (asset && scriptCallsForReference(project, asset, sceneIndexes, false)) continue;
     entries.splice(index, 1);
   }
