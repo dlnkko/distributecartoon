@@ -648,6 +648,21 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       delete batch.error;
       await saveSoon(project);
     }
+    if (batch.faceRefsDropped && /last 5 seconds/i.test(batch.videoPrompt || "")) {
+      batch.promptReady = false;
+      delete batch.nextRetryAt;
+      delete batch.error;
+    }
+    if (
+      batch.faceRefsDropped &&
+      blockedByRealFace(batch.error || "") &&
+      (batch.attempts || 0) >= 4 &&
+      !/last 5 seconds/i.test(batch.videoPrompt || "")
+    ) {
+      failProduce(project, "This part was blocked because a reference looks like a real person.");
+      await saveSoon(project);
+      return { ready: false };
+    }
     if (batch.nextRetryAt && Date.now() < new Date(batch.nextRetryAt).getTime()) return { ready: false };
     if (heavy) return { ready: false };
     heavy = true;
@@ -1224,7 +1239,7 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
   if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     return { imageEntries, videoEntries: [] as PromptRef[] };
   }
-  const tail = await previousTailRef(project, batch, abortSignal);
+  const tail = batch.faceRefsDropped ? undefined : await previousTailRef(project, batch, abortSignal);
   return { imageEntries, videoEntries: tail ? [tail] : [] };
 }
 
@@ -1252,7 +1267,7 @@ async function collectLongformReferences(project: Project, batch: Batch, abortSi
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
-  const tail = await previousTailRef(project, batch, abortSignal);
+  const tail = batch.faceRefsDropped ? undefined : await previousTailRef(project, batch, abortSignal);
   const reserve = (narrator ? 1 : 0) + (tail ? 1 : 0);
   const characters = videoEntries.slice(0, Math.max(0, MAX_ANCHOR_VIDEOS - reserve));
   return {
