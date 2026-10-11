@@ -492,6 +492,12 @@ export function StudioApp() {
           markGenerating(latest.id, false);
           if (!projectAwaitingVideo(latest)) setStatus("");
         } else if (projectAwaitingVideo(latest) && !busy) setStatus("Generating your video…");
+        setGeneratingIds((current) =>
+          current.filter((id) => {
+            const item = list.find((project) => project.id === id);
+            return Boolean(item && (projectIsGenerating(item) || projectAwaitingVideo(item)));
+          }),
+        );
       } catch {
         // Keep the last snapshot until the next poll.
       }
@@ -820,13 +826,19 @@ export function StudioApp() {
       }
     } catch (error) {
       if (mode === "produce") {
-        const here = projectRef.current?.id === started.id ? projectRef.current : null;
-        if (here && projectDeliveredSrc(here)) {
+        const recovered = await loadProjectById(started.id, new AbortController().signal).catch(() => null);
+        if (recovered) adopt(recovered);
+        const job = recovered || (projectRef.current?.id === started.id ? projectRef.current : null);
+        if (job && projectDeliveredSrc(job)) {
           markGenerating(started.id, false);
           note("");
-        } else {
+        } else if (job && (projectIsGenerating(job) || projectAwaitingVideo(job))) {
           markGenerating(started.id, true);
           note("Generating your video…");
+        } else {
+          markGenerating(started.id, false);
+          if (projectRef.current?.id === started.id) setPane("studio");
+          note(error instanceof Error && error.name !== "AbortError" ? error.message : "Couldn't start that.");
         }
       } else if (projectRef.current?.id === started.id) {
         markGenerating(started.id, false);
@@ -1758,11 +1770,14 @@ export function StudioApp() {
           {step === "produce" ? (
             <ProduceStep
               project={project}
-              busy={working}
+              busy={working || generatingIds.includes(project.id)}
               status={status}
+              creditCost={generationCreditCost(project)}
+              credits={credits}
               notifyReady={notifyReady}
               notifyHint={notifyHint}
               onNotifyMe={() => void enableReadyNotify()}
+              onGenerate={() => void beginProduce()}
               onEditScenes={() => void patchProject({ workflowStep: "review" })}
               onExpand={(item) => setExpanded(item)}
             />
@@ -2855,31 +2870,38 @@ function ProduceStep({
   project,
   busy,
   status,
+  creditCost,
+  credits,
   notifyReady,
   notifyHint,
   onNotifyMe,
+  onGenerate,
   onEditScenes,
   onExpand,
 }: {
   project: Project;
   busy: boolean;
   status: string;
+  creditCost: number;
+  credits: number;
   notifyReady: boolean;
   notifyHint: string;
   onNotifyMe: () => void;
+  onGenerate: () => void;
   onEditScenes: () => void;
   onExpand: (item: { src: string; poster?: string; label?: string; downloadName?: string }) => void;
 }) {
   const delivered = projectDeliveredSrc(project);
-  const awaiting = projectAwaitingVideo(project);
+  const awaiting = projectAwaitingVideo(project) || projectIsGenerating(project);
   const working = busy || awaiting;
   const done = Boolean(delivered) && !working;
+  const affordable = credits >= creditCost;
   const duration =
     project.targetDurationSeconds ||
     project.batches.reduce((sum, batch) => sum + (batch.duration || 0), 0) ||
     15;
   const poster = project.batches.find((batch) => batch.framePublicPath)?.framePublicPath;
-  const heading = done ? "Your video" : "Generating your video";
+  const heading = done ? "Your video" : working ? "Generating your video" : "Generate your video";
 
   return (
     <div className="flex flex-1 flex-col gap-5">
@@ -2890,7 +2912,9 @@ function ProduceStep({
             <p className="mt-1 text-sm text-[var(--muted)]">
               You can leave this page, or lose connection. The video still finishes and shows up in Your videos.
             </p>
-          ) : null}
+          ) : done ? null : (
+            <p className="mt-1 text-sm text-[var(--muted)]">The cast is approved. Generate when you are ready.</p>
+          )}
         </div>
         {working ? (
           <div className="flex shrink-0 flex-col items-end gap-2 sm:flex-row">
@@ -2918,7 +2942,8 @@ function ProduceStep({
           duration={duration}
           src={delivered ? assetSrc(delivered) : undefined}
           poster={poster ? assetSrc(poster) : undefined}
-          waiting={!delivered}
+          waiting={working && !delivered}
+          status={working ? undefined : "Ready to generate"}
           downloadName={videoDownloadName(project.title)}
           onExpand={
             delivered
@@ -2942,6 +2967,19 @@ function ProduceStep({
         >
           Edit scenes
         </button>
+      ) : null}
+      {!done && !working ? (
+        <div className="flex flex-col items-start gap-1">
+          <button
+            type="button"
+            disabled={!affordable}
+            onClick={onGenerate}
+            className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40 sm:w-auto"
+          >
+            {`Generate - ${creditCost} credits`}
+          </button>
+          {affordable ? null : <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p>}
+        </div>
       ) : null}
     </div>
   );
@@ -3460,7 +3498,7 @@ function VideoStage({
                   <div className="absolute inset-0 grid place-items-center px-4">
                     <p className="status-breathe text-center text-sm font-medium tracking-wide text-white">
                       <span className="status-dots">
-                        {waiting ? "Generating your video" : "Waiting"}
+                        {waiting ? "Generating your video" : status || "Waiting"}
                       </span>
                     </p>
                   </div>
@@ -3468,10 +3506,10 @@ function VideoStage({
               </>
             ) : (
               <div className="relative grid h-full place-items-center overflow-hidden">
-                <div className="shimmer absolute inset-0 opacity-40" />
-                <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
-                <p className="status-breathe relative px-3 text-center text-sm text-white/80">
-                  <span className="status-dots">{waiting ? "Generating your video" : "Waiting"}</span>
+                {waiting ? <div className="shimmer absolute inset-0 opacity-40" /> : null}
+                {waiting ? <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" /> : null}
+                <p className={`${waiting ? "status-breathe " : ""}relative px-3 text-center text-sm text-white/80`}>
+                  <span className={waiting ? "status-dots" : undefined}>{waiting ? "Generating your video" : status || "Waiting"}</span>
                 </p>
               </div>
             )}
