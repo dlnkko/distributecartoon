@@ -6,7 +6,7 @@ import { type AgentMode, type AspectRatio, type Character, type Project, type Re
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
-import { formatPartPlan, packScenesIntoParts, sceneHasStory } from "@/lib/timing";
+import { formatPartPlan, packScenesIntoParts, sceneHasStory, spillLockedParts, userTimedSeconds } from "@/lib/timing";
 import { ensureSceneShots } from "@/lib/shots";
 import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
@@ -2456,9 +2456,17 @@ function ReviewStep({
     onChange(scenes.filter((_, i) => i !== index).map((scene, i) => ({ ...scene, index: i + 1 })));
   }
 
-  const parts = packScenesIntoParts(
-    scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-    targetSeconds,
+  const timed = scenes.map((scene) => ({
+    index: scene.index,
+    estimatedSeconds: scene.estimatedSeconds || 0,
+    lock: userTimedSeconds(scene.title, scene.estimatedSeconds || 0),
+  }));
+  const parts = spillLockedParts(
+    timed,
+    packScenesIntoParts(
+      timed.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds })),
+      targetSeconds,
+    ),
   );
   const canContinue = scenes.some(sceneHasStory);
   const affordable = !directGenerate || credits >= creditCost;

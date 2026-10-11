@@ -179,6 +179,44 @@ export function packScenesIntoParts(
     .filter((part) => part.sceneIndexes.length);
 }
 
+// A timed row cannot shrink, so a 30s bucket that cannot hold the next clock opens another part.
+export function spillLockedParts(
+  scenes: Array<{ index: number; estimatedSeconds: number; lock?: number }>,
+  parts: SeedancePartPlan[],
+): SeedancePartPlan[] {
+  const meta = new Map(scenes.map((scene) => [scene.index, scene]));
+  const next: SeedancePartPlan[] = [];
+  for (const part of parts) {
+    const indexes = part.sceneIndexes;
+    const sum = indexes.reduce((total, index) => total + (meta.get(index)?.estimatedSeconds || 0), 0);
+    const locked = indexes.some((index) => (meta.get(index)?.lock || 0) > 0);
+    if (!locked || sum <= part.duration + 0.05) {
+      next.push(part);
+      continue;
+    }
+    let bucket: number[] = [];
+    let used = 0;
+    const flush = () => {
+      if (!bucket.length) return;
+      const bucketSum = bucket.reduce((total, index) => total + (meta.get(index)?.estimatedSeconds || 0), 0);
+      next.push({
+        duration: Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(bucketSum))),
+        sceneIndexes: bucket,
+      });
+      bucket = [];
+      used = 0;
+    };
+    for (const index of indexes) {
+      const span = meta.get(index)?.estimatedSeconds || 0;
+      if (bucket.length && used + span > SEEDANCE_MAX_SECONDS + 0.05) flush();
+      bucket.push(index);
+      used += span;
+    }
+    flush();
+  }
+  return next;
+}
+
 // Fit every part to its own length. Spoken shots absorb extra time; a silent shot stays short.
 // A locked shot (an end card the user timed) does not grow or shrink.
 export function balancePartSceneSeconds(

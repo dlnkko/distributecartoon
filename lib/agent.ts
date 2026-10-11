@@ -5,7 +5,7 @@ import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
-import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { productPageBrief } from "./product-page";
@@ -181,7 +181,7 @@ const tools: OpenAI.Responses.Tool[] = [
               },
               dialogue: {
                 type: "array",
-                description: "Every spoken line in this scene. If the user timed the row, include every line in that row. Otherwise about two or three lines share the scene. Empty only when nobody speaks. Scene 1 must include the opening hook so audio starts at 0s. Never repeat the same line twice. Never drop a line the user wrote.",
+                description: "Every spoken line in this scene. If the user timed the row, copy each VO or spoken line onto the clock where they wrote it, the whole quote, and leave a clock with only a sound note empty. Otherwise about two or three lines share the scene. Never repeat the same line twice. Never drop a line the user wrote. Never move a later VO onto an earlier scene.",
                 items: {
                   type: "object",
                   additionalProperties: false,
@@ -629,21 +629,42 @@ function offScreenCue(note: string) {
 
 function timestampRows(script: string): StoryBlock[] {
   const rows: StoryBlock[] = [];
-  const rowRe = /^(?:(?:scene|escena)\s+)?(?:(\d+)\s*[.)]?\s+)?(\d{1,2}:\d{2})\s*(?:to|–|—|-|a)\s*(\d{1,2}:\d{2})\s+([\s\S]+)$/i;
-  for (const line of script.split(/\n/)) {
-    const match = line.trim().match(rowRe);
-    if (!match) continue;
-    const start = clockSeconds(match[2]);
-    const end = clockSeconds(match[3]);
-    if (start == null || end == null || end <= start || end - start > 120) continue;
-    const number = match[1] || String(rows.length + 1);
+  const headRe = /^(?:(?:scene|escena)\s+)?(?:(\d+)\s*[.)]?\s+)?(\d{1,2}:\d{2})\s*(?:to|–|—|-|a)\s*(\d{1,2}:\d{2})(?:\s+(.*))?$/i;
+  let current: { number: string; start: string; end: string; seconds: number; text: string[] } | undefined;
+  const write = () => {
+    if (!current) return;
+    const text = current.text.join("\n").trim();
+    const row = current;
+    current = undefined;
+    if (!text) return;
     rows.push({
-      label: `${number} ${match[2]}-${match[3]}`,
-      text: match[4].trim(),
-      seconds: end - start,
-      headingSeconds: end - start,
+      label: `${row.number} ${row.start}-${row.end}`,
+      text,
+      seconds: row.seconds,
+      headingSeconds: row.seconds,
     });
+  };
+  for (const raw of script.split(/\n/)) {
+    const line = raw.trim();
+    const match = line.match(headRe);
+    if (match) {
+      const start = clockSeconds(match[2]);
+      const end = clockSeconds(match[3]);
+      if (start != null && end != null && end > start && end - start <= 120) {
+        write();
+        current = {
+          number: match[1] || String(rows.length + 1),
+          start: match[2],
+          end: match[3],
+          seconds: end - start,
+          text: match[4]?.trim() ? [match[4].trim()] : [],
+        };
+        continue;
+      }
+    }
+    if (current) current.text.push(raw);
   }
+  write();
   return rows;
 }
 
@@ -712,12 +733,19 @@ function isCardBlock(block: StoryBlock) {
   return isCardLabel(block.label) || /^\s*(?:end\s*card|tarjeta\s+final)\b/i.test(block.text);
 }
 
+function sceneDialogue(block: StoryBlock) {
+  const dialogue = linesFromBlock(block.text);
+  const kept = isCardBlock(block) ? dialogue.filter((line) => line.voiceover) : dialogue;
+  return kept.map(({ speaker, line, voiceover }) => ({ speaker, line, ...(voiceover ? { voiceover: true } : {}) }));
+}
+
 function sceneFromBlock(block: StoryBlock): Scene {
   const action = actionText(block);
   const dialogue = linesFromBlock(block.text);
   const place = `${block.label} ${block.text}`.match(/\b(?:INT|EXT)\.?\s+([^.\n]+)/i)?.[1]?.trim() || "";
   const card = isCardBlock(block);
-  const seconds = Math.min(30, Math.max(2, block.headingSeconds || estimateSceneSeconds({ summary: action, dialogue: card ? [] : dialogue })));
+  const spoken = sceneDialogue(block);
+  const seconds = Math.min(30, Math.max(2, block.headingSeconds || estimateSceneSeconds({ summary: action, dialogue: spoken })));
   return {
     id: createId("scene"),
     index: 0,
@@ -728,7 +756,7 @@ function sceneFromBlock(block: StoryBlock): Scene {
       ? []
       : [...new Set(dialogue.filter((line) => !line.offscreen).map((line) => line.speaker).filter((speaker) => speaker && !NARRATOR_NAME.test(speaker)))],
     extraNames: [],
-    dialogue: card ? [] : dialogue.map(({ speaker, line, voiceover }) => ({ speaker, line, ...(voiceover ? { voiceover: true } : {}) })),
+    dialogue: spoken,
     estimatedSeconds: seconds,
     camera: "",
     shots: [],
@@ -784,7 +812,7 @@ function applyUserStoryboard(project: Project) {
         scene.shots = [];
       }
       const parsed = linesFromBlock(block.text);
-      scene.dialogue = card ? [] : parsed;
+      scene.dialogue = card ? parsed.filter((line) => line.voiceover) : parsed;
       if (card) {
         scene.characterNames = [];
         scene.extraNames = [];
@@ -854,8 +882,8 @@ function longParts(summary: string) {
     .filter((part) => part.length > 24 && !/^the attached product\b/i.test(part));
 }
 
-function lineBuckets(lines: Array<{ speaker: string; line: string }>, count: number) {
-  const buckets = Array.from({ length: count }, () => [] as Array<{ speaker: string; line: string }>);
+function lineBuckets(lines: Array<{ speaker: string; line: string; voiceover?: boolean }>, count: number) {
+  const buckets = Array.from({ length: count }, () => [] as Array<{ speaker: string; line: string; voiceover?: boolean }>);
   if (!lines.length) return buckets;
   if (lines.length === 1) {
     buckets[0].push(lines[0]);
@@ -899,7 +927,7 @@ function splitPackedBeats(project: Project) {
         ...scene,
         id: index === 0 ? scene.id : createId("scene"),
         summary: /[.!?]$/.test(part) ? part : `${part}.`,
-        dialogue: card ? [] : dialogue,
+        dialogue: card ? dialogue.filter((line) => line.voiceover) : dialogue,
         location: card ? ownPlace || scene.location : ownPlace || (montage ? "" : scene.location),
         characterNames: card ? [] : mentioned.length ? mentioned : scene.characterNames,
         camera,
@@ -1014,10 +1042,13 @@ function scaleScenesToTarget(project: Project) {
     const next = whole.get(scene.index);
     if (next) scene.estimatedSeconds = next;
   }
-  const parts = packScenesIntoParts(
-    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-    project.targetDurationSeconds,
-    project.song?.clips.map((clip) => clip.durationSeconds),
+  const parts = spillLockedParts(
+    project.scenes.map(durationOf),
+    packScenesIntoParts(
+      project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+      project.targetDurationSeconds,
+      project.song?.clips.map((clip) => clip.durationSeconds),
+    ),
   );
   const capped = balancePartSceneSeconds(
     project.scenes.map(durationOf),
@@ -1307,7 +1338,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const ordered = scriptIsStoryboard(project.scriptText);
   const timedRows = timestampRows(project.scriptText).length >= 2;
   const opening = timedRows
-    ? "The user wrote a timed script. Each numbered row with a clock range is exactly one scene. Keep the rows in order. Copy the action and every spoken line in that row, in their words. A row with two or three lines stays one scene. estimated_seconds is the clock range, for example 0:00-0:03 is 3 seconds. Do not split a row. Do not change its length. Do not drop a line. O.S. stays off-screen. VO is voice-over with the mouth closed. An end card is the last row, objects and the written words only, no people."
+    ? "The user wrote a timed script. A clock range is one scene, whether the action sits on that same line or on the lines under it until the next clock. Keep that order. Copy the action and every spoken line under that clock, in their words, including a VO quote in full. Do not move a phrase from a later VO onto an earlier scene. A sound note with no VO and no quotes is not a spoken line, so that scene's dialogue stays empty. estimated_seconds is the clock range, for example 0:00-0:04 is 4 seconds. Do not split a row. Do not change its length. Do not drop a line. O.S. stays off-screen. VO is voice-over with the mouth closed, speaker Narrator. An end card keeps its VO and shows objects and the written words only, no people."
     : ordered
     ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not invent a substitute line. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. Each scene lasts only as long as its own line, or about 3 or 4 seconds when nobody speaks. If a heading itself says how many seconds that one card lasts, keep that. An end card shows only the objects and the words they wrote. No people in the end card."
     : "The user gave a concept, not a timed scene list. Keep the cause order they told, name each person once, and reuse that name. Write it like a dense short ad: two or three lines share one scene of about 4 to 6 seconds. A short line is about 2 seconds. Do not give one line its own 6, 7, or 8 second scene. Open on the problem, then the middle, then the turn, with enough of those short beats to cover the requested runtime. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not leave a quiet stretch where nothing happens.";

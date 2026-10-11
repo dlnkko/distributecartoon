@@ -12,7 +12,7 @@ import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, scriptCallsForReference } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1348,20 +1348,21 @@ export function planSeedanceBatches(project: Project) {
     : clampTotalDuration(project.targetDurationSeconds || fallback);
   project.targetDurationSeconds = requested;
   const target = requested;
-  const parts = packScenesIntoParts(
-    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-    target,
-    project.song?.clips.map((clip) => clip.durationSeconds),
+  const timed = project.scenes.map((scene) => ({
+    index: scene.index,
+    estimatedSeconds: scene.estimatedSeconds || 0,
+    floor: sceneSpeechFloor(scene),
+    lock: userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined),
+  }));
+  const parts = spillLockedParts(
+    timed,
+    packScenesIntoParts(
+      project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+      target,
+      project.song?.clips.map((clip) => clip.durationSeconds),
+    ),
   );
-  const capped = balancePartSceneSeconds(
-    project.scenes.map((scene) => ({
-      index: scene.index,
-      estimatedSeconds: scene.estimatedSeconds || 0,
-      floor: sceneSpeechFloor(scene),
-      lock: userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined),
-    })),
-    parts,
-  );
+  const capped = balancePartSceneSeconds(timed, parts);
   project.scenes.forEach((scene) => {
     const next = capped.get(scene.index);
     if (next) scene.estimatedSeconds = next;
