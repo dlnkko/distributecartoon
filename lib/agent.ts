@@ -43,7 +43,7 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - Cada cambio de escena: SCENE 1 (5s). [English camera names only]. action. The man says: "line". CUT. SCENE 2 (4s). ...
 - Respeta estimated_seconds: SCENE N (Xs).
 - El diálogo o voiceover EMPIEZA en el segundo 0. SCENE 1 abre con la primera línea hablada, sin intro muda.
-- Voz, una sola vez en el cierre (el sistema lo escribe): diálogo on-screen = lipsync con la voz realista de ESE personaje. Si el speaker es Narrator, es voz en off: nadie mueve la boca y ningún personaje la dice. Nunca pases una línea de Narrator a un personaje en cuadro. No repitas esta regla dentro de cada SCENE.
+- Voz, una sola vez en el cierre (el sistema lo escribe): diálogo on-screen = lipsync con la voz realista de ESE personaje. Si el speaker es Narrator, es voz en off y nadie le hace lipsync. El cuerpo sí hace lo que esa línea dice en esa misma escena: si la línea dice que la boca se abre, la boca se abre. No muestres la pose contraria. Nunca pases una línea de Narrator a un personaje en cuadro. No repitas esta regla dentro de cada SCENE.
 - Dentro de cada escena, nombra el producto/logo/locación con @ImageN cuando aparece en ESA escena, igual que los personajes. Nunca lo dejes solo al final del prompt.
 - Cámara: varía el plano y el ángulo en CADA escena. Usa SOLO nombres en inglés: extreme wide shot, wide shot, full shot, medium full shot, medium shot, medium close-up, close-up, extreme close-up, insert, two-shot, over the shoulder, POV, eye level, low angle, high angle, bird's eye, worm's eye, dutch angle, pan, tilt, dolly, tracking shot, steadicam, crane, zoom, handheld, dolly zoom. Nunca nombres en español.
 - Planos: nunca inventes un segundo cuerpo del mismo personaje. Over-the-shoulder = hombro de A, cara de B, A ≠ B. Si solo hay un personaje en cuadro, no uses OTS ni two-shot. Estas reglas van en el cierre del prompt UNA vez, no repetidas en cada escena. OTS sí puede llevar su línea de cámara solo en ESA escena.
@@ -53,7 +53,7 @@ Reglas de prompt Seedance 2.5 (obligatorias):
 - Quién está en cuadro: en character_names solo los principals de ESA escena; en extra_names secundarios visibles. El sistema escribe una frase breve: "Only Luna and Milo participate in this scene." o "Only the dogs, cats and Luna participate in this scene."
 - Time-lapse / varias acciones: NUNCA bullets y NUNCA varios beats dentro de una sola escena. Cada beat es su propia escena, con su propia cámara y sus propios segundos. Un montage de tres lugares son tres escenas. No escribas "CUT to" dentro del summary.
 - El video_prompt va 100% en inglés, salvo las comillas del diálogo si el guion está en otro idioma. Nombres cortos en inglés (Luna, Milo, the man). Nunca "Hombre de 40 años".
-- Cada línea de diálogo una sola vez. No repeated lines. Cierra CADA SCENE con "[NO BGM]". Nunca soundtrack ni BGM. Si un producto adjunto sale en la escena, una sola frase dice cómo: puesto en el personaje, en la mano, primer vistazo y aún no puesto, cerca, o lejos.
+- Cada línea de diálogo una sola vez, en una sola escena. No la repitas en esa escena ni en la siguiente. No repeated lines. Cierra CADA SCENE con "[NO BGM]". Nunca soundtrack ni BGM. Si un producto adjunto sale en la escena, una sola frase dice cómo: puesto en el personaje, en la mano, primer vistazo y aún no puesto, cerca, o lejos.
 - Super breve. Nada de "cinematic masterpiece". No repitas el párrafo de física/clones, oclusión, eyeline, escala ni props en cada SCENE; el sistema lo pone una sola vez al final y solo añade una frase concreta si esa escena lo pide.
 - Ejemplo Pixar:
   Pixar style throughout the whole video. SCENE 1 (6s). Eye level, medium shot. Luna lipsyncs: "Si te suelto, ¿vas a volver?" Luna holds a red balloon over the sunset city. [NO BGM] CUT. SCENE 2 (4s). Tracking shot, full shot. The balloon rises through clotheslines as she runs to the railing. [NO BGM]
@@ -181,7 +181,7 @@ const tools: OpenAI.Responses.Tool[] = [
               },
               dialogue: {
                 type: "array",
-                description: "Every spoken line in this scene. If the user timed the row, copy each VO or spoken line onto the clock where they wrote it, the whole quote, and leave a clock with only a sound note empty. Otherwise about two or three lines share the scene. Never repeat the same line twice. Never drop a line the user wrote. Never move a later VO onto an earlier scene.",
+                description: "Every spoken line in this scene. If the user timed the row, copy each VO or spoken line onto the clock where they wrote it, the whole quote, and leave a clock with only a sound note empty. Otherwise about two or three lines share the scene. Never repeat the same line twice, and never copy it into the next scene. Never drop a line the user wrote. Never move a later VO onto an earlier scene. The picture in that scene is the action the line describes.",
                 items: {
                   type: "object",
                   additionalProperties: false,
@@ -882,6 +882,26 @@ function longParts(summary: string) {
     .filter((part) => part.length > 24 && !/^the attached product\b/i.test(part));
 }
 
+function spokenKey(line: string) {
+  return line.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function dropRepeatedLines(project: Project) {
+  const seen = new Set<string>();
+  for (const scene of project.scenes) {
+    const local = new Set<string>();
+    scene.dialogue = (scene.dialogue || []).filter((line) => {
+      const narrated = Boolean(line.voiceover) || NARRATOR_NAME.test(line.speaker || "");
+      if (!narrated) return true;
+      const key = spokenKey(line.line || "");
+      if (!key || local.has(key) || seen.has(key)) return false;
+      local.add(key);
+      seen.add(key);
+      return true;
+    });
+  }
+}
+
 function lineBuckets(lines: Array<{ speaker: string; line: string; voiceover?: boolean }>, count: number) {
   const buckets = Array.from({ length: count }, () => [] as Array<{ speaker: string; line: string; voiceover?: boolean }>);
   if (!lines.length) return buckets;
@@ -1162,6 +1182,7 @@ async function executeTool(
       applyUserStoryboard(project);
       splitPackedBeats(project);
       splitLongExchanges(project);
+      dropRepeatedLines(project);
       refineStoryLeads(project);
       diversifyInventedCast(project);
       applyScriptLooks(project);
@@ -1338,7 +1359,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const ordered = scriptIsStoryboard(project.scriptText);
   const timedRows = timestampRows(project.scriptText).length >= 2;
   const opening = timedRows
-    ? "The user wrote a timed script. A clock range is one scene, whether the action sits on that same line or on the lines under it until the next clock. Keep that order. Copy the action and every spoken line under that clock, in their words, including a VO quote in full. Do not move a phrase from a later VO onto an earlier scene. A sound note with no VO and no quotes is not a spoken line, so that scene's dialogue stays empty. estimated_seconds is the clock range, for example 0:00-0:04 is 4 seconds. Do not split a row. Do not change its length. Do not drop a line. O.S. stays off-screen. VO is voice-over with the mouth closed, speaker Narrator. An end card keeps its VO and shows objects and the written words only, no people."
+    ? "The user wrote a timed script. A clock range is one scene, whether the action sits on that same line or on the lines under it until the next clock. Keep that order. Copy the action and every spoken line under that clock, in their words, including a VO quote in full. Do not move a phrase from a later VO onto an earlier scene. A sound note with no VO and no quotes is not a spoken line, so that scene's dialogue stays empty. estimated_seconds is the clock range, for example 0:00-0:04 is 4 seconds. Do not split a row. Do not change its length. Do not drop a line. O.S. stays off-screen. VO is Narrator, off-screen, not lipsynced. The picture in that scene is the action the line describes: if the line says the mouth opens, show the mouth opening, not a closed mouth. Say each line in one scene only. Do not copy it into the next scene. An end card keeps its VO and shows objects and the written words only, no people."
     : ordered
     ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not invent a substitute line. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. Each scene lasts only as long as its own line, or about 3 or 4 seconds when nobody speaks. If a heading itself says how many seconds that one card lasts, keep that. An end card shows only the objects and the words they wrote. No people in the end card."
     : "The user gave a concept, not a timed scene list. Keep the cause order they told, name each person once, and reuse that name. Write it like a dense short ad: two or three lines share one scene of about 4 to 6 seconds. A short line is about 2 seconds. Do not give one line its own 6, 7, or 8 second scene. Open on the problem, then the middle, then the turn, with enough of those short beats to cover the requested runtime. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not leave a quiet stretch where nothing happens.";
@@ -1348,7 +1369,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     : "";
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
-    : "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. A line marked VO or O.S. stays off-screen, mouth closed. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
+    : "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
   return `${opening} ${known} ${pages} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 

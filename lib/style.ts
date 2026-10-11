@@ -48,7 +48,7 @@ function globalLookPhrase(style: VisualStyle) {
 }
 
 export function videoAudioLead() {
-  return "Dialogue starts early, but never before its speaker is on screen. Each line stays inside its own SCENE. No repeated lines.";
+  return "Dialogue starts early, but never before its speaker is on screen. Each line stays inside its own SCENE. No repeated lines. Do not say a line again in the next scene.";
 }
 
 export function sceneAudioClose() {
@@ -56,11 +56,11 @@ export function sceneAudioClose() {
 }
 
 export function videoVoiceLead() {
-  return "On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed.";
+  return "On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them. During a narrator line, show the action those words describe. A mouth stays closed only when that line is not about the mouth.";
 }
 
 export function videoCloseLead() {
-  return `Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Each character is one body at a time. A clothing change is still that same person, not a second body. Keep who is in front, behind, left, and right until the action moves them. Time moves forward. Stay in the same place until the scene changes location. Never invent extra copies of anyone. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them, and mouths stay closed. Props, background people, and set pieces persist across cuts: nothing appears or vanishes unless the action shows it. Characters never teleport or swap sides between shots. ${videoAudioLead()}`;
+  return `Obey real-world physics: gravity pulls down, weight stays on contact surfaces, two solids cannot occupy the same space, no clipping through walls, doors, furniture, vehicles, or other bodies, no mirrored or reversed motion unless the script names a reflection. Each character is one body at a time. A clothing change is still that same person, not a second body. Keep who is in front, behind, left, and right until the action moves them. Time moves forward. Stay in the same place until the scene changes location. Never invent extra copies of anyone. Foreground bodies occlude background glow; no shine through hair or skin. Speakers look at who they address, not the lens, unless they break the fourth wall. Same body scale versus chairs, tables, and doors across cuts. Hands keep contact with held props. On-screen dialogue uses that character's realistic lipsync. Narrator lines are off-screen voice-over only. No character lipsyncs them. During a narrator line, show the action those words describe. A mouth stays closed only when that line is not about the mouth. Props, background people, and set pieces persist across cuts: nothing appears or vanishes unless the action shows it. Characters never teleport or swap sides between shots. ${videoAudioLead()}`;
 }
 
 export function videoStyleLead(style: VisualStyle, aspect?: string) {
@@ -102,6 +102,7 @@ function stripVideoStyleLead(text: string) {
     .replace(/^Dialogue starts early, but never before its speaker is on screen\.?\s*/i, "")
     .replace(/^Each line stays inside its own SCENE\.?\s*/i, "")
     .replace(/^No repeated lines\.?\s*/i, "")
+    .replace(/^Do not say a line again in the next scene\.?\s*/i, "")
     .replace(/^(?:Natural )?ambient sound and dialogue only\.?\s*/i, "")
     .replace(/^No (?:soundtrack|score|bgm|music|background (?:music|score|soundtrack))\.?\s*/i, "")
     .trim();
@@ -1272,7 +1273,7 @@ function dialogueBlock(project: Project, scene: Scene | undefined, people: Map<s
     if (!entry.speaker || !text) continue;
     let label: string;
     if (isVoiceoverSpeaker(project, entry.speaker)) {
-      label = `Narrator${narratorTag ? ` (${narratorTag} voice)` : ""} voice-over (off-screen, no lipsync, mouths closed):`;
+      label = `Narrator${narratorTag ? ` (${narratorTag} voice)` : ""} voice-over (off-screen, no lipsync; show the action this line describes):`;
     } else {
       const character = findSpeakerCharacter(project, entry.speaker);
       const name = character?.name || entry.speaker;
@@ -1509,7 +1510,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       const source = narratorTag
         ? ` The narrator's voice is ${narratorTag}: an off-screen voice-over reference, audio only. Use its voice; none of its images appear in the film.`
         : "";
-      return `VOICE — NARRATOR (this description holds for every narrated word)\nThe narrator is never on screen and has no body in the film. Voice: ${narratorVoiceNotes(project)}.${source} Narration is voice-over only, with no lipsync: every mouth on screen stays closed while the narrator speaks. This exact voice, every line, every generation.`;
+      return `VOICE — NARRATOR (this description holds for every narrated word)\nThe narrator is never on screen and has no body in the film. Voice: ${narratorVoiceNotes(project)}.${source} Narration is voice-over only, with no lipsync. While a line plays, show the action those words describe. A mouth stays closed only when that line is not about the mouth. Say each line once. This exact voice, every line, every generation.`;
     }
     const tag = tagOf(name);
     const where = [
@@ -1614,7 +1615,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       cursor = to + 0.2 * squeeze;
       const range = `(${secondsLabel(from)}–${secondsLabel(to)})`;
       if (isVoiceoverSpeaker(project, line.speaker)) {
-        return `NARRATOR${narratorTag ? ` (${narratorTag})` : ""} voice-over, off screen, no lipsync, every mouth on screen closed: {${text}} ${range}.`;
+        return `NARRATOR${narratorTag ? ` (${narratorTag})` : ""} voice-over, off screen, no lipsync. Show this action while the line plays, not a later pose: {${text}} ${range}.`;
       }
       const name = findSpeakerCharacter(project, line.speaker)?.name || line.speaker.trim();
       const who = nameWithTag(name);
@@ -1648,7 +1649,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
       identity,
       "Each line is spoken inside its own shot's second-range, after its speaker is on screen.",
       [...speakers.values()].some((entry) => entry.narrator)
-        ? `Narrator lines are off-screen voice-over${narratorTag ? ` in the ${narratorTag} voice` : ""}, with no lipsync and every mouth closed.`
+        ? `Narrator lines are off-screen voice-over${narratorTag ? ` in the ${narratorTag} voice` : ""}, with no lipsync. During each line, show the action those words describe. A mouth stays closed only when that line is not about the mouth. Say each line once.`
         : "",
       "Light direction holds steady within each shot.",
     ]
@@ -1802,6 +1803,18 @@ function participateLine(names: string[], people: Map<string, string>, project: 
   return `Only ${list} participate in this scene.`;
 }
 
+function voiceOverlap(action: string, line: string) {
+  const words = line.toLowerCase().split(/[^a-z0-9']+/).filter((word) => word.length > 3);
+  const blob = action.toLowerCase();
+  return words.filter((word) => blob.includes(word)).length;
+}
+
+function alignActionToVoice(action: string, lines: string[]) {
+  const speech = lines.join(" ");
+  if (!/\bmouth opens\b/i.test(speech)) return action;
+  return action.replace(/\bmouths?\s+(?:stay|stays|remain|remains|is|are)\s+closed\b/gi, "mouth opens");
+}
+
 function sceneSays(
   project: Project,
   scene: Scene | undefined,
@@ -1821,12 +1834,12 @@ function sceneSays(
     if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
       const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
       const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-      parts.push(`Voiceover in ${who}'s voice, no lipsync, mouth stays closed: "${text}"`);
+      parts.push(`Voiceover in ${who}'s voice, no lipsync: "${text}" Show this action while the line plays, not a later pose.`);
       continue;
     }
     if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
       const voice = narratorTag ? `, voice as heard in ${narratorTag}` : "";
-      parts.push(`Voiceover${voice}: "${text}"`);
+      parts.push(`Voiceover${voice}: "${text}" Show this action while the line plays, not a later pose.`);
       continue;
     }
     const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
@@ -1854,6 +1867,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const narrated = scenes.some((scene) => (scene?.dialogue || []).some((line) => line.speaker && isVoiceoverSpeaker(project, line.speaker)));
   const continues = Boolean(project.scenes.length && sceneIndexes[0] !== project.scenes[0]?.index);
   const usedCameras: string[] = [];
+  const saidAlready = new Set<string>();
+  const lineKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
   const flat = sceneIndexes.flatMap((index, i) => {
     const scene = scenes[i];
@@ -1864,6 +1879,39 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
     options.maxSeconds,
   );
+  const linesByShot: DialogueLine[][] = flat.map(() => []);
+  const shotGroups = new Map<number, number[]>();
+  flat.forEach((item, flatIndex) => {
+    const group = shotGroups.get(item.index) || [];
+    group.push(flatIndex);
+    shotGroups.set(item.index, group);
+  });
+  for (const indexes of shotGroups.values()) {
+    const scene = flat[indexes[0]]?.scene;
+    const lines = (scene?.dialogue || []).filter((line) => line.speaker && line.line?.trim());
+    const narrated = lines.filter((line) => line.voiceover || isVoiceoverSpeaker(project, line.speaker));
+    const spoken = lines.filter((line) => !narrated.includes(line));
+    const take = Math.ceil(spoken.length / Math.max(1, indexes.length));
+    indexes.forEach((flatIndex, shotIndex) => {
+      linesByShot[flatIndex].push(...spoken.slice(shotIndex * take, shotIndex * take + take));
+    });
+    for (const line of narrated) {
+      const key = lineKey(line.line || "");
+      if (!key || saidAlready.has(key)) continue;
+      saidAlready.add(key);
+      let best = indexes[0];
+      let bestScore = -1;
+      for (const flatIndex of indexes) {
+        const action = flat[flatIndex]?.shot.action || scene?.summary || "";
+        const score = voiceOverlap(action, line.line || "");
+        if (score > bestScore) {
+          bestScore = score;
+          best = flatIndex;
+        }
+      }
+      linesByShot[best].push(line);
+    }
+  }
   const blocks = flat.map((item, i) => {
     const { scene, shot, shotIndex, index } = item;
     let camera = safeCinematicCamera(
@@ -1905,14 +1953,14 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
         ? `${pictured.replace(/[. ]+$/, "")}. The package on screen is ${packageTag}.`
         : pictured;
-    const visual = song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage;
+    const slice = linesByShot[i] || [];
+    const visual = alignActionToVoice(
+      song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage,
+      slice.map((line) => line.line || ""),
+    );
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
-    const sceneLines = (scene?.dialogue || []).filter((line) => line.speaker && line.line?.trim());
-    const share = Math.max(1, item.shotCount);
-    const take = Math.ceil(sceneLines.length / share);
-    const slice = sceneLines.slice(shotIndex * take, shotIndex * take + take);
     const said = sceneSays(project, scene, people, narratorTag, slice);
     const spoken = song
       ? singsAlong
@@ -1962,7 +2010,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
             : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(images),
           tailLine ? "" : continues ? "This clip picks up straight from the previous part." : "",
-          narrated ? "Narrator lines are off-screen voice-over, no lipsync, and every mouth stays closed." : "",
+          narrated ? "Narrator lines are off-screen voice-over, no lipsync. During each line, show the action those words describe. A mouth stays closed only when that line is not about the mouth. Say each line once, and do not repeat it in the next shot." : "",
         ]
   )
     .filter(Boolean)
