@@ -182,12 +182,13 @@ export function ProcessingCard({ item, view }: { item: LibraryGenerating; view: 
   );
 }
 
-export function CreateCard({ onCreate, view }: { onCreate: () => void; view: LibraryView }) {
+export function CreateCard({ onCreate, view, locked = false, notice = "" }: { onCreate: () => void; view: LibraryView; locked?: boolean; notice?: string }) {
   return (
     <button
       type="button"
       onClick={onCreate}
-      className={`no-press cf-card flex min-h-11 items-center justify-center gap-3 rounded-[20px] border border-dashed border-white/15 bg-transparent px-4 text-left text-white hover:border-[#FF8A3D]/70 hover:bg-white/[0.03] ${view === "list" ? "min-h-24" : "aspect-video"}`}
+      disabled={locked}
+      className={`no-press cf-card flex min-h-11 items-center justify-center gap-3 rounded-[20px] border border-dashed border-white/15 bg-transparent px-4 text-left text-white hover:border-[#FF8A3D]/70 hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/15 disabled:hover:bg-transparent ${view === "list" ? "min-h-24" : "aspect-video"}`}
     >
       <span className="cf-plus grid h-11 w-11 place-items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-white shadow-[0_8px_20px_rgba(255,94,98,0.3)]">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
@@ -196,7 +197,7 @@ export function CreateCard({ onCreate, view }: { onCreate: () => void; view: Lib
       </span>
       <span>
         <span className="block text-base font-medium">Create new</span>
-        <span className="mt-0.5 block text-xs text-[var(--cf-muted)]">Start a short film</span>
+        <span className="mt-0.5 block text-xs text-[var(--cf-muted)]">{locked && notice ? notice : "Start a short film"}</span>
       </span>
     </button>
   );

@@ -28,6 +28,8 @@ export function LibraryShell({
   onOpenDraft,
   onCreate,
   onCreateSong,
+  createLocked = false,
+  createNotice = "",
   onAccount,
   onMembership,
   onCredits,
@@ -48,6 +50,8 @@ export function LibraryShell({
   onOpenDraft: (projectId: string) => void;
   onCreate: () => void;
   onCreateSong: () => void;
+  createLocked?: boolean;
+  createNotice?: string;
   onAccount: () => void;
   onMembership: () => void;
   onCredits: () => void;
@@ -135,7 +139,7 @@ export function LibraryShell({
           </button>
         </div>
         <div className={`flex flex-col gap-2 ${narrow ? "items-center px-2" : "px-3"}`}>
-          <button type="button" onClick={onCreate} aria-label="Create a video" className={`btn-primary cf-create flex items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)] ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
+          <button type="button" onClick={onCreate} disabled={createLocked} aria-label="Create a video" className={`btn-primary cf-create flex items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)] disabled:cursor-not-allowed disabled:opacity-40 ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
             <span className="cf-plus">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true" className={narrow ? "h-3.5 w-3.5" : ""}>
                 <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
@@ -143,10 +147,13 @@ export function LibraryShell({
             </span>
             {narrow ? null : "Create a video"}
           </button>
-          <button type="button" onClick={onCreateSong} aria-label="Create a suno video" className={`no-press flex items-center rounded-xl border border-white/10 bg-white/5 text-sm font-medium text-white hover:bg-white/10 ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
+          <button type="button" onClick={onCreateSong} disabled={createLocked} aria-label="Create a suno video" className={`no-press flex items-center rounded-xl border border-white/10 bg-white/5 text-sm font-medium text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40 ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
             <SongIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Create a suno video"}
           </button>
+          {createLocked && createNotice ? (
+            <p className={`rounded-xl border border-[#FF8A3D]/40 bg-[#FF8A3D]/10 text-xs text-[#FFD7B0] ${narrow ? "px-1 py-2 text-center leading-tight" : "px-3 py-2"}`}>{createNotice}</p>
+          ) : null}
         </div>
         <nav className={`mt-4 flex flex-1 flex-col gap-1 border-t border-[var(--cf-line)] pt-3 ${narrow ? "items-center px-2" : "px-3"}`} aria-label="Studio">
           <button type="button" aria-label="Your videos" aria-current={zone === "videos" ? "page" : undefined} onClick={() => onZone("videos")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "videos" ? "bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
@@ -263,6 +270,9 @@ export function LibraryShell({
 
         <div className="scroll-thin min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-4 pt-5 pb-[calc(6.5rem+env(safe-area-inset-bottom))] sm:px-6 lg:px-8 lg:pb-10">
           {error ? <p className="mb-4 text-sm text-[#fb7185]">{error}</p> : null}
+          {createLocked && createNotice ? (
+            <p className="mb-4 rounded-xl border border-[#FF8A3D]/40 bg-[#FF8A3D]/10 px-3 py-2 text-sm text-[#FFD7B0] lg:hidden">{createNotice}</p>
+          ) : null}
           {zone === "drafts" ? (
             shownDrafts.length === 0 ? (
               <div className="mx-auto mt-10 flex max-w-lg flex-col items-center rounded-[20px] border border-[var(--cf-line)] bg-[radial-gradient(circle_at_50%_0%,rgba(255,138,61,0.22),transparent_55%),var(--cf-surface)] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
@@ -297,9 +307,10 @@ export function LibraryShell({
             <div className="mx-auto mt-10 flex max-w-lg flex-col items-center rounded-[20px] border border-[var(--cf-line)] bg-[radial-gradient(circle_at_50%_0%,rgba(255,138,61,0.22),transparent_55%),var(--cf-surface)] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
               <p className="display text-3xl">No videos yet</p>
               <p className="mt-2 max-w-sm text-sm text-[var(--cf-muted)]">When a video finishes, it will show up on this board.</p>
-              <button type="button" onClick={onCreate} className="btn-primary mt-7 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-5 text-sm font-semibold text-white">
+              <button type="button" onClick={onCreate} disabled={createLocked} className="btn-primary mt-7 inline-flex min-h-11 items-center gap-2 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40">
                 Create a video
               </button>
+              {createLocked && createNotice ? <p className="mt-3 text-sm text-[#FFD7B0]">{createNotice}</p> : null}
             </div>
           ) : shown === 0 ? (
             <p className="py-16 text-center text-sm text-[var(--cf-muted)]">No videos match that filter.</p>
@@ -313,12 +324,14 @@ export function LibraryShell({
               onPlay={onPlay}
               onEdit={onEdit}
               onCreate={onCreate}
+              createLocked={createLocked}
+              createNotice={createNotice}
             />
           )}
         </div>
       </div>
 
-      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} />
+      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} createLocked={createLocked} />
 
       {creditsOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">

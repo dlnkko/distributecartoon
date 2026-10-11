@@ -12,6 +12,8 @@ export function VideoGrid({
   onPlay,
   onEdit,
   onCreate,
+  createLocked = false,
+  createNotice = "",
 }: {
   videos: LibraryVideo[];
   generating: LibraryGenerating[];
@@ -21,10 +23,12 @@ export function VideoGrid({
   onPlay: (item: LibraryVideo) => void;
   onEdit: (projectId: string) => void;
   onCreate: () => void;
+  createLocked?: boolean;
+  createNotice?: string;
 }) {
   return (
     <div className={view === "list" ? "cf-list" : "cf-grid"}>
-      <CreateCard onCreate={onCreate} view={view} />
+      <CreateCard onCreate={onCreate} view={view} locked={createLocked} notice={createNotice} />
       {generating.map((item) => (
         <ProcessingCard key={`generating-${item.projectId}`} item={item} view={view} />
       ))}

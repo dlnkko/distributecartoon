@@ -8,7 +8,7 @@ import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
 import { formatPartPlan, packScenesIntoParts, sceneHasStory, spillLockedParts, userTimedSeconds } from "@/lib/timing";
 import { ensureSceneShots } from "@/lib/shots";
-import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
+import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, RENDER_WAIT_MESSAGE, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
 import { generationCreditCost } from "@/lib/credits";
@@ -642,6 +642,10 @@ export function StudioApp() {
   }
 
   async function createNew() {
+    if (renderingOthers("") >= MAX_CONCURRENT_RENDERS) {
+      setStatus(RENDER_WAIT_MESSAGE);
+      return;
+    }
     const created = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -656,6 +660,10 @@ export function StudioApp() {
   }
 
   async function createSong() {
+    if (renderingOthers("") >= MAX_CONCURRENT_RENDERS) {
+      setStatus(RENDER_WAIT_MESSAGE);
+      return;
+    }
     const created = await fetch("/api/projects", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -721,7 +729,7 @@ export function StudioApp() {
     };
     if (mode === "produce") {
       if (renderingOthers(started.id) >= MAX_CONCURRENT_RENDERS) {
-        setStatus("Three videos are already rendering. This one can wait in drafts.");
+        setStatus(RENDER_WAIT_MESSAGE);
         return;
       }
       markGenerating(started.id, true);
@@ -1456,6 +1464,8 @@ export function StudioApp() {
           }}
           onCreate={() => void createNew()}
           onCreateSong={() => void createSong()}
+          createLocked={generating.length >= MAX_CONCURRENT_RENDERS}
+          createNotice={RENDER_WAIT_MESSAGE}
           onAccount={() => setPanel("account")}
           onMembership={() => setPanel("membership")}
           onCredits={() => setPanel("credits")}
@@ -1490,7 +1500,8 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => void createNew()}
-            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)]"
+            disabled={generating.length >= MAX_CONCURRENT_RENDERS}
+            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="cf-plus">
               <PlusIcon />
@@ -1500,7 +1511,8 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => void createSong()}
-            className={`no-press flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-sm font-medium ${
+            disabled={generating.length >= MAX_CONCURRENT_RENDERS}
+            className={`no-press flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
               step === "song" || project.song
                 ? "border-[#FF8A3D]/40 bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]"
                 : "border-white/10 bg-white/5 text-white hover:bg-white/10"
@@ -1509,6 +1521,9 @@ export function StudioApp() {
             <SongNavIcon />
             Create a suno video
           </button>
+          {generating.length >= MAX_CONCURRENT_RENDERS ? (
+            <p className="rounded-xl border border-[#FF8A3D]/40 bg-[#FF8A3D]/10 px-3 py-2 text-xs text-[#FFD7B0]">{RENDER_WAIT_MESSAGE}</p>
+          ) : null}
         </div>
 
         <nav className="mt-4 flex min-h-0 flex-1 flex-col gap-1 border-t border-[var(--cf-line)] px-3 pt-3" aria-label="Studio">

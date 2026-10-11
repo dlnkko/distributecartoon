@@ -1,7 +1,8 @@
 import type { Batch, Project } from "./types";
 
-// Drafts are unlimited. Three renders at once keeps the worker and the video provider from stacking a whole queue on one account.
-export const MAX_CONCURRENT_RENDERS = 3;
+// Drafts are unlimited. Five renders at once keeps the worker and the video provider from stacking a whole queue on one account.
+export const MAX_CONCURRENT_RENDERS = 5;
+export const RENDER_WAIT_MESSAGE = `Maximum ${MAX_CONCURRENT_RENDERS} generations at a time.`;
 
 export function batchAwaitingVideo(batch: Pick<Batch, "kieVideoTaskId" | "videoPublicPath" | "videoRemoteUrl" | "status">) {
   if (batch.videoPublicPath || batch.videoRemoteUrl) return false;

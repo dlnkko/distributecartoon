@@ -7,7 +7,7 @@ import { driveProduce } from "@/lib/produce";
 import { getProject, listProjects, saveProject } from "@/lib/store";
 import { activeTask } from "@/lib/tasks";
 import type { AgentMode, Project, StudioEvent } from "@/lib/types";
-import { MAX_CONCURRENT_RENDERS, projectDeliveredSrc, projectIsGenerating } from "@/lib/video-jobs";
+import { MAX_CONCURRENT_RENDERS, RENDER_WAIT_MESSAGE, projectDeliveredSrc, projectIsGenerating } from "@/lib/video-jobs";
 import { activeMembership } from "@/lib/billing";
 import { generationCreditCost } from "@/lib/credits";
 import { spendCredits } from "@/lib/spend-credits";
@@ -125,7 +125,7 @@ export async function POST(request: Request) {
     const rendering = list.filter((item) => item.id !== project.id && projectIsGenerating(item)).length;
     if (rendering >= MAX_CONCURRENT_RENDERS) {
       return new Response(
-        JSON.stringify({ error: "Three videos are already rendering. This one can wait in drafts." }),
+        JSON.stringify({ error: RENDER_WAIT_MESSAGE }),
         { status: 429 },
       );
     }

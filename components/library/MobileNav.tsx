@@ -7,6 +7,7 @@ export function MobileNav({
   onCreate,
   onSong,
   onAccount,
+  createLocked = false,
 }: {
   zone: "videos" | "drafts";
   onVideos: () => void;
@@ -14,13 +15,14 @@ export function MobileNav({
   onCreate: () => void;
   onSong: () => void;
   onAccount: () => void;
+  createLocked?: boolean;
 }) {
   const items = [
-    { label: "Create", onClick: onCreate, icon: PlusGlyph, active: false },
-    { label: "Suno", onClick: onSong, icon: SongGlyph, active: false },
-    { label: "Videos", onClick: onVideos, icon: VideosGlyph, active: zone === "videos" },
-    { label: "Drafts", onClick: onDrafts, icon: DraftGlyph, active: zone === "drafts" },
-    { label: "Account", onClick: onAccount, icon: AccountGlyph, active: false },
+    { label: "Create", onClick: onCreate, icon: PlusGlyph, active: false, locked: createLocked },
+    { label: "Suno", onClick: onSong, icon: SongGlyph, active: false, locked: createLocked },
+    { label: "Videos", onClick: onVideos, icon: VideosGlyph, active: zone === "videos", locked: false },
+    { label: "Drafts", onClick: onDrafts, icon: DraftGlyph, active: zone === "drafts", locked: false },
+    { label: "Account", onClick: onAccount, icon: AccountGlyph, active: false, locked: false },
   ];
   return (
     <nav
@@ -34,7 +36,8 @@ export function MobileNav({
             <button
               type="button"
               onClick={item.onClick}
-              className={`no-press flex min-h-14 w-full flex-col items-center justify-center gap-1 px-1 text-[11px] ${item.active ? "text-white" : "text-[var(--cf-muted)]"}`}
+              disabled={item.locked}
+              className={`no-press flex min-h-14 w-full flex-col items-center justify-center gap-1 px-1 text-[11px] disabled:cursor-not-allowed disabled:opacity-40 ${item.active ? "text-white" : "text-[var(--cf-muted)]"}`}
             >
               <item.icon />
               {item.label}
