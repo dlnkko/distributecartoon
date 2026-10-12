@@ -49,69 +49,6 @@ const GENERIC_LABELS = new Set([
   "reference",
 ]);
 
-const PRODUCT_WORD_STOP = new Set([
-  "about",
-  "after",
-  "again",
-  "already",
-  "also",
-  "and",
-  "appear",
-  "appears",
-  "appearing",
-  "around",
-  "because",
-  "been",
-  "before",
-  "being",
-  "body",
-  "both",
-  "face",
-  "from",
-  "hand",
-  "hands",
-  "have",
-  "hers",
-  "into",
-  "just",
-  "like",
-  "lips",
-  "more",
-  "mouth",
-  "original",
-  "over",
-  "package",
-  "packaging",
-  "product",
-  "producto",
-  "scene",
-  "scenes",
-  "still",
-  "that",
-  "their",
-  "them",
-  "then",
-  "there",
-  "these",
-  "they",
-  "this",
-  "those",
-  "through",
-  "under",
-  "used",
-  "using",
-  "wear",
-  "wears",
-  "when",
-  "where",
-  "which",
-  "while",
-  "with",
-  "without",
-  "worn",
-  "your",
-]);
-
 const KIND_PATTERNS: Record<ReferenceKind, RegExp[]> = {
   character: [],
   logo: [/\blogo\b/i, /\bisotipo\b/i, /\blogotipo\b/i, /\bbrand mark\b/i, /\bwordmark\b/i],
@@ -175,28 +112,6 @@ export function ensureReferenceSlots(project: Project) {
 
   project.references = [...core, ...others];
   return project.references;
-}
-
-function referenceWords(text: string) {
-  return text
-    .toLowerCase()
-    .split(/[^a-z0-9]+/)
-    .filter((word) => word.length >= 4 && !PRODUCT_WORD_STOP.has(word));
-}
-
-function hasWord(text: string, word: string) {
-  return new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
-}
-
-// Words that name the product in the cue, and that the story had not used before the product appears.
-function productCarryWords(project: Project, asset: ReferenceAsset) {
-  const cues = (project.scriptRefCues || []).filter((cue) => cue.kind === asset.kind && cue.cue?.trim());
-  const indexes = [...new Set(cues.flatMap((cue) => cue.sceneIndexes.filter((index) => index > 0)))];
-  if (!cues.length || !indexes.length) return [];
-  const first = Math.min(...indexes);
-  const beforeIndexes = project.scenes.map((scene) => scene.index).filter((index) => index < first);
-  const before = new Set(referenceWords(beforeIndexes.length ? sceneBlob(project, beforeIndexes) : ""));
-  return [...new Set(referenceWords(cues.map((cue) => cue.cue).join(" ")).filter((word) => !before.has(word)))];
 }
 
 function sceneBlob(project: Project, sceneIndexes?: number[]) {
@@ -464,16 +379,6 @@ export function scriptCallsForReference(
 
   const label = asset.label.trim().toLowerCase();
   if (label && !GENERIC_LABELS.has(label) && text.toLowerCase().includes(label)) return true;
-
-  if ((asset.kind === "product" || asset.kind === "logo") && sceneIndexes?.length) {
-    const kindCues = cues.filter((cue) => cue.kind === asset.kind);
-    const first = Math.min(...kindCues.flatMap((cue) => cue.sceneIndexes.filter((index) => index > 0)), Number.POSITIVE_INFINITY);
-    const later = sceneIndexes.filter((index) => index >= first);
-    if (later.length) {
-      const laterText = sceneBlob(project, later);
-      if (productCarryWords(project, asset).some((word) => hasWord(laterText, word))) return true;
-    }
-  }
 
   return (KIND_PATTERNS[asset.kind] || []).some((pattern) => pattern.test(text));
 }

@@ -4,7 +4,7 @@ import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./i
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
-import { diversifyInventedCast, englishExtraName, englishSpeakerName, isEmptyVoiceLine, isStageSpeaker, packedScenePrompt, stampProductPlacement } from "./style";
+import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
@@ -219,7 +219,7 @@ const tools: OpenAI.Responses.Tool[] = [
                     action: {
                       type: "string",
                       description:
-                        "One physical action at this angle.",
+                        "One physical action at this angle. Same place, distance, and body as the previous shot unless this action moves them.",
                     },
                   },
                   required: ["seconds", "camera", "action"],
@@ -520,17 +520,6 @@ function cleanSpokenLine(line: string) {
     .trim();
 }
 
-function stripStageCues(text: string) {
-  return text
-    .split(/\n/)
-    .map((line) =>
-      line
-        .replace(/^\s*(?:picture|pictures|on[-\s]?screen|onscreen|action|visual|shot)\s*:\s*/i, "")
-        .replace(/^\s*(?:vo|v\.o\.|voice-?over|voiceover)\s*:\s*(?:none|no vo|silence|silent|n\/a)\b[.!]?\s*/i, ""),
-    )
-    .join("\n");
-}
-
 function actionText(block: StoryBlock) {
   const columns = block.text.split(/\t/).map((part) => part.trim()).filter(Boolean);
   const last = columns[columns.length - 1] || "";
@@ -538,7 +527,7 @@ function actionText(block: StoryBlock) {
   const supers = speech
     ? [...last.matchAll(/\b(?:Super|Small print|Text|Title|Caption)\s*:\s*[“"]([^”"]+)[”"]/gi)].map((match) => match[1])
     : [];
-  const body = stripStageCues(speech ? columns.slice(0, -1).join(" ") : block.text);
+  const body = speech ? columns.slice(0, -1).join(" ") : block.text;
   const cleaned = body
     .replace(/\b([A-Z][A-Za-z'’-]{1,24}(?:\s+[A-Z][A-Za-z'’-]{1,24}){0,2})\s*(?:\([^)]*\))?\s*:\s*[“"][^”"]+[”"]/g, (full, who: string) =>
       looksLikeSpeaker(who) && !/^(?:super|small print|text|title|caption)$/i.test(who.trim()) ? " " : full,
@@ -550,12 +539,12 @@ function actionText(block: StoryBlock) {
 
 function linesFromBlock(text: string) {
   const out: Array<{ speaker: string; line: string; voiceover?: boolean; offscreen?: boolean }> = [];
-  const skip = /^(?:scene|escena|act|acto|int|ext|end|text|title|super|caption|small print|beat|picture|pictures|on[-\s]?screen|onscreen|action|visual|shot|camera|image|frame|insert)$/i;
+  const skip = /^(?:scene|escena|act|acto|int|ext|end|text|title|super|caption|small print|beat)$/i;
   const quoteRe = /[“"]([^”"]+)[”"]/g;
   let found: RegExpExecArray | null;
   while ((found = quoteRe.exec(text))) {
     const line = cleanSpokenLine(found[1]);
-    if (!line || isEmptyVoiceLine(line)) continue;
+    if (!line) continue;
     const tagged = speakerAt(text.slice(0, found.index));
     if (tagged && skip.test(tagged.name)) continue;
     if (!tagged && !out.length) continue;
@@ -578,7 +567,7 @@ function linesFromBlock(text: string) {
     if (namedVoice) {
       const line = cleanSpokenLine(namedVoice[2]);
       const speaker = spokenName(namedVoice[1].trim());
-      if (line && speaker && !isEmptyVoiceLine(line)) out.push({ speaker, line, voiceover: true });
+      if (line && speaker) out.push({ speaker, line, voiceover: true });
       continue;
     }
     const match = raw.trim().match(/^([^:]{2,40}):\s*(.+)$/);
@@ -586,7 +575,7 @@ function linesFromBlock(text: string) {
     const speaker = match[1].replace(/\([^)]*\)/g, "").trim();
     if (!speaker || skip.test(speaker) || !looksLikeSpeaker(speaker)) continue;
     const line = cleanSpokenLine(match[2]);
-    if (!line || isEmptyVoiceLine(line) || isStageSpeaker(speaker)) continue;
+    if (!line) continue;
     const voiceover = /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker) || offScreenCue(match[1]);
     out.push({
       speaker: voiceover && /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker) ? "Narrator" : spokenName(speaker),
@@ -765,7 +754,7 @@ function sceneFromBlock(block: StoryBlock): Scene {
     location: card ? placeNamedIn(action) || place : place,
     characterNames: card
       ? []
-      : [...new Set(dialogue.filter((line) => !line.offscreen && !isStageSpeaker(line.speaker) && !isEmptyVoiceLine(line.line)).map((line) => line.speaker).filter((speaker) => speaker && !NARRATOR_NAME.test(speaker)))],
+      : [...new Set(dialogue.filter((line) => !line.offscreen).map((line) => line.speaker).filter((speaker) => speaker && !NARRATOR_NAME.test(speaker)))],
     extraNames: [],
     dialogue: spoken,
     estimatedSeconds: seconds,
@@ -774,15 +763,12 @@ function sceneFromBlock(block: StoryBlock): Scene {
   };
 }
 
-function castOnScreen(project: Project, scenes: Scene[]) {
-  const names = [...new Set([
-    ...scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.speaker)),
-    ...project.characters.map((character) => character.name),
-  ].filter((name) => name && !NARRATOR_NAME.test(name) && !isStageSpeaker(name)))];
+function castOnScreen(scenes: Scene[]) {
+  const names = [...new Set(scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.speaker)).filter((name) => name && !NARRATOR_NAME.test(name)))];
   for (const scene of scenes) {
     if (isCardLabel(scene.title) || /^\s*(?:end\s*card|tarjeta\s+final)\b/i.test(scene.summary || "")) continue;
     const present = names.filter((name) => new RegExp(`\\b${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(scene.summary || ""));
-    scene.characterNames = [...new Set([...(scene.characterNames || []).filter((name) => !isStageSpeaker(name)), ...present])];
+    scene.characterNames = [...new Set([...(scene.characterNames || []), ...present])];
   }
 }
 
@@ -794,7 +780,7 @@ function applyUserStoryboard(project: Project) {
       const scene = sceneFromBlock(block);
       return scene;
     });
-    castOnScreen(project, scenes);
+    castOnScreen(scenes);
     project.scenes = scenes.map((scene, index) => ({ ...scene, index: index + 1 }));
     const clocks = [...rows[rows.length - 1].label.matchAll(/(\d{1,2}:\d{2})/g)];
     const endClock = clocks.length ? clockSeconds(clocks[clocks.length - 1][1]) : undefined;
