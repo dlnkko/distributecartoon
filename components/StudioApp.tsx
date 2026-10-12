@@ -2,12 +2,11 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { type AgentMode, type AspectRatio, type Character, type Project, type ReferenceAsset, type Scene, type ScriptCastMember, type VisualStyle, type WorkflowStep } from "@/lib/types";
+import { type AgentMode, type AspectRatio, type Character, type Project, type ReferenceAsset, type ScriptCastMember, type VisualStyle, type WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
-import { formatPartPlan, packScenesIntoParts, sceneHasStory, spillLockedParts, userTimedSeconds } from "@/lib/timing";
-import { ensureSceneShots } from "@/lib/shots";
+import { seedancePartDurations } from "@/lib/timing";
 import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, RENDER_WAIT_MESSAGE, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
@@ -99,7 +98,6 @@ type HistoryVideo = {
 const STEPS: Array<{ id: WorkflowStep; label: string }> = [
   { id: "script", label: "Script" },
   { id: "setup", label: "Setup" },
-  { id: "review", label: "Scenes" },
   { id: "cast", label: "Cast" },
   { id: "produce", label: "Generate" },
 ];
@@ -113,7 +111,6 @@ function stepsFor(project: Project) {
     ? [
         { id: "song" as const, label: "Song" },
         { id: "setup" as const, label: "Setup" },
-        { id: "review" as const, label: "Scenes" },
         { id: "cast" as const, label: "Cast" },
         { id: "produce" as const, label: "Generate" },
       ]
@@ -136,10 +133,7 @@ function stepReachable(project: Project, step: WorkflowStep) {
     if (project.song) return Boolean(project.song.productBrief?.trim()) && hasProductPhoto(project);
     return Boolean(project.scriptText.trim());
   }
-  if (step === "review") return project.scenes.length > 0;
-  if (step === "cast") {
-    return project.scenes.length > 0 && (Boolean(project.song) || missingCastLooks(project).length === 0);
-  }
+  if (step === "cast") return project.scenes.length > 0;
   return Boolean(projectDeliveredSrc(project));
 }
 
@@ -402,7 +396,6 @@ export function StudioApp() {
   const [project, setProject] = useState<Project | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
   const [scriptDraft, setScriptDraft] = useState("");
-  const [scenesDraft, setScenesDraft] = useState<Scene[]>([]);
   const [status, setStatus] = useState("");
   const [busy, setBusy] = useState(false);
   const [busyOwner, setBusyOwner] = useState<string | null>(null);
@@ -483,7 +476,6 @@ export function StudioApp() {
         const hadTask = Boolean(activeTask(projectRef.current));
         remember(latest);
         if (hadTask && !activeTask(latest)) {
-          if (latest.scenes.length) setScenesDraft(latest.scenes.map(cloneScene));
           setStatus(latest.taskError || "");
         }
         const hasVideo = Boolean(projectDeliveredSrc(latest));
@@ -548,7 +540,6 @@ export function StudioApp() {
     setScriptDraft(
       readDraft(project.id) || (isFileScript(project.scriptName) || project.song ? "" : project.scriptText || ""),
     );
-    setScenesDraft(project.scenes.map(cloneScene));
   }, [project?.id]);
 
   useEffect(() => {
@@ -569,7 +560,6 @@ export function StudioApp() {
   function adopt(next: Project) {
     if (projectRef.current?.id === next.id) {
       remember(next);
-      if (next.scenes.length) setScenesDraft(next.scenes.map(cloneScene));
       return;
     }
     setProjects((current) => {
@@ -661,7 +651,6 @@ export function StudioApp() {
     });
     remember((await created.json()) as Project);
     setScriptDraft("");
-    setScenesDraft([]);
     setStatus("");
     setPane("studio");
     setSidebarOpen(false);
@@ -685,7 +674,6 @@ export function StudioApp() {
     next.workflowStep = "song";
     remember(next);
     setScriptDraft("");
-    setScenesDraft([]);
     setStatus("");
     setPane("studio");
     setSidebarOpen(false);
@@ -745,7 +733,7 @@ export function StudioApp() {
       setStatus("Generating your video…");
     } else if (mode === "plan") {
       lockBusy(started.id);
-      setStatus("Writing your scenes…");
+      setStatus("Fitting the story to the length…");
     } else {
       lockBusy(started.id);
       setStatus("");
@@ -795,7 +783,7 @@ export function StudioApp() {
           const event = JSON.parse(line) as { type: string; text?: string; project?: Project };
           if (event.type === "status" && event.text) {
             if (mode === "produce") note(/couldn't|failed|error|stopped/i.test(event.text) ? event.text : "Generating your video…");
-            else if (mode === "plan") note("Writing your scenes…");
+            else if (mode === "plan") note("Fitting the story to the length…");
           }
           if (event.type === "project" && event.project) adopt(event.project);
           if (event.type === "error" && event.text) {
@@ -818,6 +806,20 @@ export function StudioApp() {
             note("Generating your video…");
           }
           if (notifyReadyRef.current && videoReady) void showReadyNotification(latest.title || "New video");
+        } else if (mode === "plan" && projectRef.current?.id === started.id) {
+          const latest = refreshed || projectRef.current;
+          markGenerating(started.id, false);
+          setPane("studio");
+          if (!latest.song && latest.scenes.length) {
+            note("Casting the characters…");
+            const cast = await requestCastLooks(started.id, controller?.signal || new AbortController().signal);
+            if (projectRef.current?.id !== started.id) return;
+            if (cast.project) adopt(cast.project);
+            const missing = cast.project ? missingCastLooks(cast.project) : [];
+            setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : cast.error || "");
+          } else {
+            setStatus("");
+          }
         } else if (projectRef.current?.id === started.id) {
           markGenerating(started.id, false);
           setStatus("");
@@ -1162,50 +1164,6 @@ export function StudioApp() {
     await run("plan");
   }
 
-  async function continueFromReview() {
-    if (!project || busy) return;
-    setBusy(true);
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-    try {
-      const scenes = scenesDraft
-        .filter(sceneHasStory)
-        .map((scene, index) => ({ ...scene, index: index + 1 }));
-      if (!scenes.length) {
-        setStatus("Every scene is empty. Add action or dialogue first.");
-        setBusy(false);
-        return;
-      }
-      const saved = await patchProject({
-        scenes,
-        workflowStep: "cast",
-        resetGeneration: true,
-      });
-      if (!saved) return;
-      setScenesDraft(scenes);
-      setPane("studio");
-      if (saved.song) {
-        setStatus("");
-        return;
-      }
-      const json = await requestCastLooks(saved.id, controller.signal);
-      if (json.project) {
-        remember(json.project);
-        const missing = missingCastLooks(json.project);
-        setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
-      } else {
-        setStatus(json.error || "Couldn't cast those characters.");
-      }
-    } catch (error) {
-      if ((error as Error).name === "AbortError") setStatus("Stopped.");
-      else setStatus(error instanceof Error ? error.message : "Couldn't cast those characters.");
-    } finally {
-      if (abortRef.current === controller) abortRef.current = null;
-      setBusy(false);
-    }
-  }
-
   async function continueFromSongLooks() {
     if (!project || busy) return;
     setBusy(true);
@@ -1483,10 +1441,10 @@ export function StudioApp() {
     return <div className="grid h-screen place-items-center text-[var(--muted)]">Loading…</div>;
   }
 
-  const step = project.workflowStep || "script";
+  const step = (project.workflowStep === "review" ? "cast" : project.workflowStep) || "script";
   const taskLabel =
     task?.kind === "plan"
-      ? "Building your scenes… you can refresh, it keeps going."
+      ? "Fitting the story to the length… you can refresh, it keeps going."
       : task?.kind === "cast"
         ? "Casting characters… you can refresh, it keeps going."
         : "";
@@ -1689,11 +1647,11 @@ export function StudioApp() {
                 <span className="mx-auto grid size-10 place-items-center">
                   <span className="size-7 animate-spin rounded-full border-2 border-stone-200 border-t-[var(--ink)]" />
                 </span>
-                <p className="display mt-4 text-2xl">Writing your scenes</p>
+                <p className="display mt-4 text-2xl">Fitting the story</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                   {project.song
-                    ? "This takes a minute. The scenes follow the song."
-                    : "This takes a minute. The storyboard is being fitted to the length you picked."}
+                    ? "This takes a minute. The story follows the song."
+                    : "This takes a minute. The script is split into takes of at most 30 seconds."}
                 </p>
               </div>
             </div>
@@ -1785,31 +1743,12 @@ export function StudioApp() {
             />
           ) : null}
 
-          {step === "review" ? (
-            <ReviewStep
-              scenes={scenesDraft}
-              targetSeconds={project.targetDurationSeconds || 15}
-              busy={working}
-              hasVideo={Boolean(projectDeliveredSrc(project))}
-              directGenerate={false}
-              creditCost={generationCreditCost(project)}
-              credits={credits}
-              onChange={setScenesDraft}
-              onBack={() =>
-                void (projectDeliveredSrc(project)
-                  ? patchProject({ scenes: scenesDraft, workflowStep: "produce" })
-                  : patchProject({ workflowStep: "setup" }))
-              }
-              onContinue={() => void continueFromReview()}
-            />
-          ) : null}
-
           {step === "cast" && project.song && missingCastLooks(project).length > 0 && !working ? (
             <SongLookStep
               pairs={songLookPairs(project)}
               busy={working}
               uploadingSlotId={uploadingSlotId}
-              onBack={() => void patchProject({ workflowStep: "review" })}
+              onBack={() => void patchProject({ workflowStep: "setup" })}
               onPick={(slot) => pickRef(slot)}
               onClear={(slot) => void onClearRef(slot)}
               onLabel={(slot, label) => onLabelRef(slot, label)}
@@ -1824,7 +1763,7 @@ export function StudioApp() {
               busy={working}
               creditCost={generationCreditCost(project)}
               credits={credits}
-              onBack={() => void patchProject({ workflowStep: "review" })}
+              onBack={() => void patchProject({ workflowStep: "setup" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
               onContinue={() => void continueFromCast()}
             />
@@ -1841,7 +1780,6 @@ export function StudioApp() {
               notifyHint={notifyHint}
               onNotifyMe={() => void enableReadyNotify()}
               onGenerate={() => void beginProduce()}
-              onEditScenes={() => void patchProject({ workflowStep: "review" })}
               onExpand={(item) => setExpanded(item)}
             />
           ) : null}
@@ -2010,10 +1948,6 @@ export function StudioApp() {
       ) : null}
     </div>
   );
-}
-
-function cloneScene(scene: Scene): Scene {
-  return { ...scene, dialogue: scene.dialogue.map((line) => ({ ...line })), characterNames: [...scene.characterNames], extraNames: [...scene.extraNames] };
 }
 
 function StepBar({
@@ -2405,7 +2339,10 @@ function SetupStep({
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
             <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
             <p className="mt-2 text-xs text-[var(--muted)]">
-              Scenes are fitted to this length. Each take is at most 30s, and a scene is never split across takes.
+              {seedancePartDurations(project.targetDurationSeconds || 15)
+                .map((seconds) => `${seconds}s`)
+                .join(" + ")}
+              . Each take is at most 30s.
             </p>
           </div>
         )}
@@ -2523,247 +2460,6 @@ function SetupStep({
         >
           Continue
         </button>
-      </div>
-    </div>
-  );
-}
-
-function FitText({
-  value,
-  disabled,
-  placeholder,
-  onChange,
-}: {
-  value: string;
-  disabled: boolean;
-  placeholder: string;
-  onChange: (value: string) => void;
-}) {
-  const ref = useRef<HTMLTextAreaElement>(null);
-
-  useEffect(() => {
-    const field = ref.current;
-    if (!field) return;
-    field.style.height = "0px";
-    field.style.height = `${field.scrollHeight}px`;
-  }, [value]);
-
-  return (
-    <textarea
-      ref={ref}
-      value={value}
-      disabled={disabled}
-      placeholder={placeholder}
-      rows={2}
-      onChange={(event) => onChange(event.target.value)}
-      className="w-full resize-none overflow-hidden bg-transparent text-sm leading-5 outline-none"
-    />
-  );
-}
-
-function ReviewStep({
-  scenes,
-  targetSeconds,
-  busy,
-  hasVideo,
-  directGenerate,
-  creditCost,
-  credits,
-  onChange,
-  onBack,
-  onContinue,
-}: {
-  scenes: Scene[];
-  targetSeconds: number;
-  busy: boolean;
-  hasVideo: boolean;
-  directGenerate: boolean;
-  creditCost: number;
-  credits: number;
-  onChange: (scenes: Scene[]) => void;
-  onBack: () => void;
-  onContinue: () => void;
-}) {
-  function update(index: number, patch: Partial<Scene>) {
-    onChange(scenes.map((scene, i) => (i === index ? { ...scene, ...patch } : scene)));
-  }
-
-  function remove(index: number) {
-    if (scenes.length <= 1) return;
-    onChange(scenes.filter((_, i) => i !== index).map((scene, i) => ({ ...scene, index: i + 1 })));
-  }
-
-  const timed = scenes.map((scene) => ({
-    index: scene.index,
-    estimatedSeconds: scene.estimatedSeconds || 0,
-    lock: userTimedSeconds(scene.title, scene.estimatedSeconds || 0),
-  }));
-  const parts = spillLockedParts(
-    timed,
-    packScenesIntoParts(
-      timed.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds })),
-      targetSeconds,
-    ),
-  );
-  const canContinue = scenes.some(sceneHasStory);
-  const affordable = !directGenerate || credits >= creditCost;
-
-  const groups = parts.length
-    ? parts.map((part, partIndex) => ({
-        key: `part-${partIndex + 1}`,
-        label: `Part ${partIndex + 1}`,
-        max: part.duration,
-        indexes: part.sceneIndexes
-          .map((sceneIndex) => scenes.findIndex((scene) => scene.index === sceneIndex))
-          .filter((index) => index >= 0),
-      }))
-    : [{ key: "all", label: "Scenes", max: targetSeconds, indexes: scenes.map((_, index) => index) }];
-
-  return (
-    <div className="rise-in flex flex-1 flex-col gap-3">
-      <div className="flex flex-wrap items-end justify-between gap-2">
-        <div>
-          <h3 className="display text-xl">Scenes</h3>
-          <p className="mt-0.5 text-xs text-[var(--muted)]">One short beat per card. Each part stays within 30s.</p>
-        </div>
-        <p className="text-xs text-[var(--muted)]">{formatPartPlan(parts)}</p>
-      </div>
-
-      {groups.map((group) => {
-        const seconds = group.indexes.reduce((sum, index) => sum + (scenes[index]?.estimatedSeconds || 0), 0);
-        return (
-          <section key={group.key} className="flex flex-col gap-1.5">
-            <div className="flex items-baseline justify-between px-0.5">
-              <h4 className="text-sm font-semibold">{group.label}</h4>
-              <p className="text-[11px] tabular-nums text-[var(--muted)]">
-                {Math.round(seconds * 10) / 10}s · max {group.max}s
-              </p>
-            </div>
-            {group.indexes.map((index) => {
-              const scene = scenes[index];
-              const empty = !sceneHasStory(scene);
-              return (
-                <article key={scene.id} className={`overflow-hidden rounded-xl border bg-white ${empty ? "border-amber-200" : "border-[var(--line)]"}`}>
-                  <div className="flex items-center gap-2 border-b border-[var(--line)] bg-stone-50/80 px-3 py-1.5">
-                    <span className="text-xs font-semibold tabular-nums">Scene {scene.index || index + 1}</span>
-                    {empty ? <span className="text-[11px] text-amber-300">Empty</span> : null}
-                    <label className="ml-auto flex items-center gap-1 text-[11px] text-[var(--muted)]">
-                      <input
-                        type="number"
-                        min={2}
-                        max={30}
-                        value={scene.estimatedSeconds}
-                        disabled={busy}
-                        aria-label={`Scene ${scene.index || index + 1} seconds`}
-                        onChange={(event) => {
-                          const estimatedSeconds = Math.min(30, Math.max(2, Number(event.target.value) || 2));
-                          update(index, ensureSceneShots({ ...scene, estimatedSeconds }));
-                        }}
-                        className="w-10 rounded-md border border-stone-200 bg-white px-1 py-0.5 text-right text-xs tabular-nums text-[var(--ink)] outline-none"
-                      />
-                      sec
-                    </label>
-                    <button
-                      type="button"
-                      disabled={busy || scenes.length <= 1}
-                      aria-label={`Delete scene ${scene.index || index + 1}`}
-                      onClick={() => remove(index)}
-                      className="rounded-md px-1.5 py-0.5 text-[11px] text-[var(--cf-muted)] hover:bg-red-500/10 hover:text-[var(--danger)] disabled:opacity-30"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                  <div className="grid grid-cols-[4.25rem_1fr] items-start gap-x-3 gap-y-1.5 px-3 py-2.5">
-                    <span className="pt-0.5 text-[11px] text-[var(--muted)]">Place</span>
-                    <input
-                      value={scene.location}
-                      disabled={busy}
-                      onChange={(event) => update(index, { location: event.target.value })}
-                      placeholder="Where this happens"
-                      className="w-full bg-transparent text-sm font-medium outline-none"
-                    />
-                    <span className="pt-0.5 text-[11px] text-[var(--muted)]">Shot</span>
-                    <input
-                      value={scene.camera}
-                      disabled={busy}
-                      onChange={(event) => update(index, { camera: event.target.value })}
-                      placeholder="Camera"
-                      className="w-full bg-transparent text-sm outline-none"
-                    />
-                    <span className="pt-0.5 text-[11px] text-[var(--muted)]">Action</span>
-                    <FitText
-                      value={scene.summary}
-                      disabled={busy}
-                      placeholder="What happens in this shot"
-                      onChange={(summary) => update(index, { summary })}
-                    />
-                    <span className="pt-1 text-[11px] text-[var(--muted)]">Line</span>
-                    <div className="min-w-0">
-                      {scene.dialogue.map((line, lineIndex) => (
-                        <div key={`${scene.id}-d-${lineIndex}`} className="mb-1 flex items-center gap-1.5">
-                          <input
-                            value={line.speaker}
-                            disabled={busy}
-                            placeholder="Speaker"
-                            onChange={(event) => {
-                              const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, speaker: event.target.value } : item));
-                              update(index, { dialogue });
-                            }}
-                            className="w-24 shrink-0 rounded-md bg-stone-100 px-1.5 py-0.5 text-xs font-medium outline-none"
-                          />
-                          <input
-                            value={line.line}
-                            disabled={busy}
-                            placeholder="Spoken line"
-                            onChange={(event) => {
-                              const dialogue = scene.dialogue.map((item, i) => (i === lineIndex ? { ...item, line: event.target.value } : item));
-                              update(index, { dialogue });
-                            }}
-                            className="min-w-0 flex-1 bg-transparent text-sm outline-none"
-                          />
-                          <button
-                            type="button"
-                            disabled={busy}
-                            aria-label="Remove line"
-                            onClick={() => update(index, { dialogue: scene.dialogue.filter((_, i) => i !== lineIndex) })}
-                            className="px-1 text-sm text-stone-400 hover:text-[var(--danger)]"
-                          >
-                            ×
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        type="button"
-                        disabled={busy}
-                        onClick={() => update(index, { dialogue: [...scene.dialogue, { speaker: "", line: "" }] })}
-                        className="text-[11px] text-[var(--accent)]"
-                      >
-                        Add line
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </section>
-        );
-      })}
-
-      <div className="mt-auto flex items-center justify-between pt-2">
-        <BackButton disabled={busy} onClick={onBack}>
-          {hasVideo ? "Back to video" : "Back"}
-        </BackButton>
-        <div className="flex flex-col items-end gap-1">
-          <button
-            type="button"
-            disabled={busy || !canContinue || !affordable}
-            onClick={onContinue}
-            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
-          >
-            {directGenerate ? `Generate - ${creditCost} credits` : hasVideo ? "Generate" : "Continue"}
-          </button>
-          {directGenerate && !affordable ? <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p> : null}
-        </div>
       </div>
     </div>
   );
@@ -2983,7 +2679,6 @@ function ProduceStep({
   notifyHint,
   onNotifyMe,
   onGenerate,
-  onEditScenes,
   onExpand,
 }: {
   project: Project;
@@ -2995,7 +2690,6 @@ function ProduceStep({
   notifyHint: string;
   onNotifyMe: () => void;
   onGenerate: () => void;
-  onEditScenes: () => void;
   onExpand: (item: { src: string; poster?: string; label?: string; downloadName?: string }) => void;
 }) {
   const delivered = projectDeliveredSrc(project);
@@ -3066,15 +2760,6 @@ function ProduceStep({
         />
       </div>
 
-      {done ? (
-        <button
-          type="button"
-          onClick={onEditScenes}
-          className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] sm:w-auto"
-        >
-          Edit scenes
-        </button>
-      ) : null}
       {!done && !working ? (
         <div className="flex flex-col items-start gap-1">
           <button

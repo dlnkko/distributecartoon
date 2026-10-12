@@ -5,7 +5,7 @@ const STEP_LABEL: Record<WorkflowStep, string> = {
   script: "Script",
   song: "Song",
   setup: "Setup",
-  review: "Scenes",
+  review: "Cast",
   cast: "Cast",
   produce: "Generate",
 };

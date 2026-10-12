@@ -34,7 +34,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
         "Each character speaks only their own line.",
         "Before any gaze, state the camera position relative to the look target. Do not leave two competing face directions. If the eyes are not on the lens, say eyes NOT on camera. On an emotional close-up keep: gaze must not be directed at lens unless explicitly stated.",
         prior
-          ? "A previous part prompt is included. This clip is the next slice, not a replay of the previous ending. Do not regenerate the last 5 seconds. The video tagged as those 5 seconds is a reference so the cut is not abrupt. Use it for the clothes, anything in their hands, and a body change that still applies. This part may open in a new place."
+          ? "A previous part prompt is included. This clip is the next slice, not a replay of the previous ending. The attached video of the last 5 seconds is a continuation reference for the picture only: clothes, hands, and body position. Do not copy its audio. Do not repeat, lipsync, or paraphrase any spoken line from that fragment. If the draft lists lines already said in that reference, keep that list. This part may open in a new place."
           : "",
       ]
         .filter(Boolean)
@@ -49,6 +49,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     const revisedTags = tagsIn(revised);
     if (draftTags.some((tag) => !revisedTags.includes(tag)) || revisedTags.some((tag) => !draftTags.includes(tag))) return trimmed;
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
+    if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     if (/@Audio2\b/.test(revised)) return trimmed;
     if (/While @Audio1 plays/i.test(trimmed) && !/While @Audio1 plays/i.test(revised)) return trimmed;

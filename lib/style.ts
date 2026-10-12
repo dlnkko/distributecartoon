@@ -1092,6 +1092,39 @@ function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number) {
   });
 }
 
+function spokenKey(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function dialogueAlreadyInTail(project: Project, sceneIndexes: number[]) {
+  const start = Math.min(...sceneIndexes);
+  if (!Number.isFinite(start)) return [];
+  const prior = project.scenes.filter((scene) => scene.index < start).sort((a, b) => b.index - a.index);
+  let covered = 0;
+  const heard: string[] = [];
+  for (const scene of prior) {
+    if (covered >= 5) break;
+    covered += Math.max(0, scene.estimatedSeconds || 0);
+    for (const line of scene.dialogue || []) {
+      const text = (line.line || "").replace(/\s+/g, " ").trim();
+      if (text) heard.push(text);
+    }
+  }
+  const upcoming = new Set(
+    sceneIndexes
+      .flatMap((index) => project.scenes.find((scene) => scene.index === index)?.dialogue || [])
+      .map((line) => spokenKey(line.line || ""))
+      .filter(Boolean),
+  );
+  const unique: string[] = [];
+  for (const line of heard) {
+    const key = spokenKey(line);
+    if (!key || upcoming.has(key) || unique.some((item) => spokenKey(item) === key)) continue;
+    unique.push(line.length > 140 ? `${line.slice(0, 137).trim()}...` : line);
+  }
+  return unique.slice(0, 4);
+}
+
 function cleanPlace(value: string) {
   return value.trim().replace(/^(?:still\s+)?(?:in\s+)?(?:the\s+)?same\s+/i, "").replace(/[.\s]+$/, "");
 }
@@ -1129,8 +1162,8 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     else if (item.kind === "video")
       refs.push(
         project.song
-          ? `${tag} is a reference only: the last 5 seconds of the previous part, picture and the music already playing. Do not generate those 5 seconds again. This video is the next slice and starts on the moment after that ending. Use the reference so the cut is not abrupt, matching clothes, anything in their hands, and the music at that ending. If this part opens in a new place, bring those details into the new place.`
-          : `${tag} is the last 5 seconds of the previous generation. Use it for what still carries: the clothes from that last moment, anything in their hands, and a body change already visible. If this part opens in a new place, bring those details into the new place. Clothes may change later, when a scene says they do. A product image named in a scene of this part still appears in that scene, even when ${tag} does not show it. Keep the camera cinematic.`,
+          ? `${tag} is a continuation reference only: the last 5 seconds of the previous part, so the cut is not abrupt. Use the picture for clothes, hands, and the music already playing. Do not generate those 5 seconds again. Do not have anyone speak a line already heard in that fragment.`
+          : `${tag} is a continuation reference only: the last 5 seconds of the previous part, picture only. Use it so the cut is not abrupt: same clothes, same things in their hands, same body position. Do not play its audio and do not copy its voice. Do not lipsync, quote, or paraphrase any line heard in those 5 seconds. Those words already happened. This part says only the lines written below.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
@@ -1873,6 +1906,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const images = options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
   const tailLine = refs.find((line) => /last 5 seconds/i.test(line)) || "";
+  const alreadySaid = tailLine ? dialogueAlreadyInTail(project, sceneIndexes) : [];
+  const tailBan = alreadySaid.length
+    ? `Already said in that 5 second reference, do not say them again: ${alreadySaid.map((line) => `"${line}"`).join(" ")}.`
+    : "";
   const previousLine = refs.find((line) => /previous generation in full/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
@@ -2022,12 +2059,14 @@ function simpleScenePrompt(options: CompactPromptOptions) {
             : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
           referenceLock(project, images),
           tailLine,
+          tailBan,
         ]
       : [
           styleThroughout(project.style),
           "A speaker looks at the person they address while the line is coming out. Do not play a silent stare before the line or after it. No shot stays quiet, with nothing happening, for more than 2 seconds.",
           previousLine,
           tailLine,
+          tailBan,
           characterVideos
             ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
             : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
@@ -2128,7 +2167,7 @@ export function labeledReferencePrompt(options: {
   body = ensureSceneNoBgm(body);
   const priorClip = options.videos.length === 1 && options.videos[0]?.kind === "video";
   if (priorClip && !/@Video1\b/.test(body)) {
-    body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} Keep @Video1 voice and cadence.`);
+    body = body.replace(/\bSCENE 1\b[^.]*\./i, (match) => `${match} @Video1 is a continuation reference, picture only. Do not repeat any line from it.`);
   }
   if (!/^(?:realistic commercial, handheld camera fake documentary style\.?\s*)?(?:(?:pixar|claymation) style|realistic live-action) throughout/i.test(body)) {
     body = `${videoStyleLead(options.style, options.project?.aspectRatio)} ${body}`;

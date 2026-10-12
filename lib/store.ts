@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync, writeFile
 import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { createId, nowIso, normalizeAspectRatio } from "./ids";
-import { ensureReferenceSlots, isUnseenVoice, syncReferenceInclusion } from "./refs";
+import { ensureReferenceSlots, syncReferenceInclusion } from "./refs";
 import { type AspectRatio, type Project, type VisualStyle, type WorkflowStep } from "./types";
 
 const projectsDir = () => path.join(process.cwd(), "data", "projects");
@@ -88,8 +88,8 @@ export function normalizeProject(project: Project): Project {
     project.durationAuto = false;
   }
   project.durationPending = false;
-  if (!project.workflowStep) {
-    project.workflowStep = inferWorkflowStep(project);
+  if (!project.workflowStep || project.workflowStep === "review") {
+    project.workflowStep = project.workflowStep === "review" ? "cast" : inferWorkflowStep(project);
   }
   ensureReferenceSlots(project);
   if (project.title === "Nuevo corto" || project.title === "New short") project.title = "New video";
@@ -115,12 +115,7 @@ export function inferWorkflowStep(project: Project): WorkflowStep {
   ) {
     return "produce";
   }
-  if (
-    project.characters.some((character) => !character.isExtra && !isUnseenVoice(character) && (character.portraitPublicPath || character.portraitRemoteUrl) && !character.lookConfirmed)
-  ) {
-    return "cast";
-  }
-  return "review";
+  return "cast";
 }
 
 export function ensureArchivedVideo(project: Project, batch: Project["batches"][number]) {

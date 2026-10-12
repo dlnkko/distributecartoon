@@ -519,7 +519,7 @@ export function projectStage(project: Project) {
     if (project.characters.some((character) => !character.isExtra && !isUnseenVoice(character) && character.portraitPublicPath && !character.lookConfirmed)) {
       return "cast" as const;
     }
-    return "review" as const;
+    return "cast" as const;
   }
   return "setup" as const;
 }

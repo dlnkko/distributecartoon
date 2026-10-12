@@ -5,7 +5,7 @@ import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
-import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, estimateSceneSeconds, fitScenesToPartDurations, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { productPageBrief, productUseBrief } from "./product-facts";
@@ -1070,7 +1070,7 @@ function scaleScenesToTarget(project: Project) {
       project.song?.clips.map((clip) => clip.durationSeconds),
     ),
   );
-  const capped = balancePartSceneSeconds(
+  const capped = fitScenesToPartDurations(
     project.scenes.map(durationOf),
     parts,
   );
@@ -1212,7 +1212,7 @@ async function executeTool(
       ensureReferenceSlots(project);
       syncReferenceInclusion(project);
       stampProductPlacement(project);
-      project.workflowStep = "review";
+      project.workflowStep = "cast";
       await saveProject(project);
       return {
         characters: project.characters.length,
@@ -1354,7 +1354,7 @@ A calm lyric is still a dramatic shot. Do not leave the character in one room on
 Each scene is one lyric line, or two short lines that are the same picture. Do not skip a line that shows a new action, and do not put a whole verse into one scene. Early lines belong to the earlier parts, later lines to the later parts. Never repeat a line in a later part. Every summary starts with the exact sung words, in quotes, then the action: While the song plays "exact lyric", then one physical action. Copy the lyric from the script. Do not paraphrase it and do not invent a line. Every dialogue array stays empty. There is no narrator and no generated voice. The attached song is the only audio and it is already playing on frame one: do not open with a title card, a logo sting, or a silent intro. Ignore the spoken-line and [NO BGM] rules. Mouths stay closed, except once or twice on a hook or a brand line: write sings along in that summary and have the lead mouth that exact quoted line, where they already are, or into a mic only if that line is a performance. Do not do it on every line. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds, longer only when that lyric line itself is longer. Write enough scenes that the seconds inside each part add up to that part. ${styleLine}`;
   }
   const parts = seedancePartDurations(project.targetDurationSeconds || 15).map(
-    (duration, index) => `part ${index + 1} (max ${duration}s)`,
+    (duration, index) => `part ${index + 1} is exactly ${duration}s`,
   );
   const ordered = scriptIsStoryboard(project.scriptText);
   const timedRows = timestampRows(project.scriptText).length >= 2;
@@ -1373,7 +1373,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
     : "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
-  return `${opening} ${known} ${pages} ${watched} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+  return `${opening} ${known} ${pages} ${watched} Target total duration: ${project.targetDurationSeconds}s. Build the prompt from this script, in order, spread across ${parts.join(", ")}. A 75s script is part 1 at 30s, part 2 at 30s, and part 3 at 15s. Each part is one generation of that exact length, never longer than 30s. The beats inside a part add up to that part. Do not add a part and do not leave a part empty. One scene is one action and one camera. Change the shot every scene. ${timing} ${styleLine}`;
 }
 
 export async function runAgent(options: {
@@ -1505,7 +1505,7 @@ export async function runAgent(options: {
     if (!options.project.scenes.length) {
       throw new Error("Couldn't extract scenes from that script.");
     }
-    options.project.workflowStep = "review";
+    options.project.workflowStep = "cast";
     await saveProject(options.project);
     options.onEvent({ type: "project", project: options.project });
     return;
