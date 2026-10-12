@@ -357,7 +357,8 @@ async function fetchCast(projectId: string, signal: AbortSignal, prepareSong = f
     body: JSON.stringify(prepareSong ? { projectId, prepareSong: true } : { projectId }),
     signal,
   });
-  return (await res.json()) as { project?: Project; error?: string };
+  const json = (await res.json()) as { project?: Project; error?: string };
+  return { ...json, status: res.status };
 }
 
 async function loadProjectById(projectId: string, signal: AbortSignal) {
@@ -368,7 +369,7 @@ async function loadProjectById(projectId: string, signal: AbortSignal) {
 }
 
 async function requestCastLooks(projectId: string, signal: AbortSignal, prepareSong = false) {
-  let json: { project?: Project; error?: string };
+  let json: { project?: Project; error?: string; status?: number };
   try {
     json = await fetchCast(projectId, signal, prepareSong);
   } catch (error) {
@@ -378,7 +379,7 @@ async function requestCastLooks(projectId: string, signal: AbortSignal, prepareS
       ? { project: recovered }
       : { error: error instanceof Error ? error.message : "Couldn't cast those characters." };
   }
-  if (json.project && missingCastLooks(json.project).length) {
+  if (json.status !== 409 && json.project && missingCastLooks(json.project).length) {
     try {
       const retry = await fetchCast(projectId, signal);
       if (retry.project) json = retry;
@@ -412,6 +413,9 @@ export function StudioApp() {
   const songRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const castKickRef = useRef("");
+  const castTriesRef = useRef(0);
+  const castingRef = useRef(false);
   const abortOwnerRef = useRef<string | null>(null);
   const projectsRef = useRef<Project[]>([]);
   const refInputs = useRef<Record<string, HTMLInputElement | null>>({});
@@ -446,6 +450,10 @@ export function StudioApp() {
     void boot();
     void registerNotifyWorker();
   }, []);
+
+  useEffect(() => {
+    startCastLooks();
+  }, [project?.id, project?.workflowStep, project?.pendingTask?.startedAt]);
 
   useEffect(() => {
     let cancelled = false;
@@ -572,6 +580,42 @@ export function StudioApp() {
     busyOwnerRef.current = ownerId;
     setBusyOwner(ownerId);
     setBusy(true);
+  }
+
+  function startCastLooks(force = false) {
+    const current = projectRef.current;
+    if (!current || current.song || busyRef.current || castingRef.current) return;
+    const stepNow = current.workflowStep === "review" ? "cast" : current.workflowStep;
+    if (stepNow !== "cast" || activeTask(current) || !missingCastLooks(current).length) return;
+    if (castKickRef.current !== current.id) {
+      castKickRef.current = current.id;
+      castTriesRef.current = 0;
+    }
+    if (force) castTriesRef.current = 0;
+    if (castTriesRef.current >= 2) return;
+    castTriesRef.current += 1;
+    castingRef.current = true;
+    lockBusy(current.id);
+    setStatus("Casting the characters…");
+    void requestCastLooks(current.id, new AbortController().signal)
+      .then((json) => {
+        if (projectRef.current?.id !== current.id) return;
+        if (json.project) remember(json.project);
+        const missing = json.project ? missingCastLooks(json.project) : missingCastLooks(current);
+        if (json.status === 409) {
+          setStatus("Casting the characters…");
+          return;
+        }
+        setStatus(missing.length ? json.error || `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
+      })
+      .catch((error: unknown) => {
+        if (projectRef.current?.id !== current.id) return;
+        setStatus((error as Error).name === "AbortError" ? "Stopped." : error instanceof Error ? error.message : "Couldn't cast those characters.");
+      })
+      .finally(() => {
+        castingRef.current = false;
+        unlockBusy(current.id);
+      });
   }
 
   function unlockBusy(ownerId: string) {
@@ -815,8 +859,9 @@ export function StudioApp() {
             const cast = await requestCastLooks(started.id, controller?.signal || new AbortController().signal);
             if (projectRef.current?.id !== started.id) return;
             if (cast.project) adopt(cast.project);
-            const missing = cast.project ? missingCastLooks(cast.project) : [];
-            setStatus(missing.length ? `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : cast.error || "");
+            const missing = cast.project ? missingCastLooks(cast.project) : missingCastLooks(latest);
+            if (cast.status === 409) setStatus("Casting the characters…");
+            else setStatus(missing.length ? cast.error || `Couldn't load ${missing.map((character) => character.name).join(", ")}.` : "");
           } else {
             setStatus("");
           }
@@ -1765,6 +1810,7 @@ export function StudioApp() {
               credits={credits}
               onBack={() => void patchProject({ workflowStep: "setup" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
+              onCreateLooks={() => startCastLooks(true)}
               onContinue={() => void continueFromCast()}
             />
           ) : null}
@@ -2569,6 +2615,7 @@ function CastStep({
   credits,
   onBack,
   onRevise,
+  onCreateLooks,
   onContinue,
 }: {
   characters: Character[];
@@ -2577,6 +2624,7 @@ function CastStep({
   credits: number;
   onBack: () => void;
   onRevise: (characterId: string, notes: string) => void;
+  onCreateLooks: () => void;
   onContinue: () => void;
 }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
@@ -2619,8 +2667,13 @@ function CastStep({
                     }}
                   />
                 ) : (
-                  <div className="grid h-full place-items-center px-4 text-center text-sm text-[var(--muted)]">
-                    {busy ? "Casting…" : "No look yet"}
+                  <div className="grid h-full place-items-center gap-2 px-4 text-center text-sm text-[var(--muted)]">
+                    <span>{busy ? "Casting…" : "No look yet"}</span>
+                    {busy ? null : (
+                      <button type="button" onClick={onCreateLooks} className="text-sm text-[var(--accent)]">
+                        Create look
+                      </button>
+                    )}
                   </div>
                 )}
               </div>

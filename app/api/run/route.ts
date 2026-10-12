@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { isAbortError } from "@/lib/abort";
 import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
-import { resetInFlightBatches, startProduce } from "@/lib/pipeline";
+import { ensureCharacterLooks, leadCharacters, resetInFlightBatches, startProduce } from "@/lib/pipeline";
 import { driveProduce } from "@/lib/produce";
 import { getProject, listProjects, saveProject } from "@/lib/store";
 import { activeTask } from "@/lib/tasks";
@@ -211,6 +211,13 @@ async function runPlan(project: Project, send: (event: StudioEvent) => void) {
         if (event.type === "project" && event.project) send({ type: "project", project: event.project });
       },
     });
+    const needsLooks =
+      !project.song &&
+      leadCharacters(project).some((character) => !(character.portraitRemoteUrl || character.portraitPublicPath));
+    if (needsLooks) {
+      send({ type: "status", text: "Casting the characters…" });
+      await ensureCharacterLooks(project, () => undefined);
+    }
   } catch (error) {
     await resetInFlightBatches(project).catch(() => undefined);
     project.taskError = isAbortError(error) ? "Stopped." : error instanceof Error ? error.message : String(error);
