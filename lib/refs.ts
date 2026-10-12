@@ -194,10 +194,6 @@ function referenceWords(text: string) {
     .filter((word) => word.length >= 4 && !PRODUCT_WORD_STOP.has(word));
 }
 
-function hasWord(text: string, word: string) {
-  return new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
-}
-
 function productMentionWords(project: Project, asset: ReferenceAsset) {
   const cues = (project.scriptRefCues || []).filter((cue) => cue.kind === asset.kind && cue.cue?.trim());
   const facts = productFacts(project, asset.label);
@@ -207,10 +203,59 @@ function productMentionWords(project: Project, asset: ReferenceAsset) {
   return [...new Set(referenceWords([...cues.map((cue) => cue.cue), label, namedNotes, facts.name].join(" ")))];
 }
 
+const ABSENT_OBJECT =
+  "tape|tapes|box|boxes|pack|packs|packet|packets|package|packages|packaging|pouch|pouches|sachet|sachets|bottle|bottles|jar|jars|tub|tubs|product|producto|logo|strip|strips";
+
+const NEGATED_OBJECT = new RegExp(
+  `\\b(?:no|not|without|never|zero)\\s+(?:the\\s+|a\\s+|an\\s+|any\\s+|more\\s+|her\\s+|his\\s+|their\\s+)?(?:${ABSENT_OBJECT})\\b`,
+  "gi",
+);
+
+const POSITIVE_OBJECT = new RegExp(
+  `\\b(?:the|a|an|this|that|her|his|their)\\s+(?:${ABSENT_OBJECT})\\b`,
+  "gi",
+);
+
+export function productKeptOut(text: string) {
+  NEGATED_OBJECT.lastIndex = 0;
+  POSITIVE_OBJECT.lastIndex = 0;
+  const absent =
+    NEGATED_OBJECT.test(text) ||
+    /\b(?:without the product|no product|product stays out|before the product|not in frame|stays out of frame|out of frame)\b/i.test(text);
+  NEGATED_OBJECT.lastIndex = 0;
+  if (!absent) return false;
+  const stripped = text.replace(NEGATED_OBJECT, " ");
+  NEGATED_OBJECT.lastIndex = 0;
+  POSITIVE_OBJECT.lastIndex = 0;
+  const shown = POSITIVE_OBJECT.test(stripped);
+  POSITIVE_OBJECT.lastIndex = 0;
+  return !shown;
+}
+
+export function textShowsPackage(text: string) {
+  if (productKeptOut(text)) return false;
+  const stripped = text.replace(NEGATED_OBJECT, " ");
+  NEGATED_OBJECT.lastIndex = 0;
+  return /\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packaging|the product|producto)\b/i.test(stripped);
+}
+
+function hasPositiveWord(text: string, word: string) {
+  const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const re = new RegExp(
+    `\\b(?:no|not|without|never|zero)\\s+(?:the\\s+|a\\s+|an\\s+|any\\s+|her\\s+|his\\s+|their\\s+)?${escaped}\\b|\\b${escaped}\\b`,
+    "gi",
+  );
+  let positive = false;
+  for (const match of text.matchAll(re)) {
+    if (!/^(?:no|not|without|never|zero)\b/i.test(match[0])) positive = true;
+  }
+  return positive;
+}
+
 function sceneMentionsProduct(project: Project, asset: ReferenceAsset, sceneIndexes: number[]) {
   const text = sceneBlob(project, sceneIndexes);
-  if (/\b(?:without the product|no product|product stays out|before the product)\b/i.test(text)) return false;
-  return productMentionWords(project, asset).some((word) => hasWord(text, word));
+  if (productKeptOut(text)) return false;
+  return productMentionWords(project, asset).some((word) => hasPositiveWord(text, word));
 }
 
 function sceneBlob(project: Project, sceneIndexes?: number[]) {
@@ -463,6 +508,10 @@ export function scriptCallsForReference(
 ) {
   if (asset.kind === "character") return false;
   if (sceneIndexes && sceneIndexes.length === 0) return false;
+  if ((asset.kind === "product" || asset.kind === "logo") && sceneIndexes?.length) {
+    const texts = sceneIndexes.map((index) => sceneBlob(project, [index]));
+    if (texts.length && texts.every((text) => productKeptOut(text))) return false;
+  }
 
   const cues = project.scriptRefCues || [];
   if (sceneIndexes) {

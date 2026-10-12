@@ -1367,13 +1367,15 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const pages = productPageBrief(project)
     ? "A product page is included. Use it for how the product is used and how it should look, only in a scene the user already puts the product in. Do not invent a different container, dose, or ritual than the page describes. Keep the user's spoken lines."
     : "";
+  const presence =
+    "The product image and the logo belong only to a scene whose action already shows them. If a scene says the product, the package, the box, or the logo is not there, leave both out of that scene. Do not invent a shot where someone uses the product.";
   const watched = productUseBrief(project)
     ? "A short video shows how this product is actually used. Follow that description whenever the product is on screen. Do not invent another way to use it."
     : "";
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
     : "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
-  return `${opening} ${known} ${pages} ${watched} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. Do not lengthen a scene to fill its part. ${styleLine}`;
+  return `${opening} ${known} ${pages} ${watched} ${presence} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. Do not lengthen a scene to fill its part. ${styleLine}`;
 }
 
 export async function runAgent(options: {

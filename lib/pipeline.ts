@@ -9,7 +9,7 @@ import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoT
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
 import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, scriptCallsForReference } from "./refs";
+import { assignCharacterSourcePhotos, isUnseenVoice, productKeptOut, promptReadyReferences, refineStoryLeads, scriptCallsForReference, textShowsPackage } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
@@ -1250,15 +1250,17 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
     const asset = project.references.find(
       (item) => item.kind === entry.kind && item.label.trim().toLowerCase() === entry.name.trim().toLowerCase(),
     );
-    const blob = sceneIndexes
-      .map((index) => {
-        const scene = project.scenes.find((item) => item.index === index);
-        const lines = (scene?.dialogue || []).map((line) => line.line).join(" ");
-        const shots = (scene?.shots || []).map((shot) => shot.action).join(" ");
-        return `${scene?.title || ""} ${scene?.summary || ""} ${lines} ${shots}`;
-      })
-      .join(" ");
-    if (/\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packshot|end\s*card|the product|producto)\b/i.test(blob)) continue;
+    const texts = (sceneIndexes || []).map((index) => {
+      const scene = project.scenes.find((item) => item.index === index);
+      const lines = (scene?.dialogue || []).map((line) => line.line).join(" ");
+      const shots = (scene?.shots || []).map((shot) => shot.action).join(" ");
+      return `${scene?.title || ""} ${scene?.summary || ""} ${lines} ${shots}`;
+    });
+    if (texts.length && texts.every((text) => productKeptOut(text))) {
+      entries.splice(index, 1);
+      continue;
+    }
+    if (texts.some((text) => textShowsPackage(text))) continue;
     if (asset && scriptCallsForReference(project, asset, sceneIndexes, false)) continue;
     entries.splice(index, 1);
   }

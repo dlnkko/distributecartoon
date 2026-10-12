@@ -2,7 +2,7 @@ import { characterRole, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
 import { productFacts, productUseHint } from "./product-facts";
-import { isUnseenVoice, promptReadyReferences, scriptCallsForReference } from "./refs";
+import { isUnseenVoice, productKeptOut, promptReadyReferences, scriptCallsForReference, textShowsPackage } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { planShots } from "./shots";
 
@@ -760,7 +760,7 @@ function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: Re
   if (!scene) return false;
   const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
   const blob = `${scene.summary || ""} ${scene.title || ""} ${lines}`;
-  if (/\b(without the product|no product|product stays out|not in frame|before the product)\b/i.test(blob)) return false;
+  if (productKeptOut(blob) || /\b(without the product|no product|product stays out|not in frame|before the product)\b/i.test(blob)) return false;
   if (scriptCallsForReference(project, asset, [scene.index], false)) return true;
   const brief = project.song?.productBrief?.trim() || "";
   if (brief.length >= 3 && brief.length <= 80 && blob.toLowerCase().includes(brief.toLowerCase())) return true;
@@ -1819,7 +1819,10 @@ function referenceLock(project: Project, images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      if (item.kind === "product") return `@Image${index + 1} is ${productPromptName(project, name, item.notes || "")}, the product in the photo`;
+      if (item.kind === "product" || item.kind === "logo") {
+        const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : name;
+        return `@Image${index + 1} is ${called}. Show it only in a scene whose action already has it in frame. Every other scene leaves it out.`;
+      }
       const kind = item.kind === "character" ? "character" : item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
@@ -2001,9 +2004,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look),
     );
     const packageTag = images.map((item, imageIndex) => (item.kind === "product" ? `@Image${imageIndex + 1}` : "")).find(Boolean) || "";
-    const mentionsPackage = /\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packshot|end\s*card|the product)\b/i.test(
-      `${scene?.summary || ""} ${scene?.title || ""} ${pictured}`,
-    );
+    const sceneText = `${scene?.summary || ""} ${scene?.title || ""}`;
+    const mentionsPackage = !productKeptOut(sceneText) && textShowsPackage(pictured);
     const withPackage =
       packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
         ? `${pictured.replace(/[. ]+$/, "")}. The package on screen is ${packageTag}.`
