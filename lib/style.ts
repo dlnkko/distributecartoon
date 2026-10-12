@@ -2,8 +2,8 @@ import { characterRole, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
 import { productUseHint } from "./product-page";
-import { isUnseenVoice, promptReadyReferences } from "./refs";
-import type { Batch, Character, DialogueLine, Project, Scene, VisualStyle } from "./types";
+import { isUnseenVoice, promptReadyReferences, scriptCallsForReference } from "./refs";
+import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { planShots } from "./shots";
 
 export type PromptRef = {
@@ -12,6 +12,19 @@ export type PromptRef = {
   name: string;
   notes?: string;
 };
+
+export function isStageSpeaker(name: string) {
+  return /^(?:picture|pictures|on[-\s]?screen|onscreen|action|visual|shot|camera|image|frame|insert)$/i.test(name.trim());
+}
+
+export function isEmptyVoiceLine(line: string) {
+  const clean = line.trim().replace(/^[“"']+|[”"']+$/g, "");
+  return /^(?:none|no vo|no voice-?over|no voiceover|silence|silent|n\/a|—|–|-|\.{1,3})(?:\s*[.!]\s*|\s*$)/i.test(clean);
+}
+
+function changesPlace(text: string) {
+  return /\b(?:walks?|runs?|enters?|leaves?|steps?|heads?|goes|moves|crosses|another room|new room|into the|out of the)\b/i.test(text);
+}
 
 export function styleLookName(style: VisualStyle) {
   if (style === "claymation") return "Claymation";
@@ -340,9 +353,15 @@ function sceneOnScreenNames(scene?: Scene, project?: Project) {
       .filter((character) => character.isExtra || isUnseenVoice(character))
       .map((character) => character.name.trim().toLowerCase()),
   );
-  return [...new Set((scene.characterNames || []).map((name) => name.trim()).filter(Boolean))].filter(
-    (name) => !unseen.has(name.toLowerCase()),
+  const named = [...new Set((scene.characterNames || []).map((name) => name.trim()).filter(Boolean))].filter(
+    (name) => !unseen.has(name.toLowerCase()) && !isStageSpeaker(name),
   );
+  if (named.length || !project) return named;
+  const blob = `${scene.summary || ""} ${scene.title || ""}`;
+  return project.characters
+    .filter((character) => !character.isExtra && !isUnseenVoice(character) && character.name.trim())
+    .filter((character) => new RegExp(`\\b${character.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(blob))
+    .map((character) => character.name);
 }
 
 function pickSingleSubjectCamera(used: string[]) {
@@ -377,9 +396,13 @@ function openingAction(scene?: Scene) {
 export function openingFrameCharacters(project: Project, batch: Batch): string[] {
   const scene = sceneByIndex(project, firstSceneIndex(batch));
   if (!scene) return [];
-  const leads = (scene.characterNames.length
+  const listed = (scene.characterNames.length
     ? scene.characterNames
     : project.characters.filter((character) => !character.isExtra).map((character) => character.name)
+  ).filter((name) => name.trim() && !isStageSpeaker(name));
+  const leads = (listed.length
+    ? listed
+    : project.characters.filter((character) => !character.isExtra && !isUnseenVoice(character)).map((character) => character.name)
   ).filter((name, index, all) => name.trim() && all.findIndex((other) => other.toLowerCase() === name.toLowerCase()) === index);
   const beat = openingAction(scene);
   const hits = leads
@@ -705,9 +728,7 @@ function ensureVisibleAction(summary: string) {
   let text = summary.trim();
   if (!text) return text;
   if (
-    /\b(eat|eats|eating|chew|chews|swallow|swallows|takes a gummy|take a gummy|takes one|take one|puts it in (?:his|her|their) mouth)\b/i.test(
-      text,
-    ) &&
+    /\b(eat|eats|eating|chew|chews|swallow|swallows|takes a gummy|take a gummy|takes? one(?!\s+(?:breath|step|look|moment|second|pause))|puts it in (?:his|her|their) mouth)\b/i.test(text) &&
     !/\b(hand|picks? it|brings? it to|lifts? it to|puts? it (?:in|into) (?:his|her|their)?\s*mouth|chews)\b/i.test(text)
   ) {
     text +=
@@ -756,16 +777,13 @@ function ensurePhysicalLogic(summary: string, context = "") {
   return text;
 }
 
-function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: { label: string; notes?: string }) {
+function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: ReferenceAsset) {
   if (!scene) return false;
-  const blob = `${scene.summary || ""} ${scene.title || ""}`;
+  const blob = `${scene.summary || ""} ${scene.title || ""} ${(scene.dialogue || []).map((line) => line.line).join(" ")}`;
   if (/\b(without the product|no product|product stays out|not in frame|before the product)\b/i.test(blob)) return false;
-  if (/\b(the attached product|the product|this product)\b/i.test(blob)) return true;
+  if (scriptCallsForReference(project, asset, [scene.index], false)) return true;
   const brief = project.song?.productBrief?.trim() || "";
-  if (brief.length >= 3 && brief.length <= 80 && blob.toLowerCase().includes(brief.toLowerCase())) return true;
-  const label = asset.label.trim();
-  if (label && !/^product\s*\d+$/i.test(label) && blob.toLowerCase().includes(label.toLowerCase())) return true;
-  return false;
+  return Boolean(brief.length >= 3 && brief.length <= 80 && blob.toLowerCase().includes(brief.toLowerCase()));
 }
 
 function scenePropCues(project: Project, sceneIndex: number) {
@@ -1695,7 +1713,7 @@ function imageKind(images: PromptRef[], tag: string) {
 }
 
 function seenPhrase(tag: string, kind: string, _look: string) {
-  if (kind === "product") return `The package on screen is ${tag}`;
+  if (kind === "product") return `The product already in this action matches ${tag}`;
   if (kind === "logo") return `The logo on screen is ${tag}`;
   return `as seen in ${tag}`;
 }
@@ -1830,7 +1848,7 @@ function sceneSays(
       .replace(/^["']+|["']+$/g, "")
       .replace(/\s+/g, " ")
       .trim();
-    if (!entry.speaker || !text) continue;
+    if (!entry.speaker || !text || isStageSpeaker(entry.speaker) || isEmptyVoiceLine(text)) continue;
     if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
       const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
       const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
@@ -1870,10 +1888,14 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const saidAlready = new Set<string>();
   const lineKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
-  const flat = sceneIndexes.flatMap((index, i) => {
+  const flat = sceneIndexes.map((index, i) => {
     const scene = scenes[i];
-    const cuts = scene?.shots?.length ? scene.shots : planShots(scene || { summary: "", camera: "", estimatedSeconds: seconds[i] || 3 });
-    return cuts.map((shot, shotIndex) => ({ scene, index, shot, shotIndex, shotCount: cuts.length }));
+    const shot = planShots({
+      summary: scene?.summary || "",
+      camera: scene?.camera || "",
+      estimatedSeconds: seconds[i] || scene?.estimatedSeconds || 3,
+    })[0];
+    return { scene, index, shot, shotIndex: 0, shotCount: 1 };
   });
   const cutSeconds = fittedSeconds(
     flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
@@ -1888,7 +1910,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   });
   for (const indexes of shotGroups.values()) {
     const scene = flat[indexes[0]]?.scene;
-    const lines = (scene?.dialogue || []).filter((line) => line.speaker && line.line?.trim());
+    const lines = (scene?.dialogue || []).filter(
+      (line) => line.speaker && line.line?.trim() && !isStageSpeaker(line.speaker) && !isEmptyVoiceLine(line.line || ""),
+    );
     const narrated = lines.filter((line) => line.voiceover || isVoiceoverSpeaker(project, line.speaker));
     const spoken = lines.filter((line) => !narrated.includes(line));
     const take = Math.ceil(spoken.length / Math.max(1, indexes.length));
@@ -1931,8 +1955,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const summary = withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene);
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
     const action = expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space);
-    const locks = shotIndex === 0 ? (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock)) : [];
-    const continued = shotIndex > 0 ? "Same place, distance, and body as the previous shot." : "";
+    const locks = (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock));
+    const continued = shotIndex > 0 && !changesPlace(`${shot.action || ""} ${action}`) ? "Same place, distance, and body as the previous shot." : "";
     const body = [continued, action, ...locks]
       .map((part) => part.trim())
       .filter(Boolean)
@@ -1945,17 +1969,21 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const pictured = scrubDirections(
       ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look),
     );
-    const packageTag = images.map((item, imageIndex) => (item.kind === "product" ? `@Image${imageIndex + 1}` : "")).find(Boolean) || "";
-    const mentionsPackage = /\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packshot|end\s*card|the product)\b/i.test(
-      `${scene?.summary || ""} ${scene?.title || ""} ${pictured}`,
-    );
-    const withPackage =
-      packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
-        ? `${pictured.replace(/[. ]+$/, "")}. The package on screen is ${packageTag}.`
-        : pictured;
+    const unnamedProduct = images.flatMap((item, imageIndex) => {
+      if (item.kind !== "product" || !scene) return [];
+      const tag = `@Image${imageIndex + 1}`;
+      if (new RegExp(escapeRegExp(tag), "i").test(pictured)) return [];
+      const asset = project.references.find(
+        (ref) => ref.kind === item.kind && ref.label.trim().toLowerCase() === item.name.trim().toLowerCase(),
+      );
+      return asset && scriptCallsForReference(project, asset, [scene.index], false) ? [tag] : [];
+    });
+    const withProduct = unnamedProduct.length
+      ? `${pictured.replace(/[. ]+$/, "")}. ${unnamedProduct.map((tag) => seenPhrase(tag, "product", look)).join(". ")}.`
+      : pictured;
     const slice = linesByShot[i] || [];
     const visual = alignActionToVoice(
-      song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage,
+      song ? withProduct.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withProduct,
       slice.map((line) => line.line || ""),
     );
     const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
@@ -1967,10 +1995,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
         : ""
       : said
-        ? `${said} The line starts in the first second and lasts to the end of this shot. Do not open or close on a silent look.`
-        : (cutSeconds[i] || shot.seconds) > 3
-          ? "From the first second the body keeps moving. Do not hold on a look."
-          : "";
+        ? `${said} The line starts in the first second. Do not open or close on a silent look.`
+        : "";
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
@@ -2002,7 +2028,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ]
       : [
           styleThroughout(project.style),
-          "A speaker looks at the person they address while the line is coming out. Do not play a silent stare before the line or after it. No shot stays quiet, with nothing happening, for more than 2 seconds.",
+          "A speaker looks at the person they address while the line is coming out. Do not play a silent stare before the line or after it.",
           previousLine,
           tailLine,
           characterVideos
@@ -2018,7 +2044,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const writtenCard = scenes.some((scene) => /\b(?:end\s*card|packshot|pack shot|tarjeta\s+final)\b/i.test(`${scene?.title || ""} ${scene?.summary || ""}`));
   const carryOn = writtenCard
     ? "Play the end card scenes already written. The package in those scenes is the product image named there. Do not add another frame after the last scene."
-    : "The last frame stays inside the last scene, still moving. Do not add an end card, a pack shot, a logo sting, a freeze, or a beauty frame of anyone holding the product. Do not turn the product toward the lens. The next part continues from this action.";
+    : "The last frame stays inside the last scene, still moving. Do not add a frame after the last scene. Do not add a logo sting or a freeze. The next part continues from this action.";
   return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."} ${carryOn}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")

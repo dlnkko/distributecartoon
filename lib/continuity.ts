@@ -85,6 +85,10 @@ function nameAt(text: string, name: string) {
   return typeof match?.index === "number" ? match.index : -1;
 }
 
+function isStageName(name: string) {
+  return /^(?:picture|pictures|on[-\s]?screen|onscreen|action|visual|shot|camera|image|frame|insert)$/i.test(name.trim());
+}
+
 function onScreenLeads(scene: Scene, project: Project) {
   const hidden = new Set(
     project.characters
@@ -92,7 +96,7 @@ function onScreenLeads(scene: Scene, project: Project) {
       .map((character) => character.name.trim().toLowerCase()),
   );
   return [...new Set((scene.characterNames || []).map((name) => name.trim()).filter(Boolean))].filter(
-    (name) => !hidden.has(name.toLowerCase()),
+    (name) => !hidden.has(name.toLowerCase()) && !isStageName(name),
   );
 }
 
