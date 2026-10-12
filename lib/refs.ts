@@ -1,5 +1,5 @@
 import { createId } from "./ids";
-import { productFacts } from "./product-page";
+import { productFacts } from "./product-facts";
 import type { Character, Project, ReferenceAsset, ReferenceKind, Scene } from "./types";
 
 export const MAX_CAST_LEADS = 4;

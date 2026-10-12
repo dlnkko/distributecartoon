@@ -8,7 +8,7 @@ import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScen
 import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
-import { productPageBrief, productUseBrief } from "./product-page";
+import { productPageBrief, productUseBrief } from "./product-facts";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";

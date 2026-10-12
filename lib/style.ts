@@ -1,7 +1,7 @@
 import { characterRole, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
-import { productFacts, productUseHint } from "./product-page";
+import { productFacts, productUseHint } from "./product-facts";
 import { isUnseenVoice, promptReadyReferences, scriptCallsForReference } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { planShots } from "./shots";
