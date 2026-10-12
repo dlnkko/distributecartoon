@@ -6,7 +6,6 @@ import { type AgentMode, type AspectRatio, type Character, type Project, type Re
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
-import { seedancePartDurations } from "@/lib/timing";
 import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, RENDER_WAIT_MESSAGE, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
@@ -2385,10 +2384,7 @@ function SetupStep({
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
             <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
             <p className="mt-2 text-xs text-[var(--muted)]">
-              {seedancePartDurations(project.targetDurationSeconds || 15)
-                .map((seconds) => `${seconds}s`)
-                .join(" + ")}
-              . Each take is at most 30s.
+              Each take is at most 30s. A scene keeps its own length.
             </p>
           </div>
         )}

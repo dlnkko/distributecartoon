@@ -12,7 +12,7 @@ import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, scriptCallsForReference } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { fitScenesToPartDurations, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1364,7 +1364,7 @@ export function planSeedanceBatches(project: Project) {
       project.song?.clips.map((clip) => clip.durationSeconds),
     ),
   );
-  const capped = fitScenesToPartDurations(timed, parts);
+  const capped = balancePartSceneSeconds(timed, parts);
   project.scenes.forEach((scene) => {
     const next = capped.get(scene.index);
     if (next) scene.estimatedSeconds = next;
@@ -1379,12 +1379,14 @@ export function planSeedanceBatches(project: Project) {
     const scenes = sceneIndexes
       .map((sceneIndex) => project.scenes.find((scene) => scene.index === sceneIndex))
       .filter((scene): scene is Project["scenes"][number] => Boolean(scene));
+    const spoken = scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0);
+    const fitted = project.song ? part.duration : Math.min(30, Math.max(4, Math.round(spoken || part.duration)));
     const prior = previous.find(
       (batch) =>
         sameSceneList(batch.sceneIndexes, sceneIndexes) &&
         Boolean(batch.videoPublicPath || batch.videoRemoteUrl || realKieVideoTaskId(batch.kieVideoTaskId)),
     );
-    const duration = prior?.duration || part.duration;
+    const duration = prior?.duration || fitted;
     const names = [...new Set(scenes.flatMap((scene) => scene.characterNames || []))];
     return {
       id: prior?.id || createId("batch"),

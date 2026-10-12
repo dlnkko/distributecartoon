@@ -2077,11 +2077,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   )
     .filter(Boolean)
     .join(" ");
-  const writtenCard = scenes.some((scene) => /\b(?:end\s*card|packshot|pack shot|tarjeta\s+final)\b/i.test(`${scene?.title || ""} ${scene?.summary || ""}`));
-  const carryOn = writtenCard
-    ? "Play the end card scenes already written. The package in those scenes is the product image named there. Do not add another frame after the last scene."
-    : "The last frame stays inside the last scene, still moving. Do not add an end card, a pack shot, a logo sting, a freeze, or a beauty frame of anyone holding the product. Do not turn the product toward the lens. The next part continues from this action.";
-  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."} ${carryOn}`
+  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();

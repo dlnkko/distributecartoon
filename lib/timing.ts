@@ -147,22 +147,6 @@ export function packScenesIntoParts(
     : generationDurations(target);
   if (!scenes.length) return durations.map((duration) => ({ duration, sceneIndexes: [] }));
   if (durations.length === 1) return [{ duration: durations[0], sceneIndexes: scenes.map((scene) => scene.index) }];
-  if (!fixedDurations?.length && scenes.length >= durations.length && summed + 0.5 < target) {
-    const total = durations.reduce((sum, value) => sum + value, 0);
-    const groups: number[][] = durations.map(() => []);
-    let cursor = 0;
-    durations.forEach((duration, index) => {
-      const remainingScenes = scenes.length - cursor;
-      const remainingParts = durations.length - index;
-      const take =
-        index === durations.length - 1
-          ? remainingScenes
-          : Math.max(1, Math.min(remainingScenes - (remainingParts - 1), Math.round((scenes.length * duration) / total) || 1));
-      groups[index] = scenes.slice(cursor, cursor + take).map((scene) => scene.index);
-      cursor += take;
-    });
-    return durations.map((duration, index) => ({ duration, sceneIndexes: groups[index] }));
-  }
 
   const groups: number[][] = durations.map(() => []);
   const usedInPart = durations.map(() => 0);
@@ -265,42 +249,6 @@ export function balancePartSceneSeconds(
     };
     shrink((index) => Math.max(2, meta.get(index)?.floor ?? 2));
     shrink(() => 2);
-  }
-  return next;
-}
-
-// Each part is one generation of an exact length: 75s is 30 + 30 + 15.
-// Unlocked beats grow or shrink so they add up to that part. A timed row stays put.
-export function fitScenesToPartDurations(
-  scenes: Array<{ index: number; estimatedSeconds: number; floor?: number; lock?: number }>,
-  parts: SeedancePartPlan[],
-) {
-  const next = balancePartSceneSeconds(scenes, parts);
-  const meta = new Map(scenes.map((scene) => [scene.index, scene]));
-  for (const part of parts) {
-    const indexes = part.sceneIndexes;
-    if (!indexes.length) continue;
-    const locked = (index: number) => (meta.get(index)?.lock || 0) > 0;
-    const flexible = indexes.filter((index) => !locked(index));
-    if (!flexible.length) continue;
-    const lockedSum = indexes.filter(locked).reduce((sum, index) => sum + (next.get(index) || 0), 0);
-    const targetFlex = part.duration - lockedSum;
-    const minEach = 2;
-    if (targetFlex < minEach * flexible.length - 0.05) continue;
-    const current = flexible.map((index) => next.get(index) || minEach);
-    const sum = current.reduce((total, value) => total + value, 0) || flexible.length;
-    let used = 0;
-    flexible.forEach((index, position) => {
-      const remainingSlots = flexible.length - position - 1;
-      const room = targetFlex - used - minEach * remainingSlots;
-      if (position === flexible.length - 1) {
-        next.set(index, Math.round(Math.max(minEach, targetFlex - used) * 10) / 10);
-        return;
-      }
-      const share = Math.min(room, Math.max(minEach, Math.round(((targetFlex * current[position]) / sum) * 10) / 10));
-      used += share;
-      next.set(index, share);
-    });
   }
   return next;
 }
