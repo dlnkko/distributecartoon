@@ -410,6 +410,7 @@ export function StudioApp() {
   const [songUploadName, setSongUploadName] = useState("");
   const [uploadingSlotId, setUploadingSlotId] = useState("");
   const [readingPageId, setReadingPageId] = useState("");
+  const [useVideoSlotId, setUseVideoSlotId] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [panel, setPanel] = useState<"account" | "membership" | "credits" | null>(null);
   const panelRef = useRef(panel);
@@ -421,6 +422,7 @@ export function StudioApp() {
   const abortOwnerRef = useRef<string | null>(null);
   const projectsRef = useRef<Project[]>([]);
   const refInputs = useRef<Record<string, HTMLInputElement | null>>({});
+  const useVideoInputs = useRef<Record<string, HTMLInputElement | null>>({});
   const projectRef = useRef<Project | null>(null);
   const settingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const notifyReadyRef = useRef(false);
@@ -969,6 +971,54 @@ export function StudioApp() {
     if (!input) return;
     input.value = "";
     input.click();
+  }
+
+  function pickUseVideo(slot: ReferenceAsset) {
+    const input = useVideoInputs.current[slot.id];
+    if (!input) return;
+    input.value = "";
+    input.click();
+  }
+
+  async function onUploadUseVideo(slot: ReferenceAsset, file: File) {
+    if (!project) return;
+    setUseVideoSlotId(slot.id);
+    setBusy(true);
+    setStatus("");
+    try {
+      const form = new FormData();
+      form.set("projectId", project.id);
+      form.set("slotId", slot.id);
+      form.set("file", file);
+      const res = await fetch("/api/product-video", { method: "POST", body: form });
+      const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+      if (json.project) {
+        remember(json.project);
+        setStatus("");
+      } else if (res.status === 413) {
+        setStatus(json.error || "That video is too large. Keep it under 20 seconds.");
+      } else {
+        setStatus(json.error || "Couldn't read that product video.");
+      }
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Couldn't read that product video.");
+    }
+    setUseVideoSlotId("");
+    setBusy(false);
+  }
+
+  async function onClearUseVideo(slot: ReferenceAsset) {
+    if (!project) return;
+    setBusy(true);
+    setStatus("");
+    const res = await fetch(
+      `/api/product-video?projectId=${encodeURIComponent(project.id)}&slotId=${encodeURIComponent(slot.id)}`,
+      { method: "DELETE" },
+    );
+    const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
+    if (json.project) remember(json.project);
+    else setStatus(json.error || "Couldn't remove that video.");
+    setBusy(false);
   }
 
   async function onLabelRef(slot: ReferenceAsset, label: string) {
@@ -1689,6 +1739,16 @@ export function StudioApp() {
               productPageUrl={products[0]?.pageUrl || ""}
               productPageReady={Boolean(products[0]?.pageContext)}
               productPageReading={Boolean(products[0] && readingPageId === products[0].id)}
+              useVideoReady={Boolean(products[0]?.useVideoNote)}
+              useVideoReading={Boolean(products[0] && useVideoSlotId === products[0].id)}
+              onPickUseVideo={() => {
+                const slot = products[0];
+                if (slot) pickUseVideo(slot);
+              }}
+              onClearUseVideo={() => {
+                const slot = products[0];
+                if (slot) void onClearUseVideo(slot);
+              }}
               onProductPage={(url) => {
                 const slot = products[0];
                 if (slot) void onProductPage(slot, url);
@@ -1717,6 +1777,9 @@ export function StudioApp() {
               onLabelSlot={(slot, label) => void onLabelRef(slot, label)}
               onLookSlot={(slot, look) => void onLookRef(slot, look)}
               readingPageId={readingPageId}
+              useVideoSlotId={useVideoSlotId}
+              onPickUseVideo={(slot) => pickUseVideo(slot)}
+              onClearUseVideo={(slot) => void onClearUseVideo(slot)}
               onProductPage={(slot, url) => void onProductPage(slot, url)}
               onContinue={() => void continueFromSetup()}
             />
@@ -1813,6 +1876,22 @@ export function StudioApp() {
           event.target.value = "";
         }}
       />
+      {products.map((slot) => (
+        <input
+          key={`use-${slot.id}`}
+          ref={(node) => {
+            useVideoInputs.current[slot.id] = node;
+          }}
+          type="file"
+          accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm"
+          className="hidden"
+          onChange={(event) => {
+            const file = event.target.files?.[0];
+            if (file) void onUploadUseVideo(slot, file);
+            event.target.value = "";
+          }}
+        />
+      ))}
       {allSlots.map((slot) => (
         <input
           key={slot.id}
@@ -2128,6 +2207,10 @@ function SongStep({
   productPageUrl,
   productPageReady,
   productPageReading,
+  useVideoReady,
+  useVideoReading,
+  onPickUseVideo,
+  onClearUseVideo,
   onProductPage,
   onUseScript,
   onContinue,
@@ -2147,6 +2230,10 @@ function SongStep({
   productPageUrl: string;
   productPageReady: boolean;
   productPageReading: boolean;
+  useVideoReady: boolean;
+  useVideoReading: boolean;
+  onPickUseVideo: () => void;
+  onClearUseVideo: () => void;
   onProductPage: (url: string) => void;
   onUseScript: () => void;
   onContinue: (brief: string) => void;
@@ -2201,6 +2288,13 @@ function SongStep({
           disabled={busy && !productPageReading}
           onSave={onProductPage}
         />
+        <ProductUseVideo
+          ready={useVideoReady}
+          reading={useVideoReading}
+          disabled={busy && !useVideoReading}
+          onPick={onPickUseVideo}
+          onRemove={onClearUseVideo}
+        />
       </div>
 
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">What is this product about?</label>
@@ -2247,6 +2341,9 @@ function SetupStep({
   onLabelSlot,
   onLookSlot,
   readingPageId,
+  useVideoSlotId,
+  onPickUseVideo,
+  onClearUseVideo,
   onProductPage,
   onContinue,
 }: {
@@ -2267,6 +2364,9 @@ function SetupStep({
   onLabelSlot: (slot: ReferenceAsset, label: string) => void;
   onLookSlot: (slot: ReferenceAsset, look: string) => void;
   readingPageId: string;
+  useVideoSlotId: string;
+  onPickUseVideo: (slot: ReferenceAsset) => void;
+  onClearUseVideo: (slot: ReferenceAsset) => void;
   onProductPage: (slot: ReferenceAsset, url: string) => void;
   onContinue: () => void;
 }) {
@@ -2365,6 +2465,13 @@ function SetupStep({
                   reading={readingPageId === slot.id}
                   disabled={busy && readingPageId !== slot.id}
                   onSave={(url) => onProductPage(slot, url)}
+                />
+                <ProductUseVideo
+                  ready={Boolean(slot.useVideoNote)}
+                  reading={useVideoSlotId === slot.id}
+                  disabled={busy && useVideoSlotId !== slot.id}
+                  onPick={() => onPickUseVideo(slot)}
+                  onRemove={() => onClearUseVideo(slot)}
                 />
               </div>
             ))}
@@ -3174,6 +3281,41 @@ function CharacterSlot({
         onBlur={() => onLook(slot, look)}
         className="min-h-[52px] w-full resize-none rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-sm outline-none disabled:opacity-50"
       />
+    </div>
+  );
+}
+
+function ProductUseVideo({
+  ready,
+  reading,
+  disabled,
+  onPick,
+  onRemove,
+}: {
+  ready: boolean;
+  reading: boolean;
+  disabled?: boolean;
+  onPick: () => void;
+  onRemove: () => void;
+}) {
+  return (
+    <div className="mt-1.5">
+      <button
+        type="button"
+        disabled={disabled || reading}
+        onClick={onPick}
+        className="w-full rounded-lg border border-white/10 px-2.5 py-1.5 text-left text-xs disabled:opacity-50"
+      >
+        {reading ? "Watching the video…" : ready ? "Use video added." : "Upload a use video"}
+      </button>
+      <p className="mt-1 text-[11px] leading-4 text-[var(--muted)]">
+        Optional. Up to 20 seconds, showing how your product is used: how it opens, how it is used, how it looks.
+      </p>
+      {ready && !reading ? (
+        <button type="button" disabled={disabled} onClick={onRemove} className="mt-1 text-[11px] text-[var(--muted)]">
+          Remove video
+        </button>
+      ) : null}
     </div>
   );
 }

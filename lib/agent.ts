@@ -8,7 +8,7 @@ import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScen
 import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
-import { productPageBrief } from "./product-page";
+import { productPageBrief, productUseBrief } from "./product-page";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
@@ -1367,10 +1367,13 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const pages = productPageBrief(project)
     ? "A product page is included. Use it for how the product is used and how it should look, only in a scene the user already puts the product in. Do not invent a different container, dose, or ritual than the page describes. Do not add a product shot, and do not end a part on someone holding the product up. Keep the user's spoken lines."
     : "";
+  const watched = productUseBrief(project)
+    ? "A short video shows how this product is actually used. Follow that description whenever the product is on screen. Do not invent another way to use it."
+    : "";
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
     : "A silent beat stays 2 or 3 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds, then a new camera. A short line is about 2 seconds. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
-  return `${opening} ${known} ${pages} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
+  return `${opening} ${known} ${pages} ${watched} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. ${styleLine}`;
 }
 
 export async function runAgent(options: {
@@ -1404,7 +1407,7 @@ export async function runAgent(options: {
 
   const { openaiApiKey } = getSecrets();
   if (!openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing for the GPT-5.6 Luna agent.");
+    throw new Error("OPENAI_API_KEY is missing for the GPT-6 Luna agent.");
   }
   const client = new OpenAI({ apiKey: openaiApiKey });
   console.info("storyboard model", TEXT_MODEL);
@@ -1434,6 +1437,7 @@ export async function runAgent(options: {
               ? `\n\nSCRIPT (${options.project.scriptName || "pasted"}):\n${options.project.scriptText.slice(0, 40000)}`
               : "",
             productPageBrief(options.project) ? `\n\n${productPageBrief(options.project)}` : "",
+            productUseBrief(options.project) ? `\n\n${productUseBrief(options.project)}` : "",
             `\n\nTASK:\n${userText}`,
           ].join(""),
         },

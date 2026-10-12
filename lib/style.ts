@@ -1,9 +1,9 @@
 import { characterRole, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
-import { productUseHint } from "./product-page";
-import { isUnseenVoice, promptReadyReferences } from "./refs";
-import type { Batch, Character, DialogueLine, Project, Scene, VisualStyle } from "./types";
+import { productFacts, productUseHint } from "./product-page";
+import { isUnseenVoice, promptReadyReferences, scriptCallsForReference } from "./refs";
+import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { planShots } from "./shots";
 
 export type PromptRef = {
@@ -756,11 +756,12 @@ function ensurePhysicalLogic(summary: string, context = "") {
   return text;
 }
 
-function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: { label: string; notes?: string }) {
+function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: ReferenceAsset) {
   if (!scene) return false;
-  const blob = `${scene.summary || ""} ${scene.title || ""}`;
+  const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
+  const blob = `${scene.summary || ""} ${scene.title || ""} ${lines}`;
   if (/\b(without the product|no product|product stays out|not in frame|before the product)\b/i.test(blob)) return false;
-  if (/\b(the attached product|the product|this product)\b/i.test(blob)) return true;
+  if (scriptCallsForReference(project, asset, [scene.index], false)) return true;
   const brief = project.song?.productBrief?.trim() || "";
   if (brief.length >= 3 && brief.length <= 80 && blob.toLowerCase().includes(brief.toLowerCase())) return true;
   const label = asset.label.trim();
@@ -853,12 +854,14 @@ function productPlacementLine(action: string, label: string) {
   return `${name} only appears as this action says, not worn unless the action puts it on the character.`;
 }
 
-function productCueLabel(label: string, notes: string) {
+function productPromptName(project: Project, label: string, notes = "") {
+  const fromPage = productFacts(project, label).name;
+  if (fromPage) return fromPage;
   const name = label.trim();
   if (name && !/^product\s*\d+$/i.test(name)) return name;
   const note = notes.trim();
   if (note && note.length <= 48 && !/^optional\b/i.test(note)) return note;
-  return "The attached product";
+  return "the product in the photo";
 }
 
 export function stampProductPlacement(project: Project) {
@@ -867,7 +870,7 @@ export function stampProductPlacement(project: Project) {
     if (!products.length) continue;
     const blob = `${scene.summary} ${scene.title}`;
     if (statesProductPlacement(blob)) continue;
-    const label = productCueLabel(products[0].label, products[0].notes || "");
+    const label = productPromptName(project, products[0].label, products[0].notes || "");
     const sentence = productPlacementLine(blob, label);
     scene.summary = `${scene.summary.replace(/[. ]+$/, "").trim()}. ${sentence}`.replace(/\s{2,}/g, " ").trim();
   }
@@ -878,7 +881,7 @@ function withOnScreenProps(action: string, project: Project, sceneIndex: number)
   let next = action;
   for (const asset of scenePropCues(project, sceneIndex)) {
     const label = asset.label.trim();
-    const needle = asset.kind === "product" ? productCueLabel(label, asset.notes || "") : label;
+    const needle = asset.kind === "product" ? productPromptName(project, label, asset.notes || "") : label;
     if (!needle) continue;
     if (asset.kind === "product") {
       if (statesProductPlacement(next)) continue;
@@ -1139,12 +1142,15 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       if (!people.has(name.toLowerCase())) people.set(name.toLowerCase(), tag);
       return;
     }
-    if (item.kind === "product") refs.push(`${tag} is ${productCueLabel(name, item.notes || "")}, same packaging`);
-    else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
+    if (item.kind === "product") {
+      const called = productPromptName(project, name, item.notes || "");
+      refs.push(`${tag} is ${called}, same packaging as the photo`);
+    } else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
     else refs.push(`${tag} is ${name}`);
+    const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : "";
     const aliases =
       item.kind === "product"
-        ? [name, item.notes || "", "the attached product", "the product"]
+        ? [name, called, item.notes || "", "the attached product", "the product"]
         : item.kind === "location"
           ? placeAliases(project, name)
           : [name];
@@ -1544,8 +1550,9 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     } else if (item.kind === "location") {
       assets.push(`${tag} as the location — ${placeCore(name) || name}. Geography and layout are law in every shot set here; each shot sets its own light.`);
     } else if (item.kind === "product") {
+      const called = productPromptName(project, name, item.notes || "");
       const use = productUseHint(project, name);
-      assets.push(`${tag} as the product — ${productCueLabel(name, item.notes || "")}. Same packaging form, label, colours and branding every time it appears.${use ? ` Use it this way: ${use}` : ""}`);
+      assets.push(`${tag} as the product — ${called}. Same packaging form, label, colours and branding as the photo every time it appears.${use ? ` Use it this way: ${use}` : ""}`);
     } else if (item.kind === "logo") {
       assets.push(`${tag} as the logo — ${name}. Same mark and colours wherever it appears, placed as a physical object in the world.`);
     } else if (name) {
@@ -1774,16 +1781,27 @@ function sceneAssetTags(project: Project, scene: Scene | undefined, images: Prom
   return tags;
 }
 
-function referenceLock(images: PromptRef[]) {
+function referenceLock(project: Project, images: PromptRef[]) {
   const parts = images
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
+      if (item.kind === "product") return `@Image${index + 1} is ${productPromptName(project, name, item.notes || "")}, the product in the photo`;
       const kind = item.kind === "character" ? "character" : item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
     .filter(Boolean);
   return parts.length ? `Reference tags stay fixed for the whole film: ${parts.join(". ")}.` : "";
+}
+
+function productSceneLine(project: Project, tag: string, images: PromptRef[]) {
+  const image = images[Number(tag.replace("@Image", "")) - 1];
+  if (!image || image.kind !== "product") return "";
+  const facts = productFacts(project, image.name);
+  if (!facts.name && !facts.use) return "";
+  const name = facts.name || "the product in the photo";
+  const use = facts.use ? ` ${facts.use}` : "";
+  return `${tag} is ${name}, matching the photo.${use} Keep that product and that use. Do not invent a different package or a different way to use it.`;
 }
 
 function scrubDirections(text: string) {
@@ -1976,6 +1994,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       `${camera}.`,
       participateLine(sceneOnScreenNames(scene, project), people, project),
       visual,
+      sceneAssetTags(project, scene, images)
+        .filter((tag) => imageKind(images, tag) === "product")
+        .map((tag) => productSceneLine(project, tag, images))
+        .filter(Boolean)
+        .join(" "),
       spoken,
       eyesOffCamera(scene, project) ||
         (/close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : ""),
@@ -1997,7 +2020,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           characterVideos
             ? "Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
             : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
-          referenceLock(images),
+          referenceLock(project, images),
           tailLine,
         ]
       : [
@@ -2008,7 +2031,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           characterVideos
             ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
             : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
-          referenceLock(images),
+          referenceLock(project, images),
           tailLine ? "" : continues ? "This clip picks up straight from the previous part." : "",
           narrated ? "Narrator lines are off-screen voice-over, no lipsync. During each line, show the action those words describe. A mouth stays closed only when that line is not about the mouth. Say each line once, and do not repeat it in the next shot." : "",
         ]

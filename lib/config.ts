@@ -8,9 +8,10 @@ export type Secrets = {
   falKey: string;
   openrouterApiKey: string;
   firecrawlApiKey: string;
+  geminiApiKey: string;
 };
 
-export const TEXT_MODEL = "gpt-5.6-luna";
+export const TEXT_MODEL = "gpt-6-luna";
 
 const secretsPath = () => path.join(process.cwd(), "data", "secrets.json");
 
@@ -32,6 +33,7 @@ export function getSecrets(): Secrets {
     falKey: process.env.FAL_KEY || file.falKey || "",
     openrouterApiKey: process.env.OPENROUTER_API_KEY || file.openrouterApiKey || "",
     firecrawlApiKey: process.env.FIRECRAWL_API_KEY || file.firecrawlApiKey || "",
+    geminiApiKey: process.env.GEMINI_API_KEY || file.geminiApiKey || "",
   };
 }
 
@@ -57,11 +59,13 @@ export function providerStatus() {
     fal: Boolean(secrets.falKey),
     openrouter: Boolean(secrets.openrouterApiKey),
     firecrawl: Boolean(secrets.firecrawlApiKey),
+    gemini: Boolean(secrets.geminiApiKey),
     model: secrets.openaiModel,
     openaiMasked: maskSecret(secrets.openaiApiKey),
     kieMasked: maskSecret(secrets.kieApiKey),
     falMasked: maskSecret(secrets.falKey),
     openrouterMasked: maskSecret(secrets.openrouterApiKey),
     firecrawlMasked: maskSecret(secrets.firecrawlApiKey),
+    geminiMasked: maskSecret(secrets.geminiApiKey),
   };
 }

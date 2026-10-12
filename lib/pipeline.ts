@@ -1253,7 +1253,9 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
     const blob = sceneIndexes
       .map((index) => {
         const scene = project.scenes.find((item) => item.index === index);
-        return `${scene?.title || ""} ${scene?.summary || ""}`;
+        const lines = (scene?.dialogue || []).map((line) => line.line).join(" ");
+        const shots = (scene?.shots || []).map((shot) => shot.action).join(" ");
+        return `${scene?.title || ""} ${scene?.summary || ""} ${lines} ${shots}`;
       })
       .join(" ");
     if (/\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packshot|end\s*card|the product|producto)\b/i.test(blob)) continue;

@@ -104,6 +104,10 @@ export type ReferenceAsset = {
   lookNotes?: string;
   pageUrl?: string;
   pageContext?: string;
+  useVideoFileName?: string;
+  useVideoPublicPath?: string;
+  useVideoRemoteUrl?: string;
+  useVideoNote?: string;
   includeInVideo: boolean;
   originalFileName?: string;
   originalPublicPath?: string;

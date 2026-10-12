@@ -1,4 +1,5 @@
 import { createId } from "./ids";
+import { productFacts } from "./product-page";
 import type { Character, Project, ReferenceAsset, ReferenceKind, Scene } from "./types";
 
 export const MAX_CAST_LEADS = 4;
@@ -47,6 +48,78 @@ const GENERIC_LABELS = new Set([
   "personaje 4",
   "referencia",
   "reference",
+]);
+
+const PRODUCT_WORD_STOP = new Set([
+  "about",
+  "after",
+  "again",
+  "already",
+  "also",
+  "appear",
+  "appears",
+  "appearing",
+  "around",
+  "attached",
+  "because",
+  "been",
+  "before",
+  "being",
+  "body",
+  "both",
+  "character",
+  "face",
+  "from",
+  "hand",
+  "hands",
+  "have",
+  "held",
+  "holding",
+  "holds",
+  "into",
+  "just",
+  "keep",
+  "keeps",
+  "like",
+  "lips",
+  "more",
+  "mouth",
+  "only",
+  "original",
+  "over",
+  "package",
+  "packaging",
+  "product",
+  "producto",
+  "scene",
+  "scenes",
+  "show",
+  "shown",
+  "shows",
+  "still",
+  "that",
+  "their",
+  "them",
+  "then",
+  "there",
+  "these",
+  "they",
+  "this",
+  "those",
+  "through",
+  "under",
+  "used",
+  "using",
+  "wear",
+  "wears",
+  "when",
+  "where",
+  "which",
+  "while",
+  "with",
+  "without",
+  "worn",
+  "your",
 ]);
 
 const KIND_PATTERNS: Record<ReferenceKind, RegExp[]> = {
@@ -114,13 +187,45 @@ export function ensureReferenceSlots(project: Project) {
   return project.references;
 }
 
+function referenceWords(text: string) {
+  return text
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 4 && !PRODUCT_WORD_STOP.has(word));
+}
+
+function hasWord(text: string, word: string) {
+  return new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(text);
+}
+
+function productMentionWords(project: Project, asset: ReferenceAsset) {
+  const cues = (project.scriptRefCues || []).filter((cue) => cue.kind === asset.kind && cue.cue?.trim());
+  const facts = productFacts(project, asset.label);
+  const notes = asset.notes?.trim() || "";
+  const namedNotes = notes && !/^optional\b/i.test(notes) && notes.length <= 80 ? notes : "";
+  const label = GENERIC_LABELS.has(asset.label.trim().toLowerCase()) ? "" : asset.label;
+  return [...new Set(referenceWords([...cues.map((cue) => cue.cue), label, namedNotes, facts.name].join(" ")))];
+}
+
+function sceneMentionsProduct(project: Project, asset: ReferenceAsset, sceneIndexes: number[]) {
+  const text = sceneBlob(project, sceneIndexes);
+  if (/\b(?:without the product|no product|product stays out|before the product)\b/i.test(text)) return false;
+  return productMentionWords(project, asset).some((word) => hasWord(text, word));
+}
+
 function sceneBlob(project: Project, sceneIndexes?: number[]) {
   const scenes = sceneIndexes?.length
     ? project.scenes.filter((scene) => sceneIndexes.includes(scene.index))
     : project.scenes;
   const fromScenes = scenes
     .map((scene) =>
-      [scene.title, scene.summary, scene.location, ...scene.dialogue.map((line) => `${line.speaker} ${line.line}`)].join(
+      [
+        scene.title,
+        scene.summary,
+        scene.location,
+        ...(scene.shots || []).map((shot) => shot.action),
+        ...scene.dialogue.map((line) => `${line.speaker} ${line.line}`),
+      ].join(
         " ",
       ),
     )
@@ -379,6 +484,10 @@ export function scriptCallsForReference(
 
   const label = asset.label.trim().toLowerCase();
   if (label && !GENERIC_LABELS.has(label) && text.toLowerCase().includes(label)) return true;
+
+  if ((asset.kind === "product" || asset.kind === "logo") && sceneIndexes?.length && sceneMentionsProduct(project, asset, sceneIndexes)) {
+    return true;
+  }
 
   return (KIND_PATTERNS[asset.kind] || []).some((pattern) => pattern.test(text));
 }
