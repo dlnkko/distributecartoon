@@ -1177,7 +1177,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     }
     if (item.kind === "product") {
       const called = productPromptName(project, name, item.notes || "");
-      refs.push(`${tag} is ${called}, same packaging as the photo`);
+      refs.push(`${tag} is ${called}, matching the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box.`);
     } else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
     else refs.push(`${tag} is ${name}`);
     const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : "";
@@ -1587,7 +1587,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     } else if (item.kind === "product") {
       const called = productPromptName(project, name, item.notes || "");
       const use = productUseHint(project, name);
-      assets.push(`${tag} as the product — ${called}. Same packaging form, label, colours and branding as the photo every time it appears.${use ? ` Use it this way: ${use}` : ""}`);
+      assets.push(`${tag} as the product — ${called}. Match the photo exactly every time it appears: the product itself and its package, if both are in the photo, with the same shape, color, print, and material. Do not show only the box.${use ? ` Use it this way: ${use}` : ""}`);
     } else if (item.kind === "logo") {
       assets.push(`${tag} as the logo — ${name}. Same mark and colours wherever it appears, placed as a physical object in the world.`);
     } else if (name) {
@@ -1737,7 +1737,7 @@ function imageKind(images: PromptRef[], tag: string) {
 }
 
 function seenPhrase(tag: string, kind: string, _look: string) {
-  if (kind === "product") return `The package on screen is ${tag}`;
+  if (kind === "product") return `The product on screen is ${tag}, matching the photo: the item and the package, same shape, color, and print`;
   if (kind === "logo") return `The logo on screen is ${tag}`;
   return `as seen in ${tag}`;
 }
@@ -1831,7 +1831,7 @@ function referenceLock(project: Project, images: PromptRef[]) {
       if (!name) return "";
       if (item.kind === "product" || item.kind === "logo") {
         const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : name;
-        return `@Image${index + 1} is ${called}. Show it only in a scene whose action already has it in frame. Every other scene leaves it out.`;
+        return `@Image${index + 1} is ${called}. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Show it only in a scene whose action already has it in frame. Every other scene leaves it out.`;
       }
       if (item.kind === "character") {
         const role = faceLabel(project, name);
@@ -1852,7 +1852,7 @@ function productSceneLine(project: Project, tag: string, images: PromptRef[]) {
   if (!facts.name && !facts.use) return "";
   const name = facts.name || "the product in the photo";
   const use = facts.use ? ` ${facts.use}` : "";
-  return `${tag} is ${name}, matching the photo.${use} Keep that product and that use. Do not invent a different package or a different way to use it.`;
+  return `${tag} is ${name}, matching the photo exactly. The product itself and its package, if both are in the photo, keep the same shape, color, print, and material. Do not show only the box.${use} Do not invent a different design or a different way to use it.`;
 }
 
 function scrubDirections(text: string) {
@@ -2030,7 +2030,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const mentionsPackage = !productKeptOut(sceneText) && textShowsPackage(pictured);
     const withPackage =
       packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
-        ? `${pictured.replace(/[. ]+$/, "")}. The package on screen is ${packageTag}.`
+        ? `${pictured.replace(/[. ]+$/, "")}. The product on screen is ${packageTag}, matching the photo: the item and the package, same shape, color, and print.`
         : pictured;
     const slice = linesByShot[i] || [];
     const visual = alignActionToVoice(
@@ -2046,7 +2046,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
         : ""
       : said
-        ? `${said} The line starts in the first second and lasts to the end of this shot. Do not open or close on a silent look.`
+        ? said
         : (cutSeconds[i] || shot.seconds) > 3
           ? "From the first second the body keeps moving. Do not hold on a look."
           : "";
@@ -2087,7 +2087,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ]
       : [
           styleThroughout(project.style),
-          "A speaker looks at the person they address while the line is coming out. Do not play a silent stare before the line or after it. No shot stays quiet, with nothing happening, for more than 2 seconds.",
+          "A speaker looks at the person they address while the line is coming out.",
           previousLine,
           tailLine,
           tailBan,
@@ -2120,7 +2120,7 @@ export function restyleReferencePrompt(kind: string, style: VisualStyle) {
     kind === "logo"
       ? "Keep the logo mark recognizable, clean and on-model. Place it as a physical object or set dressing in-world."
       : kind === "product"
-        ? "Keep the exact packaging form from the photo: pouch stays a pouch, bottle stays a bottle. Same silhouette, closure, label, colors, and branding, restyled into the project's style."
+        ? "Match the photo exactly. The product itself and its package, if both are in the photo, keep the same shape, color, print, and material. Do not show only the box. A pouch stays a pouch and a bottle stays a bottle."
         : kind === "location"
           ? "Keep the architecture and layout recognizable while converting materials, lighting and scale to the project's style."
           : "Keep the subject recognizable.";
