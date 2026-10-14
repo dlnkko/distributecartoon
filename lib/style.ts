@@ -1204,7 +1204,9 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       project.characters.filter((item) => item.name.trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase()).length === 1;
     const names = firstIsUnique ? [full, first] : [full];
     // A role named after a place word ("Gym" in "home gym") only matches when capitalized.
-    const exact = names.some((name) => new RegExp(`\\b${escapeRegExp(name.toLowerCase())}\\b`).test(placeWords));
+    // Pronoun names (Him, Her) must not replace every "him" and "her" in the action.
+    const pronoun = names.some((name) => /^(?:he|she|him|her|his|hers|they|them)$/i.test(name));
+    const exact = pronoun || names.some((name) => new RegExp(`\\b${escapeRegExp(name.toLowerCase())}\\b`).test(placeWords));
     swaps.push({ tag, names, person: true, exact });
   }
   return { people, refs, swaps, narratorTag };
@@ -1814,6 +1816,14 @@ function sceneAssetTags(project: Project, scene: Scene | undefined, images: Prom
   return tags;
 }
 
+function faceLabel(project: Project, name: string) {
+  const raw = name.trim();
+  const role = characterRole(project, name);
+  if (/^(?:her|she)$/i.test(raw)) return role ? `the woman, ${role}` : "the woman";
+  if (/^(?:him|he)$/i.test(raw)) return role ? `the man, ${role}` : "the man";
+  return role;
+}
+
 function referenceLock(project: Project, images: PromptRef[]) {
   const parts = images
     .map((item, index) => {
@@ -1823,7 +1833,12 @@ function referenceLock(project: Project, images: PromptRef[]) {
         const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : name;
         return `@Image${index + 1} is ${called}. Show it only in a scene whose action already has it in frame. Every other scene leaves it out.`;
       }
-      const kind = item.kind === "character" ? "character" : item.kind === "location" ? "location" : item.kind;
+      if (item.kind === "character") {
+        const role = faceLabel(project, name);
+        const who = role ? `${name}, ${role}` : name;
+        return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else.`;
+      }
+      const kind = item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
     })
     .filter(Boolean);
@@ -1850,11 +1865,18 @@ function scrubDirections(text: string) {
 }
 
 function participateLine(names: string[], people: Map<string, string>, project: Project) {
-  const tags = names.map((name) => people.get(name.toLowerCase()) || speakerLabel(project, name)).filter(Boolean);
+  const tags = names
+    .map((name) => {
+      const tag = people.get(name.toLowerCase()) || speakerLabel(project, name);
+      if (!tag) return "";
+      const role = tag.startsWith("@") ? faceLabel(project, name) : "";
+      return role ? `${tag} (${role})` : tag;
+    })
+    .filter(Boolean);
   if (!tags.length) return "No people in this shot.";
   if (tags.length === 1) return `Only ${tags[0]} participates in this scene.`;
   const list = tags.length === 2 ? `${tags[0]} and ${tags[1]}` : `${tags.slice(0, -1).join(", ")} and ${tags[tags.length - 1]}`;
-  return `Only ${list} participate in this scene.`;
+  return `Only ${list} participate in this scene. Each face stays on its own tag.`;
 }
 
 function voiceOverlap(action: string, line: string) {
