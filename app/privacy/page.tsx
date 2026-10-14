@@ -13,7 +13,7 @@ export default function PrivacyPage() {
       <LegalSection title="Who we are">
         <p>
           Clickframes is the site at clickframes.app. It turns a script, a photo, or a song into a Pixar or claymation short. This policy explains what we collect and why. To reach us, email{" "}
-          <a className="text-[#ffb089]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
+          <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>.
         </p>
       </LegalSection>
       <LegalSection title="What we collect">
@@ -32,7 +32,7 @@ export default function PrivacyPage() {
       <LegalSection title="How long we keep it">
         <p>Scripts, photos, songs, and finished videos stay in your account so you can open them later. Payment records stay for as long as we need them to show your plan and to answer a billing question.</p>
         <p>
-          To delete your account and the files in it, email <a className="text-[#ffb089]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> from the Google address you use to sign in. We will delete the account data we can still reach, except records we have to keep for a payment dispute or a legal duty.
+          To delete your account and the files in it, email <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> from the Google address you use to sign in. We will delete the account data we can still reach, except records we have to keep for a payment dispute or a legal duty.
         </p>
       </LegalSection>
       <LegalSection title="Photos of other people">

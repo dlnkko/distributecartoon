@@ -159,7 +159,7 @@ export function ProcessingCard({ item, view }: { item: LibraryGenerating; view: 
   return (
     <article className={`cf-card overflow-hidden rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] ${list ? "flex" : ""}`}>
       <div className={`relative aspect-video overflow-hidden bg-[#101014] ${list ? "w-[42%] max-w-[220px] shrink-0" : ""}`}>
-        <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_30%_20%,rgba(255,138,61,0.35),transparent_42%),linear-gradient(160deg,#1b1b20,#0b0b0d)]" />
+        <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_30%_20%,rgba(91,140,255,0.35),transparent_42%),linear-gradient(160deg,#1b1b20,#0b0b0d)]" />
         <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
         <div className="absolute inset-0 grid place-items-center">
           <p className="status-breathe text-sm font-medium text-white">
@@ -188,9 +188,9 @@ export function CreateCard({ onCreate, view, locked = false, notice = "" }: { on
       type="button"
       onClick={onCreate}
       disabled={locked}
-      className={`no-press cf-card flex min-h-11 items-center justify-center gap-3 rounded-[20px] border border-dashed border-white/15 bg-transparent px-4 text-left text-white hover:border-[#FF8A3D]/70 hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/15 disabled:hover:bg-transparent ${view === "list" ? "min-h-24" : "aspect-video"}`}
+      className={`no-press cf-card flex min-h-11 items-center justify-center gap-3 rounded-[20px] border border-dashed border-white/15 bg-transparent px-4 text-left text-white hover:border-[#5B8CFF]/70 hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/15 disabled:hover:bg-transparent ${view === "list" ? "min-h-24" : "aspect-video"}`}
     >
-      <span className="cf-plus grid h-11 w-11 place-items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-white shadow-[0_8px_20px_rgba(255,94,98,0.3)]">
+      <span className="cf-plus grid h-11 w-11 place-items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-white shadow-[0_8px_20px_rgba(122,108,255,0.3)]">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>

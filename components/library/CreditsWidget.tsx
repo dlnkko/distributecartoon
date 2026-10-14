@@ -20,7 +20,7 @@ export function CreditsWidget({
   const circ = 2 * Math.PI * radius;
 
   return (
-    <div className={`border bg-[var(--cf-surface-2)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${compact ? "rounded-2xl px-1.5 py-2" : "rounded-[20px] p-3"} ${low ? "border-[#FF8A3D]/50" : "border-[var(--cf-line)]"}`}>
+    <div className={`border bg-[var(--cf-surface-2)] shadow-[inset_0_1px_0_rgba(255,255,255,0.06)] ${compact ? "rounded-2xl px-1.5 py-2" : "rounded-[20px] p-3"} ${low ? "border-[#5B8CFF]/50" : "border-[var(--cf-line)]"}`}>
       <div className={`flex items-center ${compact ? "justify-center" : "gap-3"}`}>
         <svg viewBox="0 0 48 48" className={`shrink-0 ${compact ? "h-8 w-8" : "h-12 w-12"}`} aria-hidden="true">
           <circle cx="24" cy="24" r={radius} fill="none" stroke="rgba(255,255,255,0.08)" strokeWidth="4" />
@@ -29,7 +29,7 @@ export function CreditsWidget({
             cy="24"
             r={radius}
             fill="none"
-            stroke={low ? "#FF8A3D" : `url(#${gradId})`}
+            stroke={low ? "#5B8CFF" : `url(#${gradId})`}
             strokeWidth="4"
             strokeLinecap="round"
             strokeDasharray={circ}
@@ -38,8 +38,8 @@ export function CreditsWidget({
           />
           <defs>
             <linearGradient id={gradId} x1="0" y1="0" x2="1" y2="1">
-              <stop offset="0%" stopColor="#FF8A3D" />
-              <stop offset="100%" stopColor="#FF5E62" />
+              <stop offset="0%" stopColor="#5B8CFF" />
+              <stop offset="100%" stopColor="#7A6CFF" />
             </linearGradient>
           </defs>
         </svg>
@@ -55,11 +55,11 @@ export function CreditsWidget({
       ) : (
         <>
           <p className="mt-2 text-[11px] leading-4 text-[var(--cf-muted)]">credits = seconds of video</p>
-          {low ? <p className="mt-1 text-[11px] text-[#FFB088]">Low balance. A short film needs more credits.</p> : null}
+          {low ? <p className="mt-1 text-[11px] text-[#C5D4FF]">Low balance. A short film needs more credits.</p> : null}
           <button
             type="button"
             onClick={onBuy}
-            className="btn-primary mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)]"
+            className="btn-primary mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)]"
           >
             Buy credits
           </button>
@@ -75,7 +75,7 @@ export function CreditsPill({ credits, onClick }: { credits: number; onClick: ()
     <button
       type="button"
       onClick={onClick}
-      className={`no-press inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm ${low ? "border-[#FF8A3D]/60 text-[#FFB088]" : "border-[var(--cf-line)] text-white"} bg-[var(--cf-surface)]`}
+      className={`no-press inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm ${low ? "border-[#5B8CFF]/60 text-[#C5D4FF]" : "border-[var(--cf-line)] text-white"} bg-[var(--cf-surface)]`}
       aria-label={`${credits} credits. Open credit details`}
     >
       <span className="font-medium tabular-nums">{credits}</span>

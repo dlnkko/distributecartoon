@@ -13,7 +13,7 @@ export default function TermsPage() {
       <LegalSection title="The service">
         <p>
           These terms cover Clickframes at clickframes.app. You need a Google account, and you need to be 18 or older, to buy a plan or generate a video. By signing in or paying, you agree to these terms and the{" "}
-          <a className="text-[#ffb089]" href="/privacy">Privacy Policy</a>.
+          <a className="text-[#C5D4FF]" href="/privacy">Privacy Policy</a>.
         </p>
       </LegalSection>
       <LegalSection title="Your uploads">
@@ -27,7 +27,7 @@ export default function TermsPage() {
       <LegalSection title="Payments">
         <p>
           Whop processes the charge. The price you confirm at checkout is the price for that plan or top-up. If a charge looks wrong, email{" "}
-          <a className="text-[#ffb089]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and include the Google account you used.
+          <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and include the Google account you used.
         </p>
       </LegalSection>
       <LegalSection title="What you can expect">
@@ -39,7 +39,7 @@ export default function TermsPage() {
       <LegalSection title="The service can change">
         <p>We can update features, prices, and these terms. The date on this page is the version in effect. If you keep using Clickframes after an update, the new terms apply. Rights you already have where you live stay in place.</p>
         <p>
-          If something is wrong, email <a className="text-[#ffb089]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> first.
+          If something is wrong, email <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> first.
         </p>
       </LegalSection>
     </LegalDocument>

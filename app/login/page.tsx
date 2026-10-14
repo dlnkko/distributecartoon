@@ -34,8 +34,8 @@ export default function LoginPage() {
   return (
     <main className="library-shell relative min-h-screen overflow-hidden">
       <div className="relative grid min-h-screen place-items-center px-4 py-10">
-        <div className="pointer-events-none absolute -left-16 top-16 h-64 w-64 rounded-full bg-[#ff8a3d]/25 blur-3xl" />
-        <div className="pointer-events-none absolute -right-10 bottom-10 h-56 w-56 rounded-full bg-[#ff5e62]/20 blur-3xl" />
+        <div className="pointer-events-none absolute -left-16 top-16 h-64 w-64 rounded-full bg-[#5B8CFF]/25 blur-3xl" />
+        <div className="pointer-events-none absolute -right-10 bottom-10 h-56 w-56 rounded-full bg-[#7A6CFF]/20 blur-3xl" />
         <section className="relative w-full max-w-md rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-7 shadow-[0_24px_60px_rgba(0,0,0,0.35)]">
           <Brand tone="accent" />
           <h1 className="land-display mt-6 text-4xl text-white">Studio</h1>
@@ -53,7 +53,7 @@ export default function LoginPage() {
             {busy ? "Redirecting…" : "Continue with Google"}
           </button>
           <p className="mt-4 text-center text-xs leading-5 text-[var(--cf-muted)]">
-            By continuing, you agree to the <a href="/terms" className="text-[#ffb089]">Terms</a> and the <a href="/privacy" className="text-[#ffb089]">Privacy Policy</a>.
+            By continuing, you agree to the <a href="/terms" className="text-[#C5D4FF]">Terms</a> and the <a href="/privacy" className="text-[#C5D4FF]">Privacy Policy</a>.
           </p>
         </section>
       </div>

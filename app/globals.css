@@ -258,8 +258,8 @@ a.btn-primary {
   --cf-line: rgba(255, 255, 255, 0.06);
   --cf-ink: #f4f4f5;
   --cf-muted: #a1a1aa;
-  --cf-accent-a: #ff8a3d;
-  --cf-accent-b: #ff5e62;
+  --cf-accent-a: #5B8CFF;
+  --cf-accent-b: #7A6CFF;
   background: var(--cf-bg);
   color: var(--cf-ink);
 }
@@ -339,12 +339,12 @@ a.btn-primary {
 }
 
 .studio-dark .setup-card:hover {
-  border-color: rgba(255, 138, 61, 0.45);
+  border-color: rgba(91, 140, 255, 0.45);
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.28);
 }
 
 .studio-dark button.border-dashed:hover:not(:disabled) {
-  border-color: rgba(255, 138, 61, 0.7);
+  border-color: rgba(91, 140, 255, 0.7);
 }
 
 .studio-dark .scroll-thin::-webkit-scrollbar-thumb {
@@ -457,7 +457,7 @@ a.btn-primary {
   justify-content: center;
   border-radius: 0.75rem;
   background: linear-gradient(135deg, var(--cf-accent-a), var(--cf-accent-b));
-  box-shadow: 0 10px 28px rgba(255, 94, 98, 0.32);
+  box-shadow: 0 10px 28px rgba(122, 108, 255, 0.32);
   color: #fff;
 }
 
@@ -488,8 +488,8 @@ a.btn-primary {
   margin-top: -7px;
   border: 0;
   border-radius: 999px;
-  background: linear-gradient(135deg, #ff8a3d, #ff5e62);
-  box-shadow: 0 4px 12px rgba(255, 94, 98, 0.45);
+  background: linear-gradient(135deg, #5B8CFF, #7A6CFF);
+  box-shadow: 0 4px 12px rgba(122, 108, 255, 0.45);
 }
 
 .cf-range::-moz-range-track {
@@ -503,7 +503,7 @@ a.btn-primary {
   height: 18px;
   border: 0;
   border-radius: 999px;
-  background: #ff8a3d;
+  background: #5B8CFF;
 }
 
 @keyframes land-drift {
@@ -618,7 +618,7 @@ a.btn-primary {
 }
 
 .land-thumb.is-on .land-thumb-media {
-  box-shadow: 0 0 0 2px #0b0b0d, 0 0 0 4px #ff8a3d;
+  box-shadow: 0 0 0 2px #0b0b0d, 0 0 0 4px #5B8CFF;
 }
 
 .land-rail {
@@ -647,7 +647,7 @@ a.btn-primary {
 }
 
 .land-link {
-  background-image: linear-gradient(90deg, #ff8a3d, #ff5e62);
+  background-image: linear-gradient(90deg, #5B8CFF, #7A6CFF);
   background-position: 0 100%;
   background-repeat: no-repeat;
   background-size: 0 2px;

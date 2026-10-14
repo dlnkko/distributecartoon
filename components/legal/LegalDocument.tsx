@@ -31,7 +31,7 @@ export function LegalDocument({
         <p className="mt-3 text-sm text-[var(--cf-muted)]">Last updated October 2, 2026</p>
         <div className="mt-8 space-y-8 text-sm leading-relaxed text-[var(--cf-muted)]">{children}</div>
         <p className="mt-10 text-sm text-[var(--cf-muted)]">
-          Questions: <a className="text-[#ffb089]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+          Questions: <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </p>
       </article>
     </main>

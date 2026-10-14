@@ -94,7 +94,7 @@ export function CreditsShop() {
             >
               <span>
                 {plan.seconds.toLocaleString("en-US")} credits
-                {current === plan.id ? <span className="ml-2 text-[11px] uppercase tracking-[0.14em] text-[#ffb089]">Current</span> : null}
+                {current === plan.id ? <span className="ml-2 text-[11px] uppercase tracking-[0.14em] text-[#C5D4FF]">Current</span> : null}
               </span>
               <span className="font-medium">{formatPlanPrice(plan.price)}/mo</span>
             </button>
@@ -110,7 +110,7 @@ export function CreditsShop() {
                 ) : (
                   `${sliderPlan.seconds.toLocaleString("en-US")} credits`
                 )}
-                {current === sliderPlan.id ? <span className="ml-2 text-[11px] uppercase tracking-[0.14em] text-[#ffb089]">Current</span> : null}
+                {current === sliderPlan.id ? <span className="ml-2 text-[11px] uppercase tracking-[0.14em] text-[#C5D4FF]">Current</span> : null}
               </span>
               <span className="font-medium">{formatPlanPrice(sliderPlan.price)}/mo</span>
             </button>

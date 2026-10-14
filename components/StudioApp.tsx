@@ -1565,7 +1565,7 @@ export function StudioApp() {
             type="button"
             onClick={() => void createNew()}
             disabled={generating.length >= MAX_CONCURRENT_RENDERS}
-            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(255,94,98,0.32)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(122,108,255,0.32)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="cf-plus">
               <PlusIcon />
@@ -1578,7 +1578,7 @@ export function StudioApp() {
             disabled={generating.length >= MAX_CONCURRENT_RENDERS}
             className={`no-press flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
               step === "song" || project.song
-                ? "border-[#FF8A3D]/40 bg-[linear-gradient(135deg,rgba(255,138,61,0.2),rgba(255,94,98,0.12))] text-white shadow-[0_0_24px_rgba(255,138,61,0.16)]"
+                ? "border-[#5B8CFF]/40 bg-[linear-gradient(135deg,rgba(91,140,255,0.2),rgba(122,108,255,0.12))] text-white shadow-[0_0_24px_rgba(91,140,255,0.16)]"
                 : "border-white/10 bg-white/5 text-white hover:bg-white/10"
             }`}
           >
@@ -1586,7 +1586,7 @@ export function StudioApp() {
             Create a suno video
           </button>
           {generating.length >= MAX_CONCURRENT_RENDERS ? (
-            <p className="rounded-xl border border-[#FF8A3D]/40 bg-[#FF8A3D]/10 px-3 py-2 text-xs text-[#FFD7B0]">{RENDER_WAIT_MESSAGE}</p>
+            <p className="rounded-xl border border-[#5B8CFF]/40 bg-[#5B8CFF]/10 px-3 py-2 text-xs text-[#D6E2FF]">{RENDER_WAIT_MESSAGE}</p>
           ) : null}
         </div>
 
@@ -1637,7 +1637,7 @@ export function StudioApp() {
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--cf-bg)]">
         <header className="sticky top-0 z-20 border-b border-[var(--cf-line)] bg-[rgba(11,11,13,0.78)] px-3 py-4 backdrop-blur-xl md:px-6">
-          <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(255,138,61,0.22),transparent_68%)] blur-3xl" />
+          <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(91,140,255,0.22),transparent_68%)] blur-3xl" />
           <div className="relative flex items-center gap-2 md:gap-3">
             <button type="button" className="no-press grid size-11 shrink-0 place-items-center rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] md:hidden" aria-label="Open menu" onClick={() => setSidebarOpen(true)}>
               <MenuIcon />
@@ -1908,7 +1908,7 @@ export function StudioApp() {
             </div>
             <CreditsShop />
             <p className="mt-4 text-center text-xs text-[var(--muted)]">
-              Payments follow the <a href="/terms" className="text-[#ffb089]">Terms</a>.
+              Payments follow the <a href="/terms" className="text-[#C5D4FF]">Terms</a>.
             </p>
           </div>
         </div>
@@ -2017,7 +2017,7 @@ function StepBar({
             <span
               className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium ${
                 active
-                  ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_0_16px_rgba(255,138,61,0.45)]"
+                  ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_0_16px_rgba(91,140,255,0.45)]"
                   : done
                     ? "bg-[var(--accent)] text-white"
                     : "bg-white/10 text-[var(--cf-muted)]"
@@ -2043,7 +2043,7 @@ function StepBar({
             ) : (
               content
             )}
-            {i < steps.length - 1 ? <span className={`hidden h-px flex-1 sm:block ${done ? "bg-[linear-gradient(90deg,#FF8A3D,#FF5E62)]" : "bg-white/10"}`} /> : null}
+            {i < steps.length - 1 ? <span className={`hidden h-px flex-1 sm:block ${done ? "bg-[linear-gradient(90deg,#5B8CFF,#7A6CFF)]" : "bg-white/10"}`} /> : null}
           </li>
         );
       })}
@@ -2101,8 +2101,8 @@ function ScriptStep({
             onClick={() => setInfoOpen((open) => !open)}
             className={`grid size-7 place-items-center rounded-full text-[13px] font-semibold ${
               infoOpen
-                ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white"
-                : "border border-white/15 bg-white/5 text-[var(--cf-muted)] hover:border-[#FF8A3D]/70 hover:text-white"
+                ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white"
+                : "border border-white/15 bg-white/5 text-[var(--cf-muted)] hover:border-[#5B8CFF]/70 hover:text-white"
             }`}
           >
             <InfoIcon />
@@ -2134,7 +2134,7 @@ function ScriptStep({
             : "border-white/15 bg-[var(--cf-surface)] hover:bg-[var(--cf-surface-2)]"
         }`}
       >
-        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
+        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(91,140,255,0.22),rgba(122,108,255,0.16))] text-white">
           <ScriptIcon />
         </span>
         <span className="text-sm font-medium">{fileAttached ? scriptName : "Upload PDF or Word"}</span>
@@ -2161,7 +2161,7 @@ function ScriptStep({
           type="button"
           disabled={busy || !canContinue}
           onClick={onContinue}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
         >
           {busy ? "Working…" : "Continue"}
         </button>
@@ -2232,9 +2232,9 @@ function SongStep({
         className="mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed border-white/15 bg-[var(--cf-surface)] px-5 text-center hover:bg-[var(--cf-surface-2)]"
       >
         {uploadingName ? (
-          <span className="size-7 animate-spin rounded-full border-2 border-white/20 border-t-[#FF8A3D]" />
+          <span className="size-7 animate-spin rounded-full border-2 border-white/20 border-t-[#5B8CFF]" />
         ) : (
-          <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
+          <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(91,140,255,0.22),rgba(122,108,255,0.16))] text-white">
             <SongIcon />
           </span>
         )}
@@ -2293,7 +2293,7 @@ function SongStep({
           type="button"
           disabled={busy || !ready}
           onClick={() => onContinue(text)}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2498,7 +2498,7 @@ function SetupStep({
           type="button"
           disabled={busy}
           onClick={onContinue}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2595,7 +2595,7 @@ function SongLookStep({
               onContinue();
             })();
           }}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2707,7 +2707,7 @@ function CastStep({
             type="button"
             disabled={busy || !ready || !affordable}
             onClick={onContinue}
-            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40"
+            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
           >
             {`Generate - ${creditCost} credits`}
           </button>
@@ -2815,7 +2815,7 @@ function ProduceStep({
             type="button"
             disabled={!affordable}
             onClick={onGenerate}
-            className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(255,94,98,0.28)] disabled:opacity-40 sm:w-auto"
+            className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40 sm:w-auto"
           >
             {`Generate - ${creditCost} credits`}
           </button>
@@ -2849,7 +2849,7 @@ function DurationControl({
           onClick={() => onChange(seconds)}
           className={`rounded-full px-3 py-1.5 text-sm font-medium tabular-nums ${
             selected === seconds
-              ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]"
+              ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]"
               : "bg-white/5 text-[var(--ink)] hover:bg-white/10"
           } disabled:opacity-40`}
         >
@@ -2867,7 +2867,7 @@ function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (valu
         type="button"
         onClick={() => onChange("16:9")}
         className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
-          value === "16:9" ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
+          value === "16:9" ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
         }`}
       >
         <LandscapeIcon />
@@ -2880,7 +2880,7 @@ function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (valu
         type="button"
         onClick={() => onChange("9:16")}
         className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
-          value === "9:16" ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
+          value === "9:16" ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
         }`}
       >
         <PortraitIcon />
@@ -2910,7 +2910,7 @@ function Segmented({
           type="button"
           onClick={() => onChange(option.id)}
           className={`h-full flex-1 rounded-full px-2 text-[12px] font-medium leading-none sm:px-3 sm:text-[13px] ${
-            value === option.id ? "bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
+            value === option.id ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
           }`}
         >
           {option.label}
@@ -2977,7 +2977,7 @@ function CharacterSlot({
                 onClick={() => onLabel(slot, active ? fallback : option.name)}
                 className={`inline-flex max-w-full min-h-11 touch-manipulation items-center rounded-full border px-3.5 text-left text-[13px] font-medium leading-tight ${
                   active
-                    ? "border-transparent bg-[linear-gradient(135deg,#FF8A3D,#FF5E62)] text-white shadow-[0_8px_18px_rgba(255,94,98,0.28)]"
+                    ? "border-transparent bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]"
                     : "border-white/15 bg-[#1c1c21] text-[var(--ink)] hover:border-white/30 hover:bg-white/10"
                 } disabled:cursor-not-allowed disabled:opacity-35`}
               >
@@ -3116,12 +3116,12 @@ function UploadTile({
     <div className={`flex min-h-[72px] w-full items-center gap-1 rounded-xl border border-dashed border-white/15 bg-[var(--cf-surface)] px-2 py-1.5 ${disabled ? "opacity-50" : ""}`}>
       <button type="button" disabled={disabled || uploading} onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2.5 px-0.5 text-left">
         {uploading ? (
-          <span className="size-9 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-[#FF8A3D]" />
+          <span className="size-9 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-[#5B8CFF]" />
         ) : preview ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={preview} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
         ) : (
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(255,138,61,0.22),rgba(255,94,98,0.16))] text-white">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(91,140,255,0.22),rgba(122,108,255,0.16))] text-white">
             <PlusIcon />
           </span>
         )}

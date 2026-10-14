@@ -10,7 +10,7 @@ export function Mark({ className = "h-8 w-8" }: { className?: string }) {
       <path d="M5.1 12.8V5.1H12.8" stroke="currentColor" {...stroke} />
       <path d="M19.2 5.1H26.9V12.8" stroke="currentColor" {...stroke} />
       <path d="M26.9 19.2V26.9H19.2" stroke="currentColor" {...stroke} />
-      <path d="M12.8 26.9H5.1V19.2" stroke="#FF8A3D" {...stroke} />
+      <path d="M12.8 26.9H5.1V19.2" stroke="#5B8CFF" {...stroke} />
     </svg>
   );
 }

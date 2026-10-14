@@ -246,7 +246,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
           }}
         >
           <div className={`relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-white/10 bg-[#141417] p-7 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] sm:p-10 ${closing ? "land-offer-out" : "land-offer-in"}`}>
-            <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[#ff8a3d]/30 blur-3xl" />
+            <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[#5B8CFF]/30 blur-3xl" />
             <h2 id="trial-offer-title" className="land-display relative text-4xl leading-[1.02] text-white sm:text-5xl">
               {trial.title}
             </h2>
@@ -697,10 +697,10 @@ function PlanCard({
   recommended?: boolean;
 }) {
   return (
-    <article className={`flex flex-1 flex-col rounded-2xl border bg-[var(--cf-surface)] p-6 ${recommended ? "border-[#ff8a3d]" : "border-white/10"}`}>
+    <article className={`flex flex-1 flex-col rounded-2xl border bg-[var(--cf-surface)] p-6 ${recommended ? "border-[#5B8CFF]" : "border-white/10"}`}>
       <div className="flex items-center justify-between gap-3">
         <h3 className="text-lg font-medium">{plan.seconds.toLocaleString("en-US")} credits</h3>
-        {recommended ? <span className="rounded-full bg-[#ff8a3d] px-2 py-0.5 text-[11px] font-semibold text-black">Recommended</span> : null}
+        {recommended ? <span className="rounded-full bg-[#5B8CFF] px-2 py-0.5 text-[11px] font-semibold text-white">Recommended</span> : null}
       </div>
       <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
       <p className="mt-2 text-sm text-[var(--cf-muted)]">{creditLength(plan.seconds)}</p>
