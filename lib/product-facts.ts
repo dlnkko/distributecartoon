@@ -31,16 +31,29 @@ export function productFacts(project: Project, label: string) {
   const plain = label.trim();
   const name = fromPage || (plain && !/^product\s*\d+$/i.test(plain) ? plain : "");
   const video = (match?.useVideoNote || "").replace(/\s+/g, " ").trim();
+  const seen = (match?.imageNote || "").replace(/\s+/g, " ").trim();
   const pageUse = useFromBlurb(blurb);
   const use = [pageUse, video].filter(Boolean).join(" ");
-  return { name, use };
+  return { name, use, seen };
 }
 
 export function productUsePhysics(project: Project, label: string) {
   const facts = productFacts(project, label);
   const name = facts.name || "The product in the photo";
   const observed = facts.use ? ` The recorded use says: ${facts.use}` : "";
-  return `${name} follows real contact. A hand holds it the way the photo shows. It sits on the body, the face, or a surface only where this action places it. The material keeps the shape, color, and stiffness in the photo. Pressed on, it stays stuck. Fitted or closed, it stays seated. It does not float, pass through skin, or turn into another container.${observed}`;
+  const seen = facts.seen ? ` The photo shows: ${facts.seen} If both the product and the package are in the photo, show both. Do not replace one with the other.` : "";
+  return `${name} follows real contact. A hand holds it the way the photo shows. It sits on the body, the face, or a surface only where this action places it. The material keeps the shape, color, and stiffness in the photo. Pressed on, it stays stuck. Fitted or closed, it stays seated. It does not float, pass through skin, or turn into another container.${seen}${observed}`;
+}
+
+export function productLookBrief(project: Project) {
+  const notes = (project.references || []).filter((item) => item.kind === "product" && item.imageNote?.trim());
+  if (!notes.length) return "";
+  return notes
+    .map((item) => {
+      const name = productFacts(project, item.label).name || "The product";
+      return `PRODUCT PHOTO of ${name}: ${item.imageNote?.trim()}. When this product is on screen, match this description and the attached photo. If both the package and the product are visible, show both. Do not swap them or drop one.`;
+    })
+    .join("\n\n");
 }
 
 export function productUseBrief(project: Project) {

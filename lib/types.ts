@@ -108,6 +108,7 @@ export type ReferenceAsset = {
   useVideoPublicPath?: string;
   useVideoRemoteUrl?: string;
   useVideoNote?: string;
+  imageNote?: string;
   includeInVideo: boolean;
   originalFileName?: string;
   originalPublicPath?: string;

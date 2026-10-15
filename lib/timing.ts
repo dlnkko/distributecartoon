@@ -1,5 +1,5 @@
-import { clampTotalDuration } from "./ids";
-import type { Scene } from "./types";
+import { clampTotalDuration, createId } from "./ids";
+import type { DialogueLine, Scene } from "./types";
 
 const DURATION_RE =
   /(?:(?:dura|duración|duration|runtime|length|lasts?|de)\s*)?(\d+(?:\.\d+)?)\s*(?:s|sec|secs|segs?|segundos?|seconds?)\b/i;
@@ -303,8 +303,8 @@ export function fillPartSceneSeconds(
     const sum = () => indexes.reduce((total, index) => total + (next.get(index) || 0), 0);
     let gap = part.duration - sum();
     if (gap <= 0.05) continue;
-    const unlocked = indexes.filter((index) => !((meta.get(index)?.lock || 0) > 0));
-    const pool = unlocked.length ? unlocked : indexes;
+    const pool = indexes.filter((index) => !((meta.get(index)?.lock || 0) > 0));
+    if (!pool.length) continue;
     const weight = pool.reduce((total, index) => total + Math.max(1, next.get(index) || 0), 0);
     let added = 0;
     pool.forEach((index, position) => {
@@ -370,6 +370,128 @@ export function capPartSceneSeconds(
     });
   }
   return next;
+}
+
+function roundTenth(value: number) {
+  return Math.round(value * 10) / 10;
+}
+
+function proseSentences(text: string) {
+  const parts = text
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return parts.length ? parts : text.trim() ? [text.trim()] : [];
+}
+
+function sliceProse(text: string, start: number, end: number, role: "head" | "tail", seconds: number) {
+  const sentences = proseSentences(text);
+  if (!sentences.length) {
+    return role === "head"
+      ? `Play only the opening ${seconds}s of this beat. Do not slow it down.`
+      : `Continue this beat from the previous generation. Do not replay the opening. Only the next ${seconds}s.`;
+  }
+  if (sentences.length === 1) {
+    const line = sentences[0];
+    return role === "head"
+      ? `Play only the opening ${seconds}s of this beat. Do not slow this action down to fill time. ${line}`
+      : `Continue this beat from the previous generation. Do not replay its opening and do not slow it down. Only the next ${seconds}s. ${line}`;
+  }
+  const weights = sentences.map((sentence) => Math.max(1, sentence.split(/\s+/).filter(Boolean).length));
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  let cursor = 0;
+  const kept: string[] = [];
+  sentences.forEach((sentence, index) => {
+    const from = cursor / total;
+    const to = (cursor + weights[index]) / total;
+    cursor += weights[index];
+    const mid = (from + to) / 2;
+    if (mid >= start && mid < end) kept.push(sentence);
+  });
+  const body = (kept.length ? kept : role === "head" ? sentences.slice(0, 1) : sentences.slice(-1)).join(" ");
+  return role === "head"
+    ? `${body} Stop here. The rest of this beat is the next generation. Do not slow this action down.`
+    : `Continue this beat from the previous generation. Do not replay what already happened. ${body}`;
+}
+
+function sliceDialogue(lines: DialogueLine[], start: number, end: number, role: "head" | "tail") {
+  const spoken = lines.filter((line) => line.line?.trim());
+  if (!spoken.length) return [];
+  if (spoken.length === 1) return role === "head" ? spoken : [];
+  const weights = spoken.map((line) => Math.max(1, estimateDialogueSeconds(line.line)));
+  const total = weights.reduce((sum, value) => sum + value, 0);
+  let cursor = 0;
+  return spoken.filter((line, index) => {
+    const from = cursor / total;
+    const to = (cursor + weights[index]) / total;
+    cursor += weights[index];
+    const mid = (from + to) / 2;
+    return mid >= start && mid < end;
+  });
+}
+
+function sliceScene(scene: Scene, seconds: number, offset: number, total: number, role: "whole" | "head" | "tail"): Scene {
+  if (role === "whole") return { ...scene, estimatedSeconds: seconds, shots: [] };
+  const start = offset / total;
+  const end = (offset + seconds) / total;
+  return {
+    ...scene,
+    id: role === "head" ? scene.id : createId("scene"),
+    title: role === "tail" ? `${scene.title} continued`.slice(0, 90) : scene.title,
+    summary: sliceProse(scene.summary || scene.title, start, end, role, seconds),
+    dialogue: sliceDialogue(scene.dialogue || [], start, end, role),
+    estimatedSeconds: seconds,
+    camera: role === "tail" ? (/close/i.test(scene.camera || "") ? "medium shot, eye level" : "close-up, eye level") : scene.camera,
+    shots: [],
+  };
+}
+
+// A generation is at most 30s of consecutive story time. A 15s beat stays 15s.
+// The next beat fills the rest of that generation, and a long beat continues in the next one.
+export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
+  const ordered = [...scenes].sort((left, right) => left.index - right.index);
+  const out: Scene[] = [];
+  let used = 0;
+  for (const scene of ordered) {
+    let remaining = roundTenth(Math.max(2, scene.estimatedSeconds || 2));
+    const total = remaining;
+    let offset = 0;
+    while (remaining > 0.05) {
+      if (used > 0 && SEEDANCE_MAX_SECONDS - used < 2) used = 0;
+      const room = roundTenth(SEEDANCE_MAX_SECONDS - used);
+      const take = roundTenth(Math.min(remaining, room));
+      const role = offset < 0.05 && take >= remaining - 0.05 ? "whole" : offset < 0.05 ? "head" : "tail";
+      out.push(sliceScene(scene, take, offset, total, role));
+      remaining = roundTenth(remaining - take);
+      offset = roundTenth(offset + take);
+      used = roundTenth(used + take);
+      if (used >= SEEDANCE_MAX_SECONDS - 0.05) used = 0;
+    }
+  }
+  return out.map((scene, index) => ({ ...scene, index: index + 1 }));
+}
+
+export function groupConsecutiveTakes(scenes: Array<{ index: number; estimatedSeconds: number }>): SeedancePartPlan[] {
+  const parts: SeedancePartPlan[] = [];
+  let sceneIndexes: number[] = [];
+  let used = 0;
+  const flush = () => {
+    if (!sceneIndexes.length) return;
+    parts.push({
+      duration: Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(used))),
+      sceneIndexes,
+    });
+    sceneIndexes = [];
+    used = 0;
+  };
+  for (const scene of scenes) {
+    const span = sceneSpan(scene.estimatedSeconds);
+    if (sceneIndexes.length && used + span > SEEDANCE_MAX_SECONDS + 0.05) flush();
+    sceneIndexes.push(scene.index);
+    used += span;
+  }
+  flush();
+  return parts;
 }
 
 export function formatPartPlan(parts: SeedancePartPlan[]) {

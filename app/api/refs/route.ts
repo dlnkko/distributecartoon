@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { normalizeImageMime, storeGeneratedFile } from "@/lib/assets";
+import { describeProductImage } from "@/lib/product-use-video";
 import { loadOwnedProject } from "@/lib/auth";
 import { IMAGE_TOO_SMALL, imagePixelCount, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { emptySlot, ensureReferenceSlots, syncReferenceInclusion } from "@/lib/refs";
@@ -7,7 +8,7 @@ import { saveProject } from "@/lib/store";
 import type { ReferenceKind } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const ALLOWED_IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
 
@@ -63,6 +64,13 @@ export async function POST(request: Request) {
     delete asset.stylizedRemoteUrl;
     asset.status = "ready";
     if (notes) asset.notes = notes;
+    if (kind === "product") {
+      try {
+        asset.imageNote = await describeProductImage(buffer, mime);
+      } catch (error) {
+        console.warn("product photo", error instanceof Error ? error.message : error);
+      }
+    }
     if (kind === "character") {
       for (const character of project.characters) {
         if (character.sourceRefId !== asset.id) continue;
@@ -150,6 +158,7 @@ export async function DELETE(request: Request) {
   delete asset.stylizedRemoteUrl;
   asset.status = "empty";
   asset.includeInVideo = false;
+  delete asset.imageNote;
   for (const character of project.characters) {
     if (character.sourceRefId !== asset.id) continue;
     delete character.sourceRefId;

@@ -51,7 +51,7 @@ export async function describeProductUse(buffer: Buffer, mime: string) {
             role: "user",
             parts: [
               {
-                text: "Watch this product video. In two or three short sentences, say what the product is and exactly how a person uses it: how it opens, how it is applied or worn, and how it looks while in use. Stay with what the video shows. No ad copy and no scene ideas.",
+                text: "Watch this product video. Say what is visible: the product itself, its package, or both. Describe each one separately, including shape, color, print, and material, and say exactly how a person uses it. If both are in frame, the product and the package stay two different objects. Stay with what the video shows. No ad copy and no scene ideas.",
               },
               {
                 inlineData: {
@@ -79,4 +79,49 @@ export async function describeProductUse(buffer: Buffer, mime: string) {
     .trim();
   if (!text) throw new Error("Couldn't tell how the product is used from that video.");
   return text.slice(0, 700);
+}
+
+export async function describeProductImage(buffer: Buffer, mime: string) {
+  const key = getSecrets().geminiApiKey;
+  if (!key) throw new Error("GEMINI_API_KEY is missing.");
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(55_000),
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: "Look at this product photo. Report only what is visible. Say whether the frame shows the product itself, its package, or both. If both are visible, describe them as two separate objects: the package first (shape, color, material, print, logo) and then the product (shape, color, texture, and how it sits next to the package). If only one is visible, say which and describe it. A video model must rebuild these exact objects and must not swap the package for the product or drop either one. No ad copy and no scene ideas. Under 120 words.",
+              },
+              {
+                inlineData: {
+                  mimeType: mime,
+                  data: buffer.toString("base64"),
+                },
+              },
+            ],
+          },
+        ],
+        generationConfig: { temperature: 0.1, maxOutputTokens: 400 },
+      }),
+    },
+  );
+  const json = (await response.json().catch(() => ({}))) as {
+    error?: { message?: string };
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  if (!response.ok) throw new Error(json.error?.message || "Couldn't read that product photo.");
+  const text = (json.candidates || [])
+    .flatMap((candidate) => candidate.content?.parts || [])
+    .map((part) => part.text || "")
+    .join(" ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) throw new Error("Couldn't tell what is in that product photo.");
+  return text.slice(0, 900);
 }

@@ -1583,7 +1583,8 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     } else if (item.kind === "product") {
       const called = productPromptName(project, name, item.notes || "");
       const use = productUseHint(project, name);
-      assets.push(`${tag} as the product — ${called}. Match the photo exactly every time it appears: the product itself and its package, if both are in the photo, with the same shape, color, print, and material. Do not show only the box.${use ? ` Use it this way: ${use}` : ""}`);
+      const seen = productFacts(project, name).seen;
+      assets.push(`${tag} as the product — ${called}. Match the photo exactly every time it appears.${seen ? ` The photo shows: ${seen} If both the product and the package are visible, show both.` : " The product itself and its package, if both are in the photo, keep the same shape, color, print, and material. Do not show only the box."}${use ? ` Use it this way: ${use}` : ""}`);
     } else if (item.kind === "logo") {
       assets.push(`${tag} as the logo — ${name}. Same mark and colours wherever it appears, placed as a physical object in the world.`);
     } else if (name) {
@@ -1821,9 +1822,16 @@ function referenceLock(project: Project, images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      if (item.kind === "product" || item.kind === "logo") {
-        const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : name;
-        return `@Image${index + 1} is ${called}. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Name this tag only in a scene whose action has it in a hand, on a surface, or in frame. Every other scene leaves the tag out.`;
+      if (item.kind === "logo") {
+        return `@Image${index + 1} is ${name}. Match the logo photo exactly. Name this tag only in a scene whose action has it in frame. Every other scene leaves the tag out.`;
+      }
+      if (item.kind === "product") {
+        const called = productPromptName(project, name, item.notes || "");
+        const seen = productFacts(project, name).seen;
+        const match = seen
+          ? `Match the photo and this description of it: ${seen} If both the product and the package are visible, show both. Do not swap them or show only the box.`
+          : "Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box.";
+        return `@Image${index + 1} is ${called}. ${match} Name this tag only in a scene whose action has it in a hand, on a surface, or in frame. Every other scene leaves the tag out.`;
       }
       if (item.kind === "character") {
         const role = faceLabel(project, name);
@@ -1860,10 +1868,11 @@ function productSceneLine(project: Project, tag: string, images: PromptRef[]) {
   const image = images[Number(tag.replace("@Image", "")) - 1];
   if (!image || image.kind !== "product") return "";
   const facts = productFacts(project, image.name);
-  if (!facts.name && !facts.use) return "";
+  const seen = facts.seen ? ` The photo shows: ${facts.seen}` : "";
+  if (!facts.name && !facts.use && !facts.seen) return "";
   const name = facts.name || "the product in the photo";
   const physics = productUsePhysics(project, image.name);
-  return `${tag} is ${name}, matching the photo exactly. The product itself and its package, if both are in the photo, keep the same shape, color, print, and material. Do not show only the box. ${physics} Do not invent a different design or a different way to use it.`;
+  return `${tag} is ${name}, matching the photo exactly.${seen} ${physics} Do not invent a different design or a different way to use it.`;
 }
 
 function scrubDirections(text: string) {

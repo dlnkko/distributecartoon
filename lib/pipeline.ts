@@ -7,12 +7,13 @@ import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask,
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
-import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
+import { describeProductImage } from "./product-use-video";
 import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { balancePartSceneSeconds, fillPartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, userTimedSeconds } from "./timing";
+import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
+import { balancePartSceneSeconds, fillPartSceneSeconds, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -551,7 +552,34 @@ async function savePartTail(project: Project, batch: Batch) {
   batch.tailRemoteUrl = saved.publicPath;
 }
 
+function productImageMime(src: string) {
+  const lower = src.split("?")[0].toLowerCase();
+  if (lower.endsWith(".png")) return "image/png";
+  if (lower.endsWith(".webp")) return "image/webp";
+  if (lower.endsWith(".gif")) return "image/gif";
+  return "image/jpeg";
+}
+
+async function ensureProductImageNotes(project: Project) {
+  let wrote = false;
+  for (const asset of project.references || []) {
+    if (asset.kind !== "product" || asset.imageNote?.trim()) continue;
+    const src = asset.originalRemoteUrl || asset.originalPublicPath;
+    if (!src) continue;
+    try {
+      const note = await describeProductImage(await readPublicFile(src), productImageMime(src));
+      if (!note) continue;
+      asset.imageNote = note;
+      wrote = true;
+    } catch (error) {
+      console.warn("product photo", project.id, error instanceof Error ? error.message : error);
+    }
+  }
+  if (wrote) await saveProject(project);
+}
+
 async function prepareStoryPrompt(project: Project, batch: Batch) {
+  await ensureProductImageNotes(project);
   const previous = previousStoryBatch(project, batch);
   const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
   const { imageEntries, videoEntries } = await collectReferences(project, batch);
@@ -1355,26 +1383,31 @@ export function planSeedanceBatches(project: Project) {
     : clampTotalDuration(project.targetDurationSeconds || fallback);
   project.targetDurationSeconds = requested;
   const target = requested;
+  if (!project.song) project.scenes = splitScenesAcrossTakes(project.scenes);
   const timed = project.scenes.map((scene) => ({
     index: scene.index,
     estimatedSeconds: scene.estimatedSeconds || 0,
     floor: sceneSpeechFloor(scene),
     lock: userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined),
   }));
-  const parts = packScenesIntoParts(
-    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-    target,
-    project.song?.clips.map((clip) => clip.durationSeconds),
-  );
-  const capped = balancePartSceneSeconds(timed, parts);
-  const filled = fillPartSceneSeconds(
-    timed.map((scene) => ({ ...scene, estimatedSeconds: capped.get(scene.index) || scene.estimatedSeconds })),
-    parts,
-  );
-  project.scenes.forEach((scene) => {
-    const next = filled.get(scene.index);
-    if (next) scene.estimatedSeconds = next;
-  });
+  const parts = project.song
+    ? packScenesIntoParts(
+        project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+        target,
+        project.song.clips.map((clip) => clip.durationSeconds),
+      )
+    : groupConsecutiveTakes(project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })));
+  if (project.song) {
+    const capped = balancePartSceneSeconds(timed, parts);
+    const filled = fillPartSceneSeconds(
+      timed.map((scene) => ({ ...scene, estimatedSeconds: capped.get(scene.index) || scene.estimatedSeconds })),
+      parts,
+    );
+    project.scenes.forEach((scene) => {
+      const next = filled.get(scene.index);
+      if (next) scene.estimatedSeconds = next;
+    });
+  }
   const previous = project.batches;
   project.batches = parts.map((part, index) => {
     const sceneIndexes = part.sceneIndexes.length
