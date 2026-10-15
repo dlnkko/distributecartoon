@@ -485,6 +485,15 @@ export function StudioApp() {
         if (hadTask && !activeTask(latest)) {
           setStatus(latest.taskError || "");
         }
+        if (
+          busyOwnerRef.current === latest.id &&
+          !activeTask(latest) &&
+          latest.taskError &&
+          !latest.scenes.length
+        ) {
+          unlockBusy(latest.id);
+          setStatus(latest.taskError);
+        }
         const hasVideo = Boolean(projectDeliveredSrc(latest));
         if (!hadVideo && hasVideo && notifyReadyRef.current) {
           void showReadyNotification(latest.title || "New video");

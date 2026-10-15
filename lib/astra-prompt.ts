@@ -66,23 +66,30 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
       .filter(Boolean)
       .join(" ");
     const input = prior ? `PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}` : trimmed;
+    const timeout = new AbortController();
+    const timer = setTimeout(() => timeout.abort(), 45_000);
     let response;
     try {
-      response = await client.responses.create({
-        model: TEXT_MODEL,
-        reasoning: { effort: TEXT_REASONING },
-        instructions,
-        input,
-      });
+      response = await client.responses.create(
+        {
+          model: TEXT_MODEL,
+          reasoning: { effort: TEXT_REASONING },
+          instructions,
+          input,
+        },
+        { signal: timeout.signal },
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      if (!/effort|reasoning/i.test(message)) throw error;
+      if (timeout.signal.aborted || !/effort|reasoning/i.test(message)) throw error;
       response = await client.responses.create({
         model: TEXT_MODEL,
-        reasoning: { effort: "xhigh" },
+        reasoning: { effort: "medium" },
         instructions,
         input,
       });
+    } finally {
+      clearTimeout(timer);
     }
     const revised = (response.output_text || "").trim();
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;

@@ -1450,16 +1450,36 @@ export async function runAgent(options: {
   ];
 
   throwIfAborted(signal);
-  const reasoning = mode === "plan" ? TEXT_REASONING : "medium";
   async function respond(body: OpenAI.Responses.ResponseCreateParamsNonStreaming) {
-    try {
-      return await client.responses.create({ ...body, reasoning: { effort: reasoning } }, { signal });
-    } catch (error) {
-      if (isAbortError(error) || reasoning === "medium") throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      if (!/effort|reasoning/i.test(message)) throw error;
-      return client.responses.create({ ...body, reasoning: { effort: "xhigh" } }, { signal });
+    if (mode !== "plan") {
+      return client.responses.create({ ...body, reasoning: { effort: "medium" } }, { signal });
     }
+    const efforts = [TEXT_REASONING, "medium"] as const;
+    let lastError: unknown;
+    for (const effort of efforts) {
+      const timeout = new AbortController();
+      const timer = setTimeout(() => timeout.abort(), 120_000);
+      const onAbort = () => timeout.abort();
+      signal?.addEventListener("abort", onAbort);
+      try {
+        return await client.responses.create(
+          { ...body, reasoning: { effort } },
+          { signal: timeout.signal },
+        );
+      } catch (error) {
+        lastError = error;
+        if (signal?.aborted) throw error;
+        const message = error instanceof Error ? error.message : String(error);
+        const stalled = timeout.signal.aborted || /timeout|timed out/i.test(message);
+        const rejectedEffort = /effort|reasoning/i.test(message);
+        if (!stalled && !rejectedEffort) throw error;
+        if (effort === "medium") throw new Error("The story plan took too long. Try again.");
+      } finally {
+        clearTimeout(timer);
+        signal?.removeEventListener("abort", onAbort);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error("The story plan took too long. Try again.");
   }
   let response = await respond({
     model: TEXT_MODEL,
