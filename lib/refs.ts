@@ -311,17 +311,33 @@ function normalizeRole(value: string) {
 
 const IDENTITY_GROUPS: Array<{ keys: string[]; tags: string[] }> = [
   { keys: ["cat", "gato", "gata", "kitten", "kitty", "feline", "gatito", "gatita"], tags: ["cat", "animal"] },
-  { keys: ["dog", "perro", "perra", "puppy", "canine", "cachorro", "cachorra"], tags: ["dog", "animal"] },
+  { keys: ["dog", "perro", "perra", "puppy", "canine", "cachorro", "cachorra", "retriever"], tags: ["dog", "animal"] },
   { keys: ["bird", "ave", "parrot", "loro"], tags: ["bird", "animal"] },
   {
-    keys: ["woman", "mujer", "girl", "lady", "female", "señora", "senora", "chica", "niña", "nina"],
+    keys: ["woman", "mujer", "girl", "lady", "female", "señora", "senora", "chica", "niña", "nina", "mom", "mother", "wife", "daughter"],
     tags: ["woman", "human"],
   },
   {
-    keys: ["man", "hombre", "guy", "boy", "male", "señor", "senor", "chico", "niño", "nino"],
+    keys: ["man", "hombre", "guy", "boy", "male", "señor", "senor", "chico", "niño", "nino", "dad", "father", "husband", "son", "kid", "child"],
     tags: ["man", "human"],
   },
 ];
+
+function kinshipName(name: string) {
+  return /^(?:kid|child|boy|girl|son|daughter|dad|mom|mother|father|papa|mama|wife|husband|baby|toddler|man|woman)$/i.test(
+    name.trim(),
+  );
+}
+
+function namedAsAnimal(name: string, description: string) {
+  const who = name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!who) return false;
+  const species = "dog|cat|puppy|kitten|bird|rabbit|horse|retriever";
+  return new RegExp(
+    `\\b${who}\\b\\s*(?:,|is|the)\\s+(?:a\\s+|an\\s+|the\\s+)?(?:${species})\\b|\\b(?:a|an|the)\\s+(?:${species})\\s+(?:named|called)\\s+${who}\\b`,
+    "i",
+  ).test(`${name} ${description}`);
+}
 
 function identityTags(text: string) {
   const blob = ` ${normalizeRole(text)} `;
@@ -342,13 +358,21 @@ function photoRoleScore(photo: ReferenceAsset, character: Character) {
   const role = normalizeRole(photo.label);
   const name = normalizeRole(character.name);
   const blob = `${character.name} ${character.description}`;
+  const mentionedAnimal = kinshipName(character.name) && !namedAsAnimal(character.name, character.description || "");
+  const animalLabel = /^(?:dog|cat|puppy|kitten|bird|rabbit|horse|retriever|animal)s?$/i.test(role);
   if (!role || GENERIC_LABELS.has(role) || /^character\s*\d+$/i.test(photo.label.trim())) return 2;
   if (role === name) return 100;
   if (role.length >= 3 && (name.includes(role) || role.includes(name))) return 85;
-  if (new RegExp(`\\b${role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i").test(blob)) return 75;
+  if (!(mentionedAnimal && animalLabel) && new RegExp(`\\b${role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}s?\\b`, "i").test(blob)) return 75;
 
   const photoTags = identityTags(`${photo.label} ${photo.notes}`);
   const charTags = identityTags(blob);
+  if (mentionedAnimal) {
+    for (const tag of ["dog", "cat", "bird", "animal"]) charTags.delete(tag);
+    charTags.add("human");
+    if (/^(?:girl|daughter|mom|mother|mama|wife|woman)$/i.test(character.name)) charTags.add("woman");
+    else if (!/^(?:baby|toddler)$/i.test(character.name)) charTags.add("man");
+  }
   let score = 0;
   for (const tag of photoTags) {
     if (charTags.has(tag)) score += tag === "human" || tag === "animal" ? 20 : 45;

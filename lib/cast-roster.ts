@@ -50,13 +50,66 @@ export async function identifyScriptCast(script: string) {
     reasoning: { effort: "medium" },
     instructions: [
       "Read the script or storyboard and list the on-screen characters.",
-      "Keep each name as written. Role is one or two words: human, dog, cat, bird, robot, or another species.",
+      "Keep each name as written. Role is that character's species: human, dog, cat, bird, robot, or another species.",
+      "Dialogue does not decide the species. A person who says an animal, draws one, or holds a picture of one stays human. Kid, Dad, Mom, Boy, Girl, Wife, and Husband are human unless the script says that character is an animal.",
       "Skip the narrator, voice-over, and unnamed crowds.",
       "Return JSON only: {\"characters\":[{\"name\":\"Carlos\",\"role\":\"human\"}]}",
     ].join(" "),
     input: text,
   });
-  return parseCast(response.output_text || "");
+  return correctSpokenSpecies(text, parseCast(response.output_text || ""));
+}
+
+export function humanKinName(name: string) {
+  return /^(?:kid|child|boy|girl|son|daughter|dad|mom|mother|father|papa|mama|wife|husband|baby|toddler|man|woman)$/i.test(
+    name.trim(),
+  );
+}
+
+export function humanKinPhrase(name: string) {
+  if (/^(?:girl|daughter|mom|mother|mama|wife|woman)$/i.test(name.trim())) {
+    return /^(?:mom|mother|mama|wife|woman)$/i.test(name.trim()) ? "an adult woman" : "a human girl";
+  }
+  if (/^(?:dad|father|papa|husband|man)$/i.test(name.trim())) return "an adult man";
+  if (/^(?:baby|toddler)$/i.test(name.trim())) return "a human baby";
+  if (/^(?:kid|child|boy|son)$/i.test(name.trim())) return "a human boy";
+  return "a human";
+}
+
+function withoutSpokenLines(text: string) {
+  return text.replace(/"[^"]*"|[“”][^“”]*[“”]|«[^»]*»/g, " ");
+}
+
+const SPECIES_WORD =
+  "kitten|kittens|gatito|gatitos|cat|cats|gato|gatos|puppy|puppies|cachorro|cachorros|dog|dogs|perro|perros|bird|birds|rabbit|rabbits|horse|horses|fish|robot|robots|dragon|dragons|alien|aliens|creature|creatures";
+
+/** A species counts only when it is this character, not an animal they mention. */
+export function speciesAbout(text: string, name: string) {
+  const who = escapeRegExp(name.trim());
+  if (!who) return "";
+  const clean = withoutSpokenLines(text);
+  const attached = [
+    new RegExp(
+      `(?<![\\p{L}\\p{N}])${who}(?![\\p{L}\\p{N}])\\s*(?:,|the|is(?:\\s+a|\\s+an)?|es(?:\\s+un|\\s+una)?|as(?:\\s+a|\\s+an)?)\\s+(?:a\\s+|an\\s+|the\\s+|un\\s+|una\\s+)?(${SPECIES_WORD})(?![\\p{L}\\p{N}])(?!\\s+(?:person|owner|lover|people|walker))`,
+      "iu",
+    ),
+    new RegExp(
+      `(?<![\\p{L}\\p{N}])(?:a|an|the)\\s+(${SPECIES_WORD})(?![\\p{L}\\p{N}])\\s*(?:,|named|called)\\s+${who}(?![\\p{L}\\p{N}])`,
+      "iu",
+    ),
+  ];
+  for (const pattern of attached) {
+    const match = clean.match(pattern);
+    if (match?.[1]) return speciesIn(match[1]);
+  }
+  return "";
+}
+
+function correctSpokenSpecies(script: string, cast: ScriptCastMember[]) {
+  return cast.map((item) => {
+    if (speciesAbout(script, item.name) || isHumanRole(item.role) || !humanKinName(item.name)) return item;
+    return { ...item, role: "human" };
+  });
 }
 
 function sameCastName(left: string, right: string) {
@@ -169,11 +222,11 @@ function ageIn(text: string) {
  */
 export function scriptIdentityCue(project: Project, name: string) {
   const others = otherCastNames(project, name);
-  const fromScript = describeMentions(localMentions(project.scriptText || "", name, others), name);
+  const fromScript = describeMentions(localMentions(withoutSpokenLines(project.scriptText || ""), name, others), name);
   if (fromScript) return fromScript;
-  const scenes = project.scenes
-    .map((scene) => [scene.summary, scene.title].filter(Boolean).join(". "))
-    .join("\n");
+  const scenes = withoutSpokenLines(
+    project.scenes.map((scene) => [scene.summary, scene.title].filter(Boolean).join(". ")).join("\n"),
+  );
   return describeMentions(localMentions(scenes, name, others), name);
 }
 
@@ -196,11 +249,12 @@ function textBeforeName(mention: string, name: string) {
 function describeMentions(mentions: string[], name: string) {
   if (!mentions.length) return "";
   const blob = mentions.join(" \n ");
-  const species = speciesIn(blob);
+  const species = speciesAbout(blob, name);
   const age = ageIn(blob);
   const speciesWord = species.replace(/^(a|an)\s+/, "");
   if (species && age) return aged(age, speciesWord);
   if (species) return species;
+  if (humanKinName(name) && !age) return humanKinPhrase(name);
   const before = mentions.map((mention) => textBeforeName(mention, name)).join(" ");
   const titled = `${before} ${mentions.map((mention) => mention.split(",").slice(1).join(",")).join(" ")}`;
   const femaleChild = word("niña|nina|girl|daughter").test(titled) || word("hija").test(before);
@@ -252,6 +306,23 @@ function withoutConflicts(kept: string, lead: string) {
     .trim();
 }
 
+function stripMentionedAnimals(text: string) {
+  const next = text
+    .replace(
+      /\b(?:a|an|the)\s+(?:(?:golden|yellow|brown|black|white|small|large|little|big|fluffy)\s+)?(?:dogs?|cats?|puppies|puppy|kittens?|birds?|rabbits?|horses?|fish|dragons?|aliens?|creatures?|retrievers?|labradors?|poodles?|beagles?|hounds?|canines?|felines?|mutts?)\b/gi,
+      " ",
+    )
+    .replace(/\b(?:dogs?|cats?|puppies|puppy|kittens?|retrievers?|labradors?|poodles?|beagles?|hounds?|canines?|felines?|mutts?|paws?|snout|muzzle|whiskers)\b/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .replace(/^[,.\s]+|[,.\s]+$/g, "")
+    .trim();
+  const hadAnimal = /\b(?:dogs?|cats?|puppies|puppy|kittens?|birds?|rabbits?|horses?|fish|dragons?|aliens?|creatures?|retrievers?|labradors?|poodles?|beagles?|hounds?|canines?|felines?|mutts?|paws?|snout|muzzle|whiskers)\b/i.test(text);
+  const human = /\b(?:boy|girl|man|woman|human|person|baby|shirt|hair|skin|jeans|dress|face|hands)\b/i;
+  if (hadAnimal && !human.test(text)) return "";
+  return next;
+}
+
 function alreadyCovered(text: string, cue: string) {
   if (!cue) return true;
   if (text.toLowerCase().includes(cue.toLowerCase())) return true;
@@ -265,9 +336,7 @@ function alreadyCovered(text: string, cue: string) {
 function mergeRealisticDescription(project: Project, character: Project["characters"][number]) {
   const look = scriptLookFor(project, character.name);
   const cue = scriptIdentityCue(project, character.name);
-  const role = rolePhrase(
-    (project.scriptCast || []).find((item) => sameCastName(item.name, character.name))?.role || "",
-  );
+  const role = trustedRole(project, character.name);
   const lead = cue || role;
   let kept = (character.description || "")
     .replace(/^\s*human\b[.,]?\s*/i, "")
@@ -279,11 +348,20 @@ function mergeRealisticDescription(project: Project, character: Project["charact
   kept = withoutConflicts(kept, lead);
   const animalLead = /\b(kitten|cat|puppy|dog|bird|rabbit|horse|fish|robot|dragon|alien|creature)\b/i.test(lead);
   if (animalLead && kept && !alreadyCovered(kept, lead)) kept = "";
+  if (!animalLead && humanKinName(character.name)) kept = stripMentionedAnimals(kept);
   let next = kept;
+  if (!next && !lead && humanKinName(character.name)) next = humanKinPhrase(character.name);
   if (lead && !alreadyCovered(next, lead)) next = [lead, next].filter(Boolean).join(". ");
   if (look && !next.toLowerCase().includes(look.toLowerCase())) next = [next, look].filter(Boolean).join(". ");
   next = next.replace(/\s{2,}/g, " ").replace(/\.\s*\./g, ".").trim();
   if (next) character.description = next;
+}
+
+function trustedRole(project: Project, name: string) {
+  const raw = (project.scriptCast || []).find((item) => sameCastName(item.name, name))?.role || "";
+  if (!raw || isHumanRole(raw)) return "";
+  if (humanKinName(name) && !speciesAbout(project.scriptText || "", name)) return "";
+  return rolePhrase(raw);
 }
 
 export function scriptLookFor(project: Project, name: string) {
@@ -307,6 +385,9 @@ export function applySongLooks(project: Project) {
 }
 
 export function applyScriptLooks(project: Project) {
+  if (project.scriptCast?.length) {
+    project.scriptCast = correctSpokenSpecies(project.scriptText || "", project.scriptCast);
+  }
   if (project.style === "realistic") {
     for (const character of project.characters) {
       if (character.isExtra) continue;
@@ -315,18 +396,22 @@ export function applyScriptLooks(project: Project) {
     return project;
   }
   const cast = project.scriptCast || [];
-  if (!cast.length) return project;
   for (const character of project.characters) {
     if (character.isExtra) continue;
     const known = cast.find((item) => sameCastName(item.name, character.name));
     const look = scriptLookFor(project, character.name);
-    if (!known && !look) continue;
-    const role = known?.role?.trim() || "";
+    const role = trustedRole(project, character.name);
     if (look) {
       const prefix = role && !new RegExp(`\\b${role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(look) ? `${role}. ` : "";
       character.description = `${prefix}${look}`.replace(/\s+/g, " ").trim();
       continue;
     }
+    if (!role && humanKinName(character.name)) {
+      const scrubbed = stripMentionedAnimals(character.description || "");
+      character.description = scrubbed || humanKinPhrase(character.name);
+      continue;
+    }
+    if (!known) continue;
     if (role && !new RegExp(`\\b${role.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "i").test(character.description)) {
       character.description = `${role}. ${character.description}`.replace(/\s+/g, " ").trim();
     }

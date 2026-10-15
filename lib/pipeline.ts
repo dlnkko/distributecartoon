@@ -579,6 +579,9 @@ async function ensureProductImageNotes(project: Project) {
 }
 
 async function prepareStoryPrompt(project: Project, batch: Batch) {
+  const beforeLooks = project.characters.map((character) => character.description).join("\n");
+  applyScriptLooks(project);
+  if (project.characters.map((character) => character.description).join("\n") !== beforeLooks) await saveProject(project);
   await ensureProductImageNotes(project);
   const previous = previousStoryBatch(project, batch);
   const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
@@ -896,7 +899,7 @@ async function createCharacterLook(
       ? characterLookRevisionPrompt(character, project.style, revisionNotes)
       : fromPhoto
         ? characterLookFromPhotoPrompt(character, project.style, photo?.lookNotes || "")
-        : characterLookPrompt(character, project.style),
+        : characterLookPrompt(character, project.style, project.scriptText || ""),
     aspectRatio: "1:1",
     resolution: "2K",
     inputUrls,
@@ -941,6 +944,7 @@ export async function generateCharacterLook(
   source?: ReferenceAsset,
 ) {
   onStatus(revisionNotes ? `Updating ${character.name}…` : `Casting ${character.name}…`);
+  applyScriptLooks(project);
   const look = await createCharacterLook(project, character, abortSignal, revisionNotes, source);
   applyLookToCharacter(character, look);
   await saveProject(project);
@@ -964,7 +968,7 @@ async function requestLooks(
 
 export async function ensureCharacterLooks(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   refineStoryLeads(project);
-  if (project.style === "realistic") applyScriptLooks(project);
+  applyScriptLooks(project);
   const leads = leadCharacters(project);
   const sources = assignCharacterSourcePhotos(project);
   const pending = leads.filter((character) => characterNeedsLook(character, sources.get(character.id)));

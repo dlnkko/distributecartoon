@@ -86,7 +86,7 @@ Current task: PLAN ONLY.
 Before extract_storyboard, understand the story: who wants what, what changes, where each person stands, and how far apart they are. Then write the scenes from that reading, in an order a viewer can follow as one drama. Part 2 starts from the consequence of part 1.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
 Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel.
-Each character keeps the same height, build, face, and features in every shot. Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
+Each character keeps the same height, build, face, and features in every shot. Dialogue does not set species: a child who says a drawing is a dog stays a human child. An animal species is only when the script says that character is the animal, such as "Biscuit is a dog". Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
 A human woman with no uploaded photo is a new person every film. Pick her name, face, age, hair, and skin tone at random. Do not name her Maya. Do not default to dark skin. Fair, olive, tan, light brown, warm brown, and deep brown are all available, and the choice changes from film to film.
 A supporting character introduced once is that same person for the whole film. If the hero returns with his friends, those are the friends already introduced, with the same names, not new people. Never let a character's reference number later mean a place.
 Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
@@ -144,7 +144,7 @@ const tools: OpenAI.Responses.Tool[] = [
               description: {
                 type: "string",
                 description:
-                  "Visual appearance of this character alone: species, colors, clothes. For a woman with no photo, pick a skin tone at random and do not default to dark skin. No plot, no other characters, no fight or scene. With a Setup photo, only what the photo shows.",
+                  "Visual appearance of this character alone: species, colors, clothes. Species is this character's own body. An animal they mention, draw, hold, or say is not their species. Kid, Dad, Mom, Boy, Girl, Wife, and Husband are human unless the script says that character is an animal. For a woman with no photo, pick a skin tone at random and do not default to dark skin. No plot, no other characters, no fight or scene. With a Setup photo, only what the photo shows.",
               },
               voice_notes: { type: "string" },
               is_extra: {

@@ -1,3 +1,4 @@
+import { humanKinName, humanKinPhrase, speciesAbout } from "./cast-roster";
 import { characterRole, charactersPresent, continuityPass, sceneWardrobeCue } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
@@ -170,8 +171,27 @@ function shortLookAppearance(character: Character) {
   return `${name}, ${look}`;
 }
 
-export function characterLookPrompt(character: Character, style: VisualStyle) {
-  return `${imageStyleLead(style)} portrait of ${shortLookAppearance(character)}. ${portraitCraft(style)} One character, plain gray background.`;
+function portraitSubject(character: Character, script = "") {
+  const look = shortLookAppearance(character);
+  if (!humanKinName(character.name) || speciesAbout(script, character.name)) return look;
+  const person = humanKinPhrase(character.name);
+  const rest = look
+    .replace(new RegExp(`^${character.name.trim().replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*,\\s*`, "i"), "")
+    .replace(
+      /\b(?:a|an|the)\s+(?:(?:golden|yellow|brown|black|white|small|large|little|big|fluffy)\s+)?(?:dogs?|cats?|puppies|puppy|kittens?|birds?|rabbits?|horses?|fish|dragons?|aliens?|creatures?|retrievers?|labradors?|poodles?|beagles?|hounds?|canines?|felines?|mutts?)\b/gi,
+      " ",
+    )
+    .replace(/\b(?:dogs?|cats?|puppies|puppy|kittens?|retrievers?|labradors?|poodles?|beagles?|hounds?|canines?|felines?|mutts?|paws?|snout|muzzle|whiskers)\b/gi, " ")
+    .replace(/^(?:a|an)\s+(?:human\s+)?(?:boy|girl|child|kid|man|woman|baby|person)\b[. ]*/i, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[,.\s]+|[,.\s]+$/g, "")
+    .trim();
+  if (!rest) return `${character.name}, ${person}`;
+  return `${character.name}, ${person}. ${rest}`;
+}
+
+export function characterLookPrompt(character: Character, style: VisualStyle, script = "") {
+  return `${imageStyleLead(style)} portrait of ${portraitSubject(character, script)}. ${portraitCraft(style)} One character, plain gray background.`;
 }
 
 export function characterLookFromPhotoPrompt(character: Character, style: VisualStyle, lookNote = "") {
