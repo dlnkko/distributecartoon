@@ -2384,7 +2384,7 @@ function SetupStep({
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
             <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
             <p className="mt-2 text-xs text-[var(--muted)]">
-              Each take is at most 30s. A scene keeps its own length.
+              Each take is at most 30s. The takes add up to the length you picked.
             </p>
           </div>
         )}

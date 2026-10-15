@@ -12,7 +12,7 @@ import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, fillPartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1361,17 +1361,18 @@ export function planSeedanceBatches(project: Project) {
     floor: sceneSpeechFloor(scene),
     lock: userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined),
   }));
-  const parts = spillLockedParts(
-    timed,
-    packScenesIntoParts(
-      project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-      target,
-      project.song?.clips.map((clip) => clip.durationSeconds),
-    ),
+  const parts = packScenesIntoParts(
+    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    target,
+    project.song?.clips.map((clip) => clip.durationSeconds),
   );
   const capped = balancePartSceneSeconds(timed, parts);
+  const filled = fillPartSceneSeconds(
+    timed.map((scene) => ({ ...scene, estimatedSeconds: capped.get(scene.index) || scene.estimatedSeconds })),
+    parts,
+  );
   project.scenes.forEach((scene) => {
-    const next = capped.get(scene.index);
+    const next = filled.get(scene.index);
     if (next) scene.estimatedSeconds = next;
   });
   const previous = project.batches;
@@ -1384,8 +1385,7 @@ export function planSeedanceBatches(project: Project) {
     const scenes = sceneIndexes
       .map((sceneIndex) => project.scenes.find((scene) => scene.index === sceneIndex))
       .filter((scene): scene is Project["scenes"][number] => Boolean(scene));
-    const spoken = scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0);
-    const fitted = project.song ? part.duration : Math.min(30, Math.max(4, Math.round(spoken || part.duration)));
+    const fitted = project.song ? part.duration : Math.min(30, Math.max(4, Math.round(part.duration)));
     const prior = previous.find(
       (batch) =>
         sameSceneList(batch.sceneIndexes, sceneIndexes) &&
@@ -1583,8 +1583,6 @@ async function runGenerateBatchVideo(
   const batch: Batch = foundBatch;
   if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     batch.duration = clampClipDuration(project.targetDurationSeconds, batch.duration || 8);
-  } else if (durationOverride !== undefined) {
-    batch.duration = clampClipDuration(durationOverride, batch.duration || 8);
   } else {
     batch.duration = clampClipDuration(batch.duration, 8);
   }

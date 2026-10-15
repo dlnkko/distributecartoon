@@ -5,7 +5,7 @@ import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
-import { balancePartSceneSeconds, estimateSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, estimateSceneSeconds, fillPartSceneSeconds, packScenesIntoParts, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion } from "./refs";
 import { productPageBrief, productUseBrief } from "./product-facts";
@@ -92,7 +92,7 @@ Shots are a linear continuation. A cut from day to night, or a flashback, is all
 One scene is one clear action and one camera. A character may speak and move in that same shot, for example leaning in while talking. The next action or the next angle is the next scene. Sitting and looking at his hands is one scene. Walking into the next room is another scene. The mirror is another scene. Do not glue those into one 9, 10, or 11 second paragraph. If a journey crosses several places, make one scene per place. Change the shot on every scene and never repeat the same framing twice in a row. Use the list: extreme wide, wide, full, medium, medium close-up, close-up, extreme close-up, insert, low angle, high angle, dutch, tracking, dolly, handheld. Most shots are 3 to 5 seconds. Use 2 seconds only for a fast action cut. A short line is 3 to 5 seconds, not 2. A conversation in one place keeps the same shot size and an eye-level height across the reverse angles. Change the angle only when the action leaves that place or the beat needs a new view. Three lines is the maximum in one scene. Time that scene to those lines only. Do not hold after the last word, and do not speed the lines up. A pause or a character alone stays at 2 or 3 seconds and still has a physical action, not a frozen look. Do not leave anyone quiet, only looking, for more than 2 or 3 seconds. If a beat would play that way, add a short line in that person's voice so the story keeps moving. Do not write 6, 7, or 8 second shots as the normal length, and do not merge shots to make a long scene. Say which way a screen or object faces the camera, for example the monitor screen faces the character and the back of the monitor faces the lens. Before any gaze, state where the camera is relative to the look target, for example camera positioned behind @Image1, shooting down the hallway toward the doorway. Do not give a face direction and a gaze target that compete; say which one wins. If they look at something other than the lens, write eyes NOT on camera, gaze locked on that target. On an emotional close-up add: gaze must not be directed at lens unless explicitly stated. Give each speaking character a distinct voice in voice_notes. A principal who never speaks is still a lead, not an extra, so they get one consistent portrait.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. A character talking to himself stays on screen and keeps the line. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion in the face and the body. Keep a character the same age and size until a later scene explicitly shows they grew. Clothes may change. Keep who is in front, behind, left, and right until the action moves them. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
-Cut on every new action and every new angle, and give that scene its own camera. Vary wide, close, insert, low, high, and a move. Do not repeat tracking shot. Most scenes are 3 to 5 seconds. A camera move is still usually 3 to 5. Use 2 seconds only for a fast action cut. A long exchange stays in the same place and keeps the same shot size and eye-level height. Each half lasts as long as those lines take. A silent beat stays at 2 or 3 seconds, with a hand or a step, never a frozen look. If the story needs longer, add a line. Do not default to 6, 7, or 8. If the film is longer than 30 seconds, group those scenes into parts: 45 is 30+15, 60 is 30+30, 75 is 30+30+15, 90 is 30+30+30, 100 is 30+30+30+10, 120 is four parts of 30. The scenes inside one part add up to at most 30 seconds. A part can end early. Do not split a scene across parts. Do not change a scene's length to fill its part. A later part may open in a new place. Carry the clothes, anything being held, and any body change from the last scene of the previous part, unless this scene changes them. Write enough scenes that every part has at least one. Vary the shot size and give each scene one camera move.
+Cut on every new action and every new angle, and give that scene its own camera. Vary wide, close, insert, low, high, and a move. Do not repeat tracking shot. Most scenes are 3 to 5 seconds. A camera move is still usually 3 to 5. Use 2 seconds only for a fast action cut. A long exchange stays in the same place and keeps the same shot size and eye-level height. Each half lasts as long as those lines take. A silent beat stays at 2 or 3 seconds, with a hand or a step, never a frozen look. If the story needs longer, add a line. Do not default to 6, 7, or 8. If the film is longer than 30 seconds, group those scenes into parts: 45 is 30+15, 60 is 30+30, 75 is 30+30+15, 90 is 30+30+30, 100 is 30+30+30+10, 120 is four parts of 30. The scenes inside one part add up to that part, and the parts together last the full target. 120 seconds is four parts of 30. Do not split a scene across parts. A later part may open in a new place. Carry the clothes, anything being held, and any body change from the last scene of the previous part, unless this scene changes them. Write enough scenes that every part has at least one. Vary the shot size and give each scene one camera move.
 Put the hook spoken line in scene 1 so audio starts at 0s.
 Then STOP. Do not plan batches. Do not generate frames or video. Do not ask questions.`;
 
@@ -1061,13 +1061,10 @@ function scaleScenesToTarget(project: Project) {
     const next = whole.get(scene.index);
     if (next) scene.estimatedSeconds = next;
   }
-  const parts = spillLockedParts(
-    project.scenes.map(durationOf),
-    packScenesIntoParts(
-      project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
-      project.targetDurationSeconds,
-      project.song?.clips.map((clip) => clip.durationSeconds),
-    ),
+  const parts = packScenesIntoParts(
+    project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
+    project.targetDurationSeconds,
+    project.song?.clips.map((clip) => clip.durationSeconds),
   );
   const capped = balancePartSceneSeconds(
     project.scenes.map(durationOf),
@@ -1075,6 +1072,11 @@ function scaleScenesToTarget(project: Project) {
   );
   for (const scene of project.scenes) {
     const next = capped.get(scene.index);
+    if (next) scene.estimatedSeconds = next;
+  }
+  const filled = fillPartSceneSeconds(project.scenes.map(durationOf), parts);
+  for (const scene of project.scenes) {
+    const next = filled.get(scene.index);
     if (next) scene.estimatedSeconds = next;
   }
   project.scenes = project.scenes.map((scene) => ensureSceneShots(scene));
@@ -1374,7 +1376,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
     : "A silent beat stays 3 to 5 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds. In one place, keep the same shot size and eye-level height. A short line is 3 to 5 seconds. Use 2 seconds only for a fast action cut. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
-  return `${opening} ${known} ${pages} ${watched} ${presence} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to at most that part, never more than 30s. Do not lengthen a scene to fill its part. ${styleLine}`;
+  return `${opening} ${known} ${pages} ${watched} ${presence} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to that part, never more than 30s, and the parts together last the full target. ${styleLine}`;
 }
 
 export async function runAgent(options: {

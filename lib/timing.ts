@@ -113,6 +113,44 @@ function generationDurations(target: number) {
   return durations;
 }
 
+function distributeScenes(
+  scenes: Array<{ index: number; estimatedSeconds: number }>,
+  durations: number[],
+) {
+  const groups: number[][] = durations.map(() => []);
+  const count = durations.length;
+  if (!scenes.length || !count) return groups;
+  if (scenes.length >= count) {
+    const base = Math.floor(scenes.length / count);
+    let extra = scenes.length % count;
+    let cursor = 0;
+    for (let part = 0; part < count; part += 1) {
+      const take = base + (extra > 0 ? 1 : 0);
+      if (extra > 0) extra -= 1;
+      for (let step = 0; step < take && cursor < scenes.length; step += 1) {
+        groups[part].push(scenes[cursor].index);
+        cursor += 1;
+      }
+    }
+  } else {
+    scenes.forEach((scene, index) => groups[index].push(scene.index));
+    const last = scenes[scenes.length - 1]?.index;
+    if (last !== undefined) {
+      for (let part = scenes.length; part < count; part += 1) groups[part].push(last);
+    }
+  }
+  const spanOf = new Map(scenes.map((scene) => [scene.index, sceneSpan(scene.estimatedSeconds)]));
+  const sumOf = (indexes: number[]) => indexes.reduce((total, index) => total + (spanOf.get(index) || 0), 0);
+  for (let part = 0; part < count - 1; part += 1) {
+    while (groups[part].length > 1 && sumOf(groups[part]) > durations[part] + 0.05) {
+      const moved = groups[part].pop();
+      if (moved === undefined) break;
+      groups[part + 1].unshift(moved);
+    }
+  }
+  return groups;
+}
+
 function fillEmptyGroups(groups: number[][]) {
   let moved = true;
   while (moved) {
@@ -149,6 +187,11 @@ export function packScenesIntoParts(
   if (!scenes.length) return durations.map((duration) => ({ duration, sceneIndexes: [] }));
   if (durations.length === 1) return [{ duration: durations[0], sceneIndexes: scenes.map((scene) => scene.index) }];
 
+  if (!fixedDurations?.length) {
+    const groups = distributeScenes(scenes, durations);
+    return durations.map((duration, index) => ({ duration, sceneIndexes: groups[index] || [] })).filter((part) => part.sceneIndexes.length);
+  }
+
   const groups: number[][] = durations.map(() => []);
   const usedInPart = durations.map(() => 0);
   let part = 0;
@@ -165,16 +208,7 @@ export function packScenesIntoParts(
     groups[slot].push(scene.index);
     usedInPart[slot] += span;
   }
-  if (fixedDurations?.length) fillEmptyGroups(groups);
-  else {
-    for (let index = 1; index < groups.length; index += 1) {
-      if (groups[index].length) continue;
-      const previous = groups[index - 1];
-      if (previous.length < 2) continue;
-      const moved = previous.pop();
-      if (moved !== undefined) groups[index].unshift(moved);
-    }
-  }
+  fillEmptyGroups(groups);
   return durations
     .map((duration, index) => ({ duration, sceneIndexes: groups[index] }))
     .filter((part) => part.sceneIndexes.length);
@@ -250,6 +284,49 @@ export function balancePartSceneSeconds(
     };
     shrink((index) => Math.max(2, meta.get(index)?.floor ?? 2));
     shrink(() => 2);
+  }
+  return next;
+}
+
+export function fillPartSceneSeconds(
+  scenes: Array<{ index: number; estimatedSeconds: number; lock?: number }>,
+  parts: SeedancePartPlan[],
+) {
+  const next = new Map<number, number>();
+  const meta = new Map(scenes.map((scene) => [scene.index, scene]));
+  for (const scene of scenes) {
+    const locked = scene.lock && scene.lock > 0 ? Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, scene.lock)) : 0;
+    next.set(scene.index, locked || sceneSpan(scene.estimatedSeconds));
+  }
+  for (const part of parts) {
+    const indexes = [...new Set(part.sceneIndexes)];
+    const sum = () => indexes.reduce((total, index) => total + (next.get(index) || 0), 0);
+    let gap = part.duration - sum();
+    if (gap <= 0.05) continue;
+    const unlocked = indexes.filter((index) => !((meta.get(index)?.lock || 0) > 0));
+    const pool = unlocked.length ? unlocked : indexes;
+    const weight = pool.reduce((total, index) => total + Math.max(1, next.get(index) || 0), 0);
+    let added = 0;
+    pool.forEach((index, position) => {
+      const current = next.get(index) || 0;
+      const share =
+        position === pool.length - 1
+          ? gap - added
+          : Math.round(((gap * Math.max(1, current)) / weight) * 10) / 10;
+      const add = Math.max(0, Math.min(Math.max(0, share), SEEDANCE_MAX_SECONDS - current));
+      next.set(index, Math.round((current + add) * 10) / 10);
+      added += add;
+    });
+    let rest = part.duration - sum();
+    for (const index of pool) {
+      if (rest <= 0.05) break;
+      const current = next.get(index) || 0;
+      const room = SEEDANCE_MAX_SECONDS - current;
+      if (room <= 0) continue;
+      const add = Math.min(room, rest);
+      next.set(index, Math.round((current + add) * 10) / 10);
+      rest -= add;
+    }
   }
   return next;
 }
