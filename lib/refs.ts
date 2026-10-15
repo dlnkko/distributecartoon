@@ -241,8 +241,28 @@ export function textShowsPackage(text: string) {
 
 const SPOKEN_QUOTES = /"[^"]*"|“[^”]*”/g;
 
-const PHYSICAL_ASSET =
-  /\b(?:holds?|holding|in (?:her|his|their|a|the) hand|picks? (?:it|them|the|up)|puts? (?:it|them) (?:on|in)|on the (?:table|counter|desk|nightstand|shelf|bed|seat|dashboard)|in frame|on screen|close-?up|insert|opens?|unbox(?:es|ing)?|applies?|applying|uses?|using|wears?|wearing|worn|sticks?|presses?|pressed|adheres?|adhered|shows? the (?:box|pack|packet|package|pouch|bottle|jar|tub|product|logo))\b/i;
+const SHOWN_PACK =
+  /\b(?:attached product|the product|the package|the pack|the pouch|the sachet|the box|mouth tapes?|the tapes?|a tapes?|the strips?|a strips?|blue strips?|the logo|brand mark|wordmark)\b/i;
+
+const COMMON_NAME_WORDS = new Set([
+  "mouth",
+  "tape",
+  "tapes",
+  "strip",
+  "strips",
+  "natural",
+  "naturals",
+  "skin",
+  "sleep",
+  "night",
+  "water",
+  "pack",
+  "packs",
+  "product",
+  "logo",
+  "bottle",
+  "box",
+]);
 
 export function actionWithoutSpeech(text: string) {
   return text.replace(SPOKEN_QUOTES, " ");
@@ -252,11 +272,24 @@ export function sceneRequiresAsset(kind: string, text: string) {
   const action = actionWithoutSpeech(text);
   if (kind !== "product" && kind !== "logo") return false;
   if (productKeptOut(action)) return false;
-  if (/\b(?:empty (?:table|counter|desk|room|frame)|bare (?:table|counter)|nothing on the (?:table|counter))\b/i.test(action) && !PHYSICAL_ASSET.test(action)) {
-    return false;
-  }
   if (kind === "logo") return /\b(?:logo|brand mark|wordmark)\b/i.test(action);
-  return PHYSICAL_ASSET.test(action);
+  return SHOWN_PACK.test(action);
+}
+
+/** The product photo is uploaded only when this part's own scenes show it. */
+export function partNeedsPackshot(project: Project, kind: string, name: string, text: string) {
+  if (kind !== "product" && kind !== "logo") return false;
+  if (!text.trim() || (productKeptOut(text) && !sceneRequiresAsset(kind, text))) return false;
+  if (sceneRequiresAsset(kind, text)) return true;
+  const asset =
+    (project.references || []).find((item) => item.kind === kind && item.label.trim().toLowerCase() === name.trim().toLowerCase()) ||
+    (project.references || []).find((item) => item.kind === kind);
+  if (!asset) return false;
+  const phrase = productFacts(project, asset.label).name.trim().toLowerCase();
+  if (phrase.length >= 6 && text.toLowerCase().includes(phrase)) return true;
+  return productMentionWords(project, asset).some(
+    (word) => word.length >= 6 && !COMMON_NAME_WORDS.has(word) && hasPositiveWord(text, word),
+  );
 }
 
 function hasPositiveWord(text: string, word: string) {

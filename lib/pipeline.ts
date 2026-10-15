@@ -9,7 +9,7 @@ import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage } from "./product-use-video";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
+import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
@@ -1306,7 +1306,8 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
       const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
       return `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`;
     });
-    if (!texts.length || !texts.some((text) => sceneRequiresAsset(entry.kind, text))) entries.splice(index, 1);
+    const needed = texts.some((text) => partNeedsPackshot(project, "product", entry.kind === "product" ? entry.name : "", text));
+    if (!needed) entries.splice(index, 1);
   }
 }
 
