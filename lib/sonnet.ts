@@ -84,14 +84,12 @@ export async function sonnetTools(options: {
   tools: Array<{ name: string; description?: string; input_schema: Record<string, unknown> }>;
   maxTokens?: number;
   signal?: AbortSignal;
-  forceTool?: boolean;
 }) {
   const content = await postWithFallback(
     {
       max_tokens: options.maxTokens ?? 32000,
       system: options.system,
       tools: options.tools,
-      ...(options.forceTool ? { tool_choice: { type: "any" } } : {}),
       messages: options.messages,
     },
     options.signal,

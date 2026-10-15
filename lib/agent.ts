@@ -1456,7 +1456,6 @@ export async function runAgent(options: {
     messages,
     tools: activeTools,
     signal,
-    forceTool: true,
   });
 
   const maxSteps = mode === "plan" ? 4 : 80;
@@ -1499,7 +1498,6 @@ export async function runAgent(options: {
       messages,
       tools: activeTools,
       signal,
-      forceTool: true,
     });
   }
 
