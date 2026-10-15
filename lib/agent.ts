@@ -12,6 +12,7 @@ import { productPageBrief, productUseBrief } from "./product-facts";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import { reasonedResponse } from "./reason";
+import { ensureStoryBrief } from "./story-brief";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
 
 const SYSTEM_PROMPT = `You are the director-agent of distribute.to, a studio that turns scripts into Pixar, claymation, or realistic live-action shorts.
@@ -1352,9 +1353,10 @@ function planTask(project: Project) {
     const about = project.song.productBrief?.trim()
       ? `The user is selling this product and brand: ${project.song.productBrief.trim()}. `
       : "The user is selling the product in the attached product photo. ";
-    return `SONG VIDEO. This is a promo film for the attached product, cut to a ${Math.round(project.song.durationSeconds)} second song. ${about}The lyrics are the soundtrack, in the order they are sung. Read them as one commercial with a problem and then a solution. The attached product is always the solution, even when the lyric never names a brand. Open on the problem the words point at: the lack, the stress, the old habit, the want. Those scenes have no product in frame. Do not write "the attached product", the brand, or the pack into a problem scene. The product appears only when the story turns to the fix: the change, the relief, the after. That scene is the first time it is visible. Write "the attached product" in that summary and show them using it the way this product is used. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Later scenes may keep it only while the result of using it is on screen. Do not paste it onto every line. In mentioned_refs, list the product only with the scene indexes where that solution is on screen.
+  const songTask = `SONG VIDEO. This is a promo film for the attached product, cut to a ${Math.round(project.song.durationSeconds)} second song. ${about}The lyrics are the soundtrack, in the order they are sung. Read them as one commercial with a problem and then a solution. The attached product is always the solution, even when the lyric never names a brand. Open on the problem the words point at: the lack, the stress, the old habit, the want. Those scenes have no product in frame. Do not write "the attached product", the brand, or the pack into a problem scene. The product appears only when the story turns to the fix: the change, the relief, the after. That scene is the first time it is visible. Write "the attached product" in that summary and show them using it the way this product is used. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Later scenes may keep it only while the result of using it is on screen. Do not paste it onto every line. In mentioned_refs, list the product only with the scene indexes where that solution is on screen.
 A calm lyric is still a dramatic shot. Do not leave the character in one room on one close-up. Change the place, the action, and the camera on every scene. Use wide, full, medium, close-up, insert, low angle, high angle, tracking, dolly, handheld, and dutch, and do not repeat the same size twice in a row. Give the problem weather, movement, and stakes. Give the solution a different place and a clear action with the product.
 Each scene is one lyric line, or two short lines that are the same picture. Do not skip a line that shows a new action, and do not put a whole verse into one scene. Early lines belong to the earlier parts, later lines to the later parts. Never repeat a line in a later part. Every summary starts with the exact sung words, in quotes, then the action: While the song plays "exact lyric", then one physical action. Copy the lyric from the script. Do not paraphrase it and do not invent a line. Every dialogue array stays empty. There is no narrator and no generated voice. The attached song is the only audio and it is already playing on frame one: do not open with a title card, a logo sting, or a silent intro. Ignore the spoken-line and [NO BGM] rules. Mouths stay closed, except once or twice on a hook or a brand line: write sings along in that summary and have the lead mouth that exact quoted line, where they already are, or into a mic only if that line is a performance. Do not do it on every line. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds, longer only when that lyric line itself is longer. Write enough scenes that the seconds inside each part add up to that part. ${styleLine}`;
+    return withStoryReading(project, songTask);
   }
   const parts = seedancePartDurations(project.targetDurationSeconds || 15).map(
     (duration, index) => `part ${index + 1} (max ${duration}s)`,
@@ -1378,7 +1380,16 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
     : "Every second has a spoken line or a physical action that moves the story. There is no silent beat and no hold after the last word. A short line is 3 to 5 seconds and the body acts through the whole line. Two or three lines share one scene. In one place, keep the same shot size and eye-level height. Use 2 seconds only for a fast action cut. If the script says they are far, keep that distance in a wide shot. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. Do not give one line its own 6, 7, or 8 second scene.";
-  return `${opening} ${known} ${pages} ${watched} ${presence} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to that part, never more than 30s, and the parts together last the full target. ${styleLine}`;
+  return withStoryReading(
+    project,
+    `${opening} ${known} ${pages} ${watched} ${presence} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to that part, never more than 30s, and the parts together last the full target. ${styleLine}`,
+  );
+}
+
+function withStoryReading(project: Project, task: string) {
+  const brief = project.storyBrief?.trim();
+  if (!brief) return task;
+  return `STORY READING. Follow this for place, distance, acting, cause and effect, and the beats where the product is present.\n${brief}\n\n${task}`;
 }
 
 export async function runAgent(options: {
@@ -1418,6 +1429,11 @@ export async function runAgent(options: {
   console.info("storyboard model", TEXT_MODEL);
   const onStatus = (text: string) => options.onEvent({ type: "status", text });
   const signal = options.abortSignal;
+  if (mode === "plan") {
+    onStatus("Reading the story…");
+    await ensureStoryBrief(options.project, signal);
+    options.onEvent({ type: "project", project: options.project });
+  }
   const activeTools = toolsFor(mode);
   const instructions = mode === "plan" ? PLAN_PROMPT : PRODUCE_PROMPT;
   const userText =
@@ -1451,7 +1467,7 @@ export async function runAgent(options: {
   ];
 
   throwIfAborted(signal);
-  const planDeadline = Date.now() + 11 * 60 * 1000;
+  const planDeadline = Date.now() + 4 * 60 * 1000;
   async function respond(body: OpenAI.Responses.ResponseCreateParamsNonStreaming) {
     if (mode !== "plan") {
       return client.responses.create({ ...body, reasoning: { effort: "medium" } }, { signal });
@@ -1459,7 +1475,7 @@ export async function runAgent(options: {
     return reasonedResponse(client, { ...body, model: TEXT_MODEL }, {
       signal,
       waitMs: Math.max(30_000, planDeadline - Date.now()),
-      onWait: () => onStatus("Reading the story…"),
+      onWait: () => onStatus("Building scenes…"),
     });
   }
   let response = await respond({

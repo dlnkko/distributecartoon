@@ -9,10 +9,11 @@ export type Secrets = {
   openrouterApiKey: string;
   firecrawlApiKey: string;
   geminiApiKey: string;
+  claudeApiKey: string;
 };
 
 export const TEXT_MODEL = "gpt-6-luna";
-export const TEXT_REASONING = "max";
+export const TEXT_REASONING = "medium";
 
 const secretsPath = () => path.join(process.cwd(), "data", "secrets.json");
 
@@ -35,6 +36,7 @@ export function getSecrets(): Secrets {
     openrouterApiKey: process.env.OPENROUTER_API_KEY || file.openrouterApiKey || "",
     firecrawlApiKey: process.env.FIRECRAWL_API_KEY || file.firecrawlApiKey || "",
     geminiApiKey: process.env.GEMINI_API_KEY || file.geminiApiKey || "",
+    claudeApiKey: process.env.CLAUDE_API_KEY || file.claudeApiKey || "",
   };
 }
 

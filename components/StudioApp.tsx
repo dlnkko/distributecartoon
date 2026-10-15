@@ -1497,7 +1497,7 @@ export function StudioApp() {
   const step = (project.workflowStep === "review" ? "cast" : project.workflowStep) || "script";
   const taskLabel =
     task?.kind === "plan"
-      ? "Reading the story at full reasoning… you can refresh, it keeps going."
+      ? "Reading the story, then building the scenes… you can refresh, it keeps going."
       : task?.kind === "cast"
         ? "Casting characters… you can refresh, it keeps going."
         : "";
@@ -1703,8 +1703,8 @@ export function StudioApp() {
                 <p className="display mt-4 text-2xl">Fitting the story</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                   {project.song
-                    ? "The model is reading the song at full reasoning. This can take several minutes."
-                    : "The model is reading the story at full reasoning. This can take several minutes."}
+                    ? "The story is read once. The scenes follow the song."
+                    : "The story is read once. Then the scenes are built."}
                 </p>
               </div>
             </div>

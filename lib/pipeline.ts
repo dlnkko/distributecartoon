@@ -564,7 +564,7 @@ async function prepareStoryPrompt(project: Project, batch: Batch) {
     videoPrompt: prompt,
     duration: batch.duration,
   });
-  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "");
+  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", project.storyBrief || "");
   batch.promptReady = true;
 }
 
@@ -1646,7 +1646,7 @@ async function runGenerateBatchVideo(
     });
 
     onStatus("Generating your video…");
-    const revised = await refineSeedancePrompt(labeled, previousStoryBatch(project, batch)?.videoPrompt || "");
+    const revised = await refineSeedancePrompt(labeled, previousStoryBatch(project, batch)?.videoPrompt || "", project.storyBrief || "");
     const audioUrls = await songAudioUrls(project, batch);
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,

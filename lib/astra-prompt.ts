@@ -37,7 +37,7 @@ function sameSceneTags(draft: string, revised: string) {
   });
 }
 
-export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
+export async function refineSeedancePrompt(draft: string, priorPrompt = "", storyBrief = "") {
   const trimmed = draft.trim();
   if (!trimmed) return draft;
   const prior = priorPrompt.trim();
@@ -47,7 +47,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     const client = new OpenAI({ apiKey: openaiApiKey });
     console.info("seedance prompt model", TEXT_MODEL, TEXT_REASONING);
     const instructions = [
-      "First understand this part as a film. Who is in the scene, where they stand, how far apart they are, what they want, and what changes by the last frame. Then revise the Seedance prompt from that reading. Return only the prompt.",
+      "Revise this Seedance prompt from the story reading. The reading already decided the place, the distance, the acting, and the cause. Keep that. Return only the prompt.",
       "Keep every SCENE heading, its duration, every @Video and @Image tag already inside that scene, and every quoted line. Do not rename a tag and do not add one. A character written as @Video stays @Video. A character written as @Image stays @Image.",
       "Each SCENE (Ns) stays busy for all N seconds. The line and the physical action start together and finish together. After the last word the body finishes the gesture in that same second. Continue the story action through the last frame: the step, the reach, the turn, the reaction. Do not add a pause, a frozen look, a silent tail, or a new quoted line.",
       "Write the space. Say who is left, right, near, far, in front, and behind. If the draft says they are far, across the room, down the hall, or small in frame, keep a wide shot and that distance.",
@@ -66,11 +66,14 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
     ]
       .filter(Boolean)
       .join(" ");
-    const input = prior ? `PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}` : trimmed;
+    const reading = storyBrief.trim() ? `STORY READING:\n${storyBrief.trim()}\n\n` : "";
+    const input = prior
+      ? `${reading}PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}`
+      : `${reading}DRAFT:\n${trimmed}`;
     const response = await reasonedResponse(
       client,
       { model: TEXT_MODEL, instructions, input },
-      { waitMs: 4 * 60 * 1000 },
+      { waitMs: 90_000 },
     );
     const revised = (response.output_text || "").trim();
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;

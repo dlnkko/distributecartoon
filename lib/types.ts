@@ -222,6 +222,8 @@ export type Project = {
   aspectRatio: AspectRatio;
   scriptName: string;
   scriptText: string;
+  storyBrief?: string;
+  storyBriefKey?: string;
   scriptCast?: ScriptCastMember[];
   song?: Song;
   characters: Character[];
