@@ -372,6 +372,24 @@ export function capPartSceneSeconds(
   return next;
 }
 
+export function clockBeatSeconds(script: string): number[] {
+  const rangeRe = /(\d{1,2}:\d{2})\s*(?:to|–|—|-)\s*(\d{1,2}:\d{2})/i;
+  const found: number[] = [];
+  for (const raw of (script || "").split(/\n/)) {
+    const plain = raw.replace(/\|/g, " ").replace(/\*/g, "").replace(/\s+/g, " ").trim();
+    const match = plain.match(rangeRe);
+    if (!match || plain.indexOf(match[0]) >= 24) continue;
+    const start = match[1].split(":").map(Number);
+    const end = match[2].split(":").map(Number);
+    if (start.length < 2 || end.length < 2) continue;
+    const from = start[0] * 60 + start[1];
+    const to = end[0] * 60 + end[1];
+    if (to <= from || to - from > 180) continue;
+    found.push(to - from);
+  }
+  return found;
+}
+
 function roundTenth(value: number) {
   return Math.round(value * 10) / 10;
 }

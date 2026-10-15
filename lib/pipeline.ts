@@ -13,7 +13,7 @@ import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refi
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
-import { balancePartSceneSeconds, fillPartSceneSeconds, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1383,7 +1383,15 @@ export function planSeedanceBatches(project: Project) {
     : clampTotalDuration(project.targetDurationSeconds || fallback);
   project.targetDurationSeconds = requested;
   const target = requested;
-  if (!project.song) project.scenes = splitScenesAcrossTakes(project.scenes);
+  if (!project.song) {
+    const clocks = clockBeatSeconds(project.scriptText || "");
+    if (clocks.length >= 2 && clocks.length === project.scenes.length) {
+      project.scenes.forEach((scene, index) => {
+        scene.estimatedSeconds = clocks[index];
+      });
+    }
+    project.scenes = splitScenesAcrossTakes(project.scenes);
+  }
   const timed = project.scenes.map((scene) => ({
     index: scene.index,
     estimatedSeconds: scene.estimatedSeconds || 0,
