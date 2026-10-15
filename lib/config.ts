@@ -12,6 +12,7 @@ export type Secrets = {
 };
 
 export const TEXT_MODEL = "gpt-6-luna";
+export const TEXT_REASONING = "max";
 
 const secretsPath = () => path.join(process.cwd(), "data", "secrets.json");
 

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { getSecrets, TEXT_MODEL } from "./config";
+import { getSecrets, TEXT_MODEL, TEXT_REASONING } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
 import { driveProduce } from "./produce";
@@ -23,7 +23,7 @@ Pipeline real:
 3. El sistema genera un retrato INDIVIDUAL por lead (una sola pose, de frente a la cámara, fondo gris claro, ese personaje solo). Ese retrato es la referencia del video. Nunca un two-shot ni una escena de pelea. Si hay foto de Setup, el look es SOLO convertir esa foto al estilo del proyecto; nunca inventes pelo, piel, ropa ni especie. Si NO hay foto y el personaje es una mujer humana, invéntala distinta en cada corto: otro nombre corto en inglés, otra cara, otra edad, otro pelo y otro tono de piel, al azar. Nunca la llames Maya. Nunca uses dark skin como piel por defecto. La description del personaje es SOLO apariencia (especie, color, ropa) cuando NO hay foto, sin plot ni otros personajes. El usuario lo aprueba o pide un cambio, una sola vez, ANTES de animar. No confirmes looks tú. Cast ONLY on-screen story principals (usually 1-4). Never cast a look for a Narrator or unseen voice-over. If the script is narrator VO and does not name whose voice, keep speaker as Narrator (is_extra true); the system picks any fitting off-screen voice. If an on-screen character has dialogue, that is their realistic lipsync. A speaker named Narrator is always off-screen voice-over. Never give those lines to an on-screen character and never lipsync them. Crowd, montage, b-roll, numbered extras are is_extra true — no look.
 4. NO first-frame still. Only character look portraits are generated. Seedance 2.5 R2V receives those portraits plus product/logo/location photos when the script uses them. The system maps files to @Image1, @Image2, @Image3 in upload order and writes those tags INSIDE the scenes when that person or object is on screen. Do not dump "@Image2 is Guy. Match his design..." at the start of the prompt.
 5. Cada escena es UN plano y UNA acción. En una conversación en el mismo lugar, mantén el mismo tamaño de plano y la altura de los ojos en los contraplanos. Cambia a wide, close-up, insert, low angle o high angle solo cuando la acción sale de ese lugar o el beat lo pide. Unas dos líneas por escena, tres como máximo. La duración es lo que tardan en decirse esas líneas, sin silencio después de la última palabra y sin acelerarlas para que quepan. Un plano normal dura de 3 a 5 segundos. Un plano de 2 segundos solo si es un corte de acción rápido. Dentro de un plano, nadie se queda callado ni mirándose sin que pase nada por más de 2 o 3 segundos. Si el beat no alcanza, añade una línea corta que siga la historia, en la voz de quien está en cuadro. Si el usuario ya numeró las escenas, respeta esos cortes, el orden y los segundos que escribió. No te saltes una escena, un montage ni una end card. Si en ese tiempo sobran líneas, quita las del medio y deja la primera y la última. Si faltan y la imagen se quedaría quieta, añade una línea corta.
-6. El total del video está en targetDurationSeconds y solo puede ser 15, 30, 45, 60, 75, 90, 100 o 120. Cada escena dura lo que su acción y su movimiento de cámara necesiten. Si el total pasa de 30 segundos, agrupa esas escenas en partes: 45 es 30+15, 60 es 30+30, 75 es 30+30+15, 90 es 30+30+30, 100 es 30+30+30+10, 120 es cuatro partes de 30. Las escenas de una parte suman como máximo 30 segundos. No cambies la duración de una escena para llenar la parte. No cortes una escena entre dos partes de generación. Seedance 2.5 genera hasta 30s por clip, siempre a 480p.
+6. El total del video está en targetDurationSeconds y solo puede ser 15, 30, 45, 60, 75, 90, 100 o 120. Cada escena dura lo que su acción y su movimiento de cámara necesiten. Si el total pasa de 30 segundos, agrupa esas escenas en partes: 45 es 30+15, 60 es 30+30, 75 es 30+30+15, 90 es 30+30+30, 100 es 30+30+30+10, 120 es cuatro partes de 30. Las escenas de una parte suman esa parte, y las partes juntas duran el total pedido. Llena esos segundos con líneas y acciones de la historia. No alargues una mirada quieta para llenar la parte. No cortes una escena entre dos partes de generación. Seedance 2.5 genera hasta 30s por clip, siempre a 480p.
 7. Si el guion pasa de 30s, cada generación dura 30s. 60s son dos generaciones. 90s son tres. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
 8. El aspect ratio del proyecto (16:9 o 9:16) ya lo aplica el sistema. No lo cambies salvo que el usuario lo pida.
 9. Animar con Seedance 2.5 Reference-to-Video. Menciona @ImageN / @VideoN en la escena en la que aparecen, no en un preámbulo.
@@ -32,7 +32,7 @@ Pipeline real:
 Logo, product, and location:
 - Do NOT generate a standalone product/logo/location still when a photo is uploaded. No packshot, no product-only restyle.
 - Do NOT put them in prompts just because a slot or photo exists.
-- Only if the SCRIPT mentions that product, logo, or location, and a photo is attached, mention that @Image tag in the SCENE where it appears.
+- Name the product and the logo only inside a scene that has them in a hand, on a surface, or in frame. A location image is the set for a scene that happens in that place.
 - Keep the product EXACTLY as the attached photo. If the photo shows the item and its package, both stay: the item keeps its shape, color, print, and material, and the package keeps its form. Do not show only the box. A stand-up pouch stays a pouch, a sachet stays a sachet, a bottle stays a bottle. Never turn a pouch into a bottle, jar, or tub. Same silhouette, closure, label layout, colors, and branding. Draw it in the project's style. Do not paste the photo as-is.
 - Never invent a logo on set. Do not wait for photos.
 
@@ -81,6 +81,7 @@ Nunca inventes URLs. Nunca digas que ya existe un video si la herramienta no lo 
 const PLAN_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PLAN ONLY.
+Before extract_storyboard, understand the story: who wants what, what changes, where each person stands, and how far apart they are. Then write the scenes from that reading, in an order a viewer can follow as one drama. Part 2 starts from the consequence of part 1.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
 Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel.
 Each character keeps the same height, build, face, and features in every shot. Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
@@ -89,10 +90,10 @@ A supporting character introduced once is that same person for the whole film. I
 Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
 Objects work the way they do in the world. Plates slide onto a barbell sleeve and the collar locks them. A treadmill belt moves under the feet while the runner stays on the deck. Do not invent a mechanism.
 Shots are a linear continuation. A cut from day to night, or a flashback, is allowed only when the story needs it, and that shot must say the time changed or that this is a flashback. Otherwise the next shot is the next moment.
-One scene is one clear action and one camera. A character may speak and move in that same shot, for example leaning in while talking. The next action or the next angle is the next scene. Sitting and looking at his hands is one scene. Walking into the next room is another scene. The mirror is another scene. Do not glue those into one 9, 10, or 11 second paragraph. If a journey crosses several places, make one scene per place. Change the shot on every scene and never repeat the same framing twice in a row. Use the list: extreme wide, wide, full, medium, medium close-up, close-up, extreme close-up, insert, low angle, high angle, dutch, tracking, dolly, handheld. Most shots are 3 to 5 seconds. Use 2 seconds only for a fast action cut. A short line is 3 to 5 seconds, not 2. A conversation in one place keeps the same shot size and an eye-level height across the reverse angles. Change the angle only when the action leaves that place or the beat needs a new view. Three lines is the maximum in one scene. Time that scene to those lines only. Do not hold after the last word, and do not speed the lines up. A pause or a character alone stays at 2 or 3 seconds and still has a physical action, not a frozen look. Do not leave anyone quiet, only looking, for more than 2 or 3 seconds. If a beat would play that way, add a short line in that person's voice so the story keeps moving. Do not write 6, 7, or 8 second shots as the normal length, and do not merge shots to make a long scene. Say which way a screen or object faces the camera, for example the monitor screen faces the character and the back of the monitor faces the lens. Before any gaze, state where the camera is relative to the look target, for example camera positioned behind @Image1, shooting down the hallway toward the doorway. Do not give a face direction and a gaze target that compete; say which one wins. If they look at something other than the lens, write eyes NOT on camera, gaze locked on that target. On an emotional close-up add: gaze must not be directed at lens unless explicitly stated. Give each speaking character a distinct voice in voice_notes. A principal who never speaks is still a lead, not an extra, so they get one consistent portrait.
+One scene is one clear action and one camera. A character may speak and move in that same shot, for example leaning in while talking. The next action or the next angle is the next scene. Sitting and looking at his hands is one scene. Walking into the next room is another scene. The mirror is another scene. Do not glue those into one 9, 10, or 11 second paragraph. If a journey crosses several places, make one scene per place. Change the shot on every scene and never repeat the same framing twice in a row. Use the list: extreme wide, wide, full, medium, medium close-up, close-up, extreme close-up, insert, low angle, high angle, dutch, tracking, dolly, handheld. Most shots are 3 to 5 seconds. Use 2 seconds only for a fast action cut. A short line is 3 to 5 seconds, not 2. A conversation in one place keeps the same shot size and an eye-level height across the reverse angles. Change the angle only when the action leaves that place or the beat needs a new view. Three lines is the maximum in one scene. Time that scene to those lines only. Do not hold after the last word, and do not speed the lines up. There is no pause and no silent hold. A character alone still does the next story action for every second of the shot, or speaks a short line that moves the story. The shot ends when that action or line ends. Do not leave anyone quiet, only looking. If the script says they are far, across the room, or down the hall, keep them that far and choose a wide shot. Name the product only in a scene that has it in a hand, on a surface, or in frame. Every other scene leaves out the product, the package, the box, and the brand. Each place keeps one location name, and that place's image is used only there. Do not write 6, 7, or 8 second shots as the normal length, and do not merge shots to make a long scene. Say which way a screen or object faces the camera, for example the monitor screen faces the character and the back of the monitor faces the lens. Before any gaze, state where the camera is relative to the look target, for example camera positioned behind @Image1, shooting down the hallway toward the doorway. Do not give a face direction and a gaze target that compete; say which one wins. If they look at something other than the lens, write eyes NOT on camera, gaze locked on that target. On an emotional close-up add: gaze must not be directed at lens unless explicitly stated. Give each speaking character a distinct voice in voice_notes. A principal who never speaks is still a lead, not an extra, so they get one consistent portrait.
 Mark is_extra true for unseen narrators/voice-over, crowd, b-roll, montage, and numbered extras. If the line is narrator voice-over, keep speaker as Narrator. Never move a Narrator line onto an on-screen character. A character talking to himself stays on screen and keeps the line. At most 4 leads. Put background names in extra_names, not character_names. If an attached product appears in a scene, add one short sentence on how: worn on a character, held or used by them, first look and not yet worn, close-up, or far in the shot.
 Every scene must list who is on screen. Write emotion in the face and the body. Keep a character the same age and size until a later scene explicitly shows they grew. Clothes may change. Keep who is in front, behind, left, and right until the action moves them. If they speak to someone, they look at that person. If they hold a door or utensil, write the grip. If glow is behind them, they occlude it. Never write time-lapse as bullets; write each beat as a full physical sentence. Do not paste physics lectures into every summary.
-Cut on every new action and every new angle, and give that scene its own camera. Vary wide, close, insert, low, high, and a move. Do not repeat tracking shot. Most scenes are 3 to 5 seconds. A camera move is still usually 3 to 5. Use 2 seconds only for a fast action cut. A long exchange stays in the same place and keeps the same shot size and eye-level height. Each half lasts as long as those lines take. A silent beat stays at 2 or 3 seconds, with a hand or a step, never a frozen look. If the story needs longer, add a line. Do not default to 6, 7, or 8. If the film is longer than 30 seconds, group those scenes into parts: 45 is 30+15, 60 is 30+30, 75 is 30+30+15, 90 is 30+30+30, 100 is 30+30+30+10, 120 is four parts of 30. The scenes inside one part add up to that part, and the parts together last the full target. 120 seconds is four parts of 30. Do not split a scene across parts. A later part may open in a new place. Carry the clothes, anything being held, and any body change from the last scene of the previous part, unless this scene changes them. Write enough scenes that every part has at least one. Vary the shot size and give each scene one camera move.
+Cut on every new action and every new angle, and give that scene its own camera. Vary wide, close, insert, low, high, and a move. Do not repeat tracking shot. Most scenes are 3 to 5 seconds. A camera move is still usually 3 to 5. Use 2 seconds only for a fast action cut. A long exchange stays in the same place and keeps the same shot size and eye-level height. Each half lasts as long as those lines take. There is no silent beat. A hand or a step belongs to a story action that fills the shot. If the story needs longer, add the next line or the next action. Do not default to 6, 7, or 8. If the film is longer than 30 seconds, group those scenes into parts: 45 is 30+15, 60 is 30+30, 75 is 30+30+15, 90 is 30+30+30, 100 is 30+30+30+10, 120 is four parts of 30. The scenes inside one part add up to that part, and the parts together last the full target. 120 seconds is four parts of 30. Do not split a scene across parts. A later part may open in a new place. Carry the clothes, anything being held, and any body change from the last scene of the previous part, unless this scene changes them. Write enough scenes that every part has at least one. Vary the shot size and give each scene one camera move.
 Put the hook spoken line in scene 1 so audio starts at 0s.
 Then STOP. Do not plan batches. Do not generate frames or video. Do not ask questions.`;
 
@@ -1369,13 +1370,13 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     ? "A product page is included. Use it for how the product is used and how it should look, only in a scene the user already puts the product in. Do not invent a different container, dose, or ritual than the page describes. Keep the user's spoken lines."
     : "";
   const presence =
-    "The product image and the logo belong only to a scene whose action already shows them. If a scene says the product, the package, the box, or the logo is not there, leave both out of that scene. Do not invent a shot where someone uses the product.";
+    "The product image and the logo belong only to a scene whose action already has them in a hand, on a surface, or in frame. A scene that does not need them leaves out the product, the package, the box, the logo, and the brand. Do not invent a shot where someone uses the product.";
   const watched = productUseBrief(project)
     ? "A short video shows how this product is actually used. Follow that description whenever the product is on screen. Do not invent another way to use it."
     : "";
   const timing = timedRows
     ? "Each clock range is the scene length. Keep every line that sits inside that range in the same scene."
-    : "A silent beat stays 3 to 5 seconds and the body still moves. Two or three lines share one scene of about 4 to 6 seconds. In one place, keep the same shot size and eye-level height. A short line is 3 to 5 seconds. Use 2 seconds only for a fast action cut. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. No dead air after the last word. Do not give one line its own 6, 7, or 8 second scene.";
+    : "Every second has a spoken line or a physical action that moves the story. There is no silent beat and no hold after the last word. A short line is 3 to 5 seconds and the body acts through the whole line. Two or three lines share one scene. In one place, keep the same shot size and eye-level height. Use 2 seconds only for a fast action cut. If the script says they are far, keep that distance in a wide shot. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. Do not give one line its own 6, 7, or 8 second scene.";
   return `${opening} ${known} ${pages} ${watched} ${presence} Target total duration: ${project.targetDurationSeconds}s, grouped as ${parts.join(", ")}. One scene is one action and one camera. Change the shot every scene. ${timing} The scenes inside one part sum to that part, never more than 30s, and the parts together last the full target. ${styleLine}`;
 }
 
@@ -1449,16 +1450,23 @@ export async function runAgent(options: {
   ];
 
   throwIfAborted(signal);
-  let response = await client.responses.create(
-    {
-      model: TEXT_MODEL,
-      instructions,
-      tools: activeTools,
-      input,
-      reasoning: { effort: "medium" },
-    },
-    { signal },
-  );
+  const reasoning = mode === "plan" ? TEXT_REASONING : "medium";
+  async function respond(body: OpenAI.Responses.ResponseCreateParamsNonStreaming) {
+    try {
+      return await client.responses.create({ ...body, reasoning: { effort: reasoning } }, { signal });
+    } catch (error) {
+      if (isAbortError(error) || reasoning === "medium") throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      if (!/effort|reasoning/i.test(message)) throw error;
+      return client.responses.create({ ...body, reasoning: { effort: "xhigh" } }, { signal });
+    }
+  }
+  let response = await respond({
+    model: TEXT_MODEL,
+    instructions,
+    tools: activeTools,
+    input,
+  });
 
   const maxSteps = mode === "plan" ? 4 : 80;
   for (let step = 0; step < maxSteps; step += 1) {
@@ -1490,16 +1498,13 @@ export async function runAgent(options: {
     if (planned) break;
 
     throwIfAborted(signal);
-    response = await client.responses.create(
-      {
-        model: TEXT_MODEL,
-        instructions,
-        tools: activeTools,
-        previous_response_id: response.id,
-        input: outputs,
-      },
-      { signal },
-    );
+    response = await respond({
+      model: TEXT_MODEL,
+      instructions,
+      tools: activeTools,
+      previous_response_id: response.id,
+      input: outputs,
+    });
   }
 
   throwIfAborted(signal);

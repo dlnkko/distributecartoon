@@ -1830,11 +1830,30 @@ function referenceLock(project: Project, images: PromptRef[]) {
         const who = /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${role} ${name}` : name;
         return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else. Sunglasses, a jacket, and a cap are not part of this tag.`;
       }
-      const kind = item.kind === "location" ? "location" : item.kind;
-      return `@Image${index + 1} is ${name}, a ${kind}`;
+      if (item.kind === "location") {
+        return `@Image${index + 1} is the place ${name}. Use this photo as the set only in a scene that happens here. Match its walls, doors, furniture, and layout. A scene set somewhere else leaves this tag out.`;
+      }
+      return `@Image${index + 1} is ${name}, a ${item.kind}`;
     })
     .filter(Boolean);
   return parts.length ? `Reference tags stay fixed for the whole film: ${parts.join(". ")}.` : "";
+}
+
+function omitUnneededProduct(text: string, project: Project, sceneText: string) {
+  if (sceneRequiresAsset("product", sceneText) || sceneRequiresAsset("logo", sceneText)) return text;
+  const names = (project.references || [])
+    .filter((item) => item.kind === "product" || item.kind === "logo")
+    .flatMap((item) => [item.label, productFacts(project, item.label).name])
+    .map((name) => name.trim())
+    .filter((name) => name.length > 2 && !/^(?:product|logo)\s*\d+$/i.test(name));
+  return text
+    .split(/(?<=[.!?])\s+/)
+    .filter((sentence) => {
+      const lower = sentence.toLowerCase();
+      if (/\b(?:the attached product|the product|the package|the box|the logo|the brand)\b/i.test(sentence)) return false;
+      return !names.some((name) => lower.includes(name.toLowerCase()));
+    })
+    .join(" ");
 }
 
 function productSceneLine(project: Project, tag: string, images: PromptRef[]) {
@@ -2087,9 +2106,13 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ? `${pictured.replace(/[. ]+$/, "")}. The product on screen is ${packageTag}, matching the photo: the item and the package, same shape, color, and print.`
         : pictured;
     const slice = linesByShot[i] || [];
-    const visual = alignActionToVoice(
-      song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage,
-      slice.map((line) => line.line || ""),
+    const visual = omitUnneededProduct(
+      alignActionToVoice(
+        song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage,
+        slice.map((line) => line.line || ""),
+      ),
+      project,
+      sceneText,
     );
     const placeTag = sceneTags.find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
@@ -2102,9 +2125,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         : ""
       : said
         ? said
-        : (cutSeconds[i] || shot.seconds) > 3
-          ? "From the first second the body keeps moving. Do not hold on a look."
-          : "";
+        : "";
     const propTag = sceneTags.find((tag) => imageKind(images, tag) === "product" || imageKind(images, tag) === "logo") || "";
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
@@ -2121,7 +2142,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         ? ""
         : eyesOffCamera(scene, project) ||
           (/close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : ""),
-      placeTag ? `The place is ${placeTag}.` : "",
+      placeTag
+        ? `They are in ${placeTag}. Match that photo: same walls, doors, furniture, and layout. Keep the distance the action states, including far apart.`
+        : "",
+      song ? "" : `Speech and action fill all ${cutSeconds[i]} seconds, from the first frame to the last. No pause, no frozen look, and no silent tail.`,
     ]
       .filter(Boolean)
       .join(" ");

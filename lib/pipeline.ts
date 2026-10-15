@@ -761,7 +761,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
       await saveSoon(project);
     }
     if (!intros.ready && !storyStarted) return "waiting";
-  } else if (realistic && !project.platesTried) {
+  } else if (!project.platesTried) {
     await ensureLocationPlates(project, onStatus);
     project.platesTried = true;
     await saveSoon(project);
@@ -1646,7 +1646,7 @@ async function runGenerateBatchVideo(
     });
 
     onStatus("Generating your video…");
-    const revised = await refineSeedancePrompt(labeled);
+    const revised = await refineSeedancePrompt(labeled, previousStoryBatch(project, batch)?.videoPrompt || "");
     const audioUrls = await songAudioUrls(project, batch);
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,
