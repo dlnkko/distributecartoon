@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
 import { getSecrets } from "./config";
+import { SONNET_MODEL } from "./sonnet";
 import { saveProject } from "./store";
 import type { Project } from "./types";
 
-export const STORY_MODEL = "claude-sonnet-5-5";
+export const STORY_MODEL = SONNET_MODEL;
 
 function scriptKey(project: Project) {
   return createHash("sha256")

@@ -1,5 +1,4 @@
-import OpenAI from "openai";
-import { getSecrets, TEXT_MODEL } from "./config";
+import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
 import { driveProduce } from "./produce";
@@ -11,7 +10,7 @@ import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStory
 import { productLookBrief, productPageBrief, productUseBrief } from "./product-facts";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
-import { reasonedResponse } from "./reason";
+import { SONNET_MODEL, sonnetTools, type SonnetMessage } from "./sonnet";
 import { ensureStoryBrief } from "./story-brief";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
 
@@ -107,7 +106,7 @@ If targetDurationSeconds is 30 or less, call plan_video_batches with EXACTLY one
 Then call generate_video_batch for each batch in order until all clips exist. Do not generate a first-frame still.
 Do not ask questions. Do not chat.`;
 
-const tools: OpenAI.Responses.Tool[] = [
+const tools = [
   {
     type: "function",
     strict: false,
@@ -1324,8 +1323,10 @@ async function executeTool(
   }
 }
 
-function asRecord(value: string) {
+function asRecord(value: unknown) {
   if (!value) return {};
+  if (typeof value === "object") return value as Record<string, unknown>;
+  if (typeof value !== "string") return {};
   return JSON.parse(value) as Record<string, unknown>;
 }
 
@@ -1409,12 +1410,8 @@ export async function runAgent(options: {
     return;
   }
 
-  const { openaiApiKey } = getSecrets();
-  if (!openaiApiKey) {
-    throw new Error("OPENAI_API_KEY is missing for the GPT-6 Luna agent.");
-  }
-  const client = new OpenAI({ apiKey: openaiApiKey });
-  console.info("storyboard model", TEXT_MODEL);
+  if (!getSecrets().claudeApiKey) throw new Error("CLAUDE_API_KEY is missing.");
+  console.info("storyboard model", SONNET_MODEL);
   const onStatus = (text: string) => options.onEvent({ type: "status", text });
   const signal = options.abortSignal;
   if (mode === "plan") {
@@ -1422,7 +1419,11 @@ export async function runAgent(options: {
     await ensureStoryBrief(options.project, signal);
     options.onEvent({ type: "project", project: options.project });
   }
-  const activeTools = toolsFor(mode);
+  const activeTools = toolsFor(mode).map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    input_schema: tool.parameters as Record<string, unknown>,
+  }));
   const instructions = mode === "plan" ? PLAN_PROMPT : PRODUCE_PROMPT;
   const userText =
     options.userText?.trim() ||
@@ -1434,81 +1435,71 @@ export async function runAgent(options: {
             : `Plan ${Math.ceil(options.project.targetDurationSeconds / 30)} generations of 30s covering all scenes for a ${options.project.targetDurationSeconds}s ${options.project.style} video at ${options.project.aspectRatio}, then generate every clip in order at 480p.`
         }`);
 
-  const input: OpenAI.Responses.ResponseInput = [
+  let messages: SonnetMessage[] = [
     {
       role: "user",
       content: [
-        {
-          type: "input_text",
-          text: [
-            `Current project state:\n${JSON.stringify(projectSnapshot(options.project), null, 2)}`,
-            options.project.scriptText
-              ? `\n\nSCRIPT (${options.project.scriptName || "pasted"}):\n${options.project.scriptText.slice(0, 40000)}`
-              : "",
-            productPageBrief(options.project) ? `\n\n${productPageBrief(options.project)}` : "",
-            productUseBrief(options.project) ? `\n\n${productUseBrief(options.project)}` : "",
-            `\n\nTASK:\n${userText}`,
-          ].join(""),
-        },
-      ],
+        `Current project state:\n${JSON.stringify(projectSnapshot(options.project), null, 2)}`,
+        options.project.scriptText
+          ? `\n\nSCRIPT (${options.project.scriptName || "pasted"}):\n${options.project.scriptText.slice(0, 40000)}`
+          : "",
+        productPageBrief(options.project) ? `\n\n${productPageBrief(options.project)}` : "",
+        productUseBrief(options.project) ? `\n\n${productUseBrief(options.project)}` : "",
+        `\n\nTASK:\n${userText}`,
+      ].join(""),
     },
   ];
 
   throwIfAborted(signal);
-  const planDeadline = Date.now() + 4 * 60 * 1000;
-  async function respond(body: OpenAI.Responses.ResponseCreateParamsNonStreaming) {
-    if (mode !== "plan") {
-      return client.responses.create({ ...body, reasoning: { effort: "medium" } }, { signal });
-    }
-    return reasonedResponse(client, { ...body, model: TEXT_MODEL }, {
-      signal,
-      waitMs: Math.max(30_000, planDeadline - Date.now()),
-      onWait: () => onStatus("Building scenes…"),
-    });
-  }
-  let response = await respond({
-    model: TEXT_MODEL,
-    instructions,
+  let turn = await sonnetTools({
+    system: instructions,
+    messages,
     tools: activeTools,
-    input,
+    signal,
+    forceTool: true,
   });
 
   const maxSteps = mode === "plan" ? 4 : 80;
   for (let step = 0; step < maxSteps; step += 1) {
     throwIfAborted(signal);
-    const calls = response.output.filter((item) => item.type === "function_call");
+    const calls = turn.toolUses;
     if (!calls.length) break;
 
-    const outputs: OpenAI.Responses.ResponseInput = [];
+    const results: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
     let planned = false;
     for (const call of calls) {
       throwIfAborted(signal);
       onStatus(mode === "plan" ? "Building scenes…" : `Agent: ${call.name}`);
       let result: unknown;
       try {
-        result = await executeTool(options.project, call.name, asRecord(call.arguments), onStatus, signal);
+        result = await executeTool(options.project, call.name, asRecord(call.input), onStatus, signal);
         options.onEvent({ type: "project", project: options.project });
         if (mode === "plan" && options.project.scenes.length) planned = true;
       } catch (error) {
         if (isAbortError(error)) throw error;
         result = { error: error instanceof Error ? error.message : String(error) };
       }
-      outputs.push({
-        type: "function_call_output",
-        call_id: call.call_id,
-        output: JSON.stringify(result),
+      results.push({
+        type: "tool_result",
+        tool_use_id: call.id,
+        content: JSON.stringify(result),
       });
     }
 
     if (planned) break;
 
     throwIfAborted(signal);
-    response = await respond({
-      model: TEXT_MODEL,
-      instructions,
+    messages = [
+      ...messages,
+      { role: "assistant", content: turn.content },
+      { role: "user", content: results },
+    ];
+    turn = await sonnetTools({
+      system: instructions,
+      messages,
       tools: activeTools,
-      previous_response_id: response.id,
-      input: outputs,
+      signal,
+      forceTool: true,
     });
   }
 

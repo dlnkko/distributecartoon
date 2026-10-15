@@ -1,6 +1,4 @@
-import OpenAI from "openai";
-import { getSecrets, TEXT_MODEL, TEXT_REASONING } from "./config";
-import { reasonedResponse } from "./reason";
+import { SONNET_MODEL, sonnetText } from "./sonnet";
 
 function sceneBlocks(text: string) {
   const matches = [...text.matchAll(/\bSCENE\s+\d+\s*\(/gi)];
@@ -58,11 +56,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
   const trimmed = draft.trim();
   if (!trimmed) return draft;
   const prior = priorPrompt.trim();
-  const { openaiApiKey } = getSecrets();
-  if (!openaiApiKey) return trimmed;
   try {
-    const client = new OpenAI({ apiKey: openaiApiKey });
-    console.info("seedance prompt model", TEXT_MODEL, TEXT_REASONING);
+    console.info("seedance prompt model", SONNET_MODEL);
     const instructions = [
       "Revise this Seedance prompt. Return only the prompt, and make it shorter than the draft.",
       "Keep every SCENE heading, its duration, every @Video and @Image tag already inside that scene, and every quoted line. Do not rename a tag and do not add one.",
@@ -84,12 +79,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const input = prior
       ? `${reading}PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}`
       : `${reading}DRAFT:\n${trimmed}`;
-    const response = await reasonedResponse(
-      client,
-      { model: TEXT_MODEL, instructions, input },
-      { waitMs: 90_000 },
-    );
-    const revised = (response.output_text || "").trim();
+    const revised = (await sonnetText(instructions, input, { maxTokens: 8000 })).trim();
     if (!/SCENE\s+1\b/i.test(revised)) return tightenPrompt(trimmed);
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (!sameSceneTags(trimmed, revised)) return trimmed;

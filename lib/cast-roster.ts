@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import { getSecrets, TEXT_MODEL } from "./config";
+import { getSecrets } from "./config";
+import { sonnetText } from "./sonnet";
 import type { Project, ScriptCastMember } from "./types";
 
 function cleanName(value: string) {
@@ -42,22 +42,19 @@ function parseCast(text: string): ScriptCastMember[] {
 export async function identifyScriptCast(script: string) {
   const text = script.trim().slice(0, 14000);
   if (text.length < 12) return [];
-  const { openaiApiKey } = getSecrets();
-  if (!openaiApiKey) return [];
-  const client = new OpenAI({ apiKey: openaiApiKey });
-  const response = await client.responses.create({
-    model: TEXT_MODEL,
-    reasoning: { effort: "medium" },
-    instructions: [
+  if (!getSecrets().claudeApiKey) return [];
+  const written = await sonnetText(
+    [
       "Read the script or storyboard and list the on-screen characters.",
       "Keep each name as written. Role is that character's species: human, dog, cat, bird, robot, or another species.",
       "Dialogue does not decide the species. A person who says an animal, draws one, or holds a picture of one stays human. Kid, Dad, Mom, Boy, Girl, Wife, and Husband are human unless the script says that character is an animal.",
       "Skip the narrator, voice-over, and unnamed crowds.",
       "Return JSON only: {\"characters\":[{\"name\":\"Carlos\",\"role\":\"human\"}]}",
     ].join(" "),
-    input: text,
-  });
-  return correctSpokenSpecies(text, parseCast(response.output_text || ""));
+    text,
+    { maxTokens: 2000 },
+  );
+  return correctSpokenSpecies(text, parseCast(written));
 }
 
 export function humanKinName(name: string) {
