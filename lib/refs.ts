@@ -239,6 +239,26 @@ export function textShowsPackage(text: string) {
   return /\b(?:packs?|packets?|box(?:es)?|pouches?|sachets?|packaging|the product|producto)\b/i.test(stripped);
 }
 
+const SPOKEN_QUOTES = /"[^"]*"|“[^”]*”/g;
+
+const PHYSICAL_ASSET =
+  /\b(?:holds?|holding|in (?:her|his|their|a|the) hand|picks? (?:it|them|the|up)|puts? (?:it|them) (?:on|in)|on the (?:table|counter|desk|nightstand|shelf|bed|seat|dashboard)|in frame|on screen|close-?up|insert|opens?|unbox(?:es|ing)?|applies?|applying|uses?|using|wears?|wearing|worn|sticks?|presses?|pressed|adheres?|adhered|shows? the (?:box|pack|packet|package|pouch|bottle|jar|tub|product|logo))\b/i;
+
+export function actionWithoutSpeech(text: string) {
+  return text.replace(SPOKEN_QUOTES, " ");
+}
+
+export function sceneRequiresAsset(kind: string, text: string) {
+  const action = actionWithoutSpeech(text);
+  if (kind !== "product" && kind !== "logo") return false;
+  if (productKeptOut(action)) return false;
+  if (/\b(?:empty (?:table|counter|desk|room|frame)|bare (?:table|counter)|nothing on the (?:table|counter))\b/i.test(action) && !PHYSICAL_ASSET.test(action)) {
+    return false;
+  }
+  if (kind === "logo") return /\b(?:logo|brand mark|wordmark)\b/i.test(action);
+  return PHYSICAL_ASSET.test(action);
+}
+
 function hasPositiveWord(text: string, word: string) {
   const escaped = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const re = new RegExp(
@@ -511,6 +531,7 @@ export function scriptCallsForReference(
   if ((asset.kind === "product" || asset.kind === "logo") && sceneIndexes?.length) {
     const texts = sceneIndexes.map((index) => sceneBlob(project, [index]));
     if (texts.length && texts.every((text) => productKeptOut(text))) return false;
+    if (texts.length && !texts.some((text) => sceneRequiresAsset(asset.kind, text))) return false;
   }
 
   const cues = project.scriptRefCues || [];

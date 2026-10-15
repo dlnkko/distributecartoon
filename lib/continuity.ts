@@ -230,18 +230,69 @@ function findCharacter(project: Project, name: string) {
   return project.characters.find((item) => item.name.trim().toLowerCase() === needle);
 }
 
+const VOLATILE_WEAR = /\b(sunglasses|shades|glasses|jacket|coat|blazer|hoodie|cap|hat|beanie|scarf|gloves|helmet)\b/gi;
+
 export function characterRole(project: Project, name: string) {
   const character = findCharacter(project, name);
   const first = (character?.description || "")
     .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
+    .replace(VOLATILE_WEAR, " ")
     .split(/[.;]/)[0]
     .split(/,|\bwith\b|\bwearing\b/i)[0]
+    .replace(/\s{2,}/g, " ")
     .trim()
     .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 6)
     .join(" ");
-  const outfit = wardrobeNote(character);
-  return [first, outfit].filter(Boolean).join(", ");
+  return first;
+}
+
+const WEAR_ITEMS: Array<[RegExp, string]> = [
+  [/\bsunglasses\b|\bshades\b/i, "sunglasses"],
+  [/\b(?:jacket|coat|blazer|hoodie)\b/i, "jacket"],
+  [/\b(?:beanie|baseball cap|\bcap\b|\bhat\b)/i, "cap"],
+];
+
+export function sceneWardrobeCue(project: Project, name: string, sceneText: string) {
+  const description = findCharacter(project, name)?.description || "";
+  if (!description.trim()) return "";
+  const outdoor = /\b(outside|outdoor|outdoors|street|sidewalk|park|beach|sunlight|in the sun)\b/i.test(sceneText);
+  const indoor = /\b(inside|indoor|indoors|bedroom|kitchen|bathroom|office|living room|at night|tonight)\b/i.test(sceneText);
+  const lines = WEAR_ITEMS.flatMap(([pattern, item]) => {
+    if (!pattern.test(description)) return [];
+    const article = item === "sunglasses" ? "" : "a ";
+    const wornNow = pattern.test(sceneText);
+    if (wornNow) return [`${name} is wearing ${article}${item} in this scene.`];
+    if (indoor) return [`${name} is indoors without ${item === "sunglasses" ? "sunglasses" : `a ${item}`}.`];
+    if (outdoor) return [`${name} is wearing ${article}${item} outdoors.`];
+    return [];
+  });
+  return lines.join(" ");
+}
+
+export function charactersPresent(project: Project, scene: Scene) {
+  const roster = onScreenLeads(scene, project);
+  const text = `${sceneText(scene)} ${(scene.shots || []).map((shot) => shot.action).join(" ")}`;
+  const place = `${scene.location || ""} ${text}`;
+  const named = (name: string) => nameAt(text, name) >= 0;
+  const speakers = (scene.dialogue || [])
+    .filter((line) => line.speaker?.trim() && line.line?.trim() && !line.voiceover)
+    .map((line) => line.speaker.trim())
+    .filter((speaker) => !/^(?:narrator|voice-?over|vo)$/i.test(speaker));
+  const mentioned = roster.filter((name) => named(name));
+  const speaking = speakers.filter((speaker) => roster.some((name) => name.toLowerCase() === speaker.toLowerCase()) || named(speaker));
+  let present = [...new Set([...mentioned, ...speaking])];
+  const privatePlace = /\b(bedroom|bathroom|driver'?s seat|in the car|in his car|in her car)\b/i.test(place);
+  if (!present.length && roster.length === 1) present = roster;
+  if (!present.length && privatePlace && roster.length) present = [roster[0]];
+  const together = /\b(both|together|with him|with her|the two of them)\b/i.test(text);
+  const solo = !together && /\balone\b|\bby himself\b|\bby herself\b/i.test(text);
+  if (solo && present.length > 1) {
+    const focus = present.find((name) => named(name)) || speaking[0] || present[0];
+    return focus ? [focus] : [];
+  }
+  return present;
 }
 
 export function continuityPass(project: Project) {

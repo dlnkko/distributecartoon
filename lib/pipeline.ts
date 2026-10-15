@@ -1,15 +1,15 @@
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
 import { concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
-import { continuityFlags, projectSeed } from "./continuity";
+import { charactersPresent, continuityFlags, projectSeed } from "./continuity";
+import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { refineSeedancePrompt } from "./astra-prompt";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
-import { placeLabel, richerPlaceName, samePlace } from "./places";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, isUnseenVoice, productKeptOut, promptReadyReferences, refineStoryLeads, scriptCallsForReference, textShowsPackage } from "./refs";
+import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { balancePartSceneSeconds, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, spillLockedParts, userTimedSeconds } from "./timing";
@@ -1244,25 +1244,28 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
 }
 
 function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexes: number[]) {
+  const scenes = (sceneIndexes || [])
+    .map((index) => project.scenes.find((item) => item.index === index))
+    .filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
+  const present = new Set(scenes.flatMap((scene) => charactersPresent(project, scene).map((name) => name.toLowerCase())));
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
-    if (entry.kind !== "product" && entry.kind !== "logo") continue;
-    const asset = project.references.find(
-      (item) => item.kind === entry.kind && item.label.trim().toLowerCase() === entry.name.trim().toLowerCase(),
-    );
-    const texts = (sceneIndexes || []).map((index) => {
-      const scene = project.scenes.find((item) => item.index === index);
-      const lines = (scene?.dialogue || []).map((line) => line.line).join(" ");
-      const shots = (scene?.shots || []).map((shot) => shot.action).join(" ");
-      return `${scene?.title || ""} ${scene?.summary || ""} ${lines} ${shots}`;
-    });
-    if (texts.length && texts.every((text) => productKeptOut(text))) {
-      entries.splice(index, 1);
+    if (entry.kind === "character") {
+      if (!present.has(entry.name.trim().toLowerCase())) entries.splice(index, 1);
       continue;
     }
-    if (texts.some((text) => textShowsPackage(text))) continue;
-    if (asset && scriptCallsForReference(project, asset, sceneIndexes, false)) continue;
-    entries.splice(index, 1);
+    if (entry.kind === "location") {
+      const used = scenes.some((scene) => scene.location && samePlace(scene.location, entry.name));
+      if (!used) entries.splice(index, 1);
+      continue;
+    }
+    if (entry.kind !== "product" && entry.kind !== "logo") continue;
+    const texts = scenes.map((scene) => {
+      const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
+      const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
+      return `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`;
+    });
+    if (!texts.length || !texts.some((text) => sceneRequiresAsset(entry.kind, text))) entries.splice(index, 1);
   }
 }
 

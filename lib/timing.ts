@@ -24,23 +24,24 @@ export function estimateDialogueSeconds(line: string): number {
   const words = (line || "").trim().split(/\s+/).filter(Boolean).length;
   if (!words) return 0;
   const spoken = words / 4 + 0.25;
-  if (words <= 8) return Math.max(1.5, Math.min(2.4, spoken));
-  return Math.min(5, Math.max(2, Math.round(spoken * 10) / 10));
+  if (words <= 8) return Math.max(3, Math.min(5, spoken));
+  return Math.min(5, Math.max(3, Math.round(spoken * 10) / 10));
 }
 
 export function estimateActionSeconds(summary: string): number {
   const words = (summary || "").trim().split(/\s+/).filter(Boolean).length;
-  if (!words) return 2.4;
+  if (/\b(quick cuts?|rapid cuts?|smash cut|whip pan|flash cut|action cuts?)\b/i.test(summary || "")) return 2;
+  if (!words) return 3;
   const simple = words < 14;
-  if (simple) return Math.min(3.2, Math.max(2, words * 0.11 + 1.7));
-  return Math.min(6, Math.max(2.6, words * 0.13 + 2.1));
+  if (simple) return Math.min(5, Math.max(3, words * 0.11 + 2.4));
+  return Math.min(5, Math.max(3, words * 0.13 + 2.6));
 }
 
 export function sceneSpeechFloor(scene: Pick<Scene, "dialogue">): number {
   const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
   const talk = lines.reduce((sum, line) => sum + estimateDialogueSeconds(line.line), 0);
-  if (talk <= 0) return 2;
-  return Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, Math.round(talk * 10) / 10));
+  if (talk <= 0) return 3;
+  return Math.min(SEEDANCE_MAX_SECONDS, Math.max(3, Math.round(talk * 10) / 10));
 }
 
 export function estimateSceneSeconds(scene: Pick<Scene, "summary" | "dialogue">): number {

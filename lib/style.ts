@@ -1,10 +1,10 @@
-import { characterRole, continuityPass } from "./continuity";
+import { characterRole, charactersPresent, continuityPass, sceneWardrobeCue } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
-import { productFacts, productUseHint } from "./product-facts";
-import { isUnseenVoice, productKeptOut, promptReadyReferences, scriptCallsForReference, textShowsPackage } from "./refs";
+import { productFacts, productUseHint, productUsePhysics } from "./product-facts";
+import { actionWithoutSpeech, isUnseenVoice, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference, textShowsPackage } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
-import { planShots } from "./shots";
+import { planShots, sameCameraPerspective } from "./shots";
 
 export type PromptRef = {
   url: string;
@@ -334,15 +334,8 @@ export function cinematicCamera(scene?: Scene, fallback = "wide shot, eye level"
 }
 
 function sceneOnScreenNames(scene?: Scene, project?: Project) {
-  if (!scene) return [] as string[];
-  const unseen = new Set(
-    (project?.characters || [])
-      .filter((character) => character.isExtra || isUnseenVoice(character))
-      .map((character) => character.name.trim().toLowerCase()),
-  );
-  return [...new Set((scene.characterNames || []).map((name) => name.trim()).filter(Boolean))].filter(
-    (name) => !unseen.has(name.toLowerCase()),
-  );
+  if (!scene || !project) return [] as string[];
+  return charactersPresent(project, scene);
 }
 
 function pickSingleSubjectCamera(used: string[]) {
@@ -771,8 +764,11 @@ function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: Re
 
 function scenePropCues(project: Project, sceneIndex: number) {
   const scene = project.scenes.find((item) => item.index === sceneIndex);
+  const blob = `${scene?.title || ""} ${scene?.summary || ""} ${(scene?.shots || []).map((shot) => shot.action).join(" ")}`;
   return promptReadyReferences(project, [sceneIndex], true).filter((item) => {
-    if (item.kind !== "product" && item.kind !== "logo" && item.kind !== "location") return false;
+    if (item.kind === "location") return Boolean(scene?.location && samePlace(item.label, scene.location));
+    if (item.kind !== "product" && item.kind !== "logo") return false;
+    if (!sceneRequiresAsset(item.kind, blob)) return false;
     if (project.song && item.kind === "product") return sceneShowsProduct(project, scene, item);
     return true;
   });
@@ -1716,10 +1712,6 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     .trim();
 }
 
-function assetTags(swaps: TagSwap[]) {
-  return [...new Set(swaps.filter((swap) => !swap.person).map((swap) => swap.tag))];
-}
-
 function dropPlaceOnlySentences(text: string, locationTags: string[]) {
   if (!locationTags.length) return text;
   return text
@@ -1831,12 +1823,12 @@ function referenceLock(project: Project, images: PromptRef[]) {
       if (!name) return "";
       if (item.kind === "product" || item.kind === "logo") {
         const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : name;
-        return `@Image${index + 1} is ${called}. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Show it only in a scene whose action already has it in frame. Every other scene leaves it out.`;
+        return `@Image${index + 1} is ${called}. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Name this tag only in a scene whose action has it in a hand, on a surface, or in frame. Every other scene leaves the tag out.`;
       }
       if (item.kind === "character") {
         const role = faceLabel(project, name);
-        const who = role ? `${name}, ${role}` : name;
-        return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else.`;
+        const who = /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${role} ${name}` : name;
+        return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else. Sunglasses, a jacket, and a cap are not part of this tag.`;
       }
       const kind = item.kind === "location" ? "location" : item.kind;
       return `@Image${index + 1} is ${name}, a ${kind}`;
@@ -1851,8 +1843,8 @@ function productSceneLine(project: Project, tag: string, images: PromptRef[]) {
   const facts = productFacts(project, image.name);
   if (!facts.name && !facts.use) return "";
   const name = facts.name || "the product in the photo";
-  const use = facts.use ? ` ${facts.use}` : "";
-  return `${tag} is ${name}, matching the photo exactly. The product itself and its package, if both are in the photo, keep the same shape, color, print, and material. Do not show only the box.${use} Do not invent a different design or a different way to use it.`;
+  const physics = productUsePhysics(project, image.name);
+  return `${tag} is ${name}, matching the photo exactly. The product itself and its package, if both are in the photo, keep the same shape, color, print, and material. Do not show only the box. ${physics} Do not invent a different design or a different way to use it.`;
 }
 
 function scrubDirections(text: string) {
@@ -1864,7 +1856,8 @@ function scrubDirections(text: string) {
     .trim();
 }
 
-function participateLine(names: string[], people: Map<string, string>, project: Project) {
+function participateLine(names: string[], people: Map<string, string>, project: Project, graphic = false, propTag = "") {
+  if (graphic) return propTag ? `Only ${propTag} participates in this scene.` : "No people in this shot.";
   const tags = names
     .map((name) => {
       const tag = people.get(name.toLowerCase()) || speakerLabel(project, name);
@@ -1891,6 +1884,41 @@ function alignActionToVoice(action: string, lines: string[]) {
   return action.replace(/\bmouths?\s+(?:stay|stays|remain|remains|is|are)\s+closed\b/gi, "mouth opens");
 }
 
+function purgeDirection(text: string) {
+  return text
+    .replace(/\b(?:directing\s*(?:&|and)?\s*tone notes?|tone notes?|camera holds on|camera note)\s*:[^.!?\n]*/gi, " ")
+    .replace(/\bcamera holds on\b[^.]*/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+}
+
+function graphicScene(scene?: Scene) {
+  const blob = `${scene?.title || ""} ${scene?.summary || ""}`;
+  return /\b(on-?screen text|pack\s*shot|packshot|title card|end card|small print|\bsuper\b|caption)\b/i.test(blob);
+}
+
+function takeOnScreenCards(summary: string) {
+  const cards: string[] = [];
+  const visual = purgeDirection(summary).replace(
+    /\b(?:vo\s*\/\s*)?on-?screen text\s*:\s*["“]?([^"”\n.]+)["”]?/gi,
+    (_full, card: string) => {
+      const text = card.trim();
+      if (text) cards.push(text);
+      return " ";
+    },
+  );
+  return { visual: visual.replace(/\s{2,}/g, " ").trim(), cards };
+}
+
+function spokenQuote(line: string) {
+  return purgeDirection(line)
+    .replace(/\([^)]*\)/g, " ")
+    .replace(/\b(?:camera holds on|cut to|wide shot|close-?up|dolly|tracking shot)\b[^."]*/gi, " ")
+    .replace(/^["']+|["']+$/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 function sceneSays(
   project: Project,
   scene: Scene | undefined,
@@ -1899,28 +1927,29 @@ function sceneSays(
   lines?: DialogueLine[],
 ) {
   const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
+  const graphic = graphicScene(scene);
   const parts: string[] = [];
   for (const entry of lines || scene?.dialogue || []) {
-    const text = (entry.line || "")
-      .replace(/\([^)]*\)/g, " ")
-      .replace(/^["']+|["']+$/g, "")
-      .replace(/\s+/g, " ")
-      .trim();
+    const text = spokenQuote(entry.line || "");
     if (!entry.speaker || !text) continue;
+    if (graphic && !entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
+      parts.push(`On-screen text, no lipsync: "${text}"`);
+      continue;
+    }
     if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
       const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
       const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-      parts.push(`Voiceover in ${who}'s voice, no lipsync: "${text}" Show this action while the line plays, not a later pose.`);
+      parts.push(`Voiceover in ${who}'s voice, no lipsync: "${text}"`);
       continue;
     }
     if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
       const voice = narratorTag ? `, voice as heard in ${narratorTag}` : "";
-      parts.push(`Voiceover${voice}: "${text}" Show this action while the line plays, not a later pose.`);
+      parts.push(`Voiceover${voice}: "${text}"`);
       continue;
     }
     const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
     const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-    parts.push(onScreen.includes(name.toLowerCase()) ? `${who} lipsyncs: "${text}"` : `${who} off-screen voice: "${text}"`);
+    parts.push(onScreen.includes(name.toLowerCase()) ? `${who} lipsyncs: "${text}"` : `Voiceover in ${who}'s voice, no lipsync: "${text}"`);
   }
   return parts.join(" ");
 }
@@ -1942,11 +1971,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const shots = continuityPass(project);
   const look = styleLookName(project.style);
   const locationTags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
-  const seenTags = assetTags(swaps);
   const song = Boolean(project.song);
   const narrated = scenes.some((scene) => (scene?.dialogue || []).some((line) => line.speaker && isVoiceoverSpeaker(project, line.speaker)));
   const continues = Boolean(project.scenes.length && sceneIndexes[0] !== project.scenes[0]?.index);
   const usedCameras: string[] = [];
+  let conversationCamera = "";
+  let conversationPlace = "";
   const saidAlready = new Set<string>();
   const lineKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 
@@ -2000,34 +2030,58 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       usedCameras,
       project,
     );
-    if (usedCameras.some((item) => item.toLowerCase() === camera.toLowerCase())) {
-      camera =
-        CAMERA_VARIETY.find((item) => !usedCameras.some((prev) => prev.toLowerCase() === item.toLowerCase())) || camera;
+    const peopleHere = sceneOnScreenNames(scene, project);
+    const placeNow = cleanPlace(scene?.location || "");
+    const demanded = /\b(wide shot|extreme wide|insert|close-?up|low angle|high angle|bird'?s eye)\b/i.test(shot.action || "");
+    const talking = peopleHere.length >= 2 && Boolean(placeNow);
+    if (talking && conversationPlace && samePlace(conversationPlace, placeNow) && conversationCamera && !demanded) {
+      camera = conversationCamera;
+    } else if (talking) {
+      const size = camera.match(/wide shot|full shot|medium close-up|medium shot|close-up|insert/i)?.[0] || "medium shot";
+      camera = `Eye level, ${size}`;
+      conversationCamera = camera;
+      conversationPlace = placeNow;
+    } else {
+      if (usedCameras.some((item) => item.toLowerCase() === camera.toLowerCase())) {
+        camera = CAMERA_VARIETY.find((item) => !usedCameras.some((prev) => prev.toLowerCase() === item.toLowerCase())) || camera;
+      }
+      if (/over the shoulder|two-shot/i.test(camera) && peopleHere.length < 2) camera = pickSingleSubjectCamera(usedCameras);
+      conversationCamera = "";
+      conversationPlace = "";
     }
-    if (/over the shoulder|two-shot/i.test(camera) && sceneOnScreenNames(scene, project).length < 2) {
-      camera = pickSingleSubjectCamera(usedCameras);
-    }
+    const previousCamera = usedCameras[usedCameras.length - 1] || "";
     usedCameras.push(camera);
-    const summary = withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene);
+    const rawSummary = withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene);
+    const cards = takeOnScreenCards(rawSummary);
+    const summary = cards.visual;
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
     const action = expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space);
+    const wear = peopleHere
+      .map((name) => sceneWardrobeCue(project, name, `${scene?.location || ""} ${scene?.summary || ""} ${shot.action || ""}`))
+      .filter(Boolean)
+      .join(" ");
     const locks = shotIndex === 0 ? (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock)) : [];
-    const continued = shotIndex > 0 ? "Same place, distance, and body as the previous shot." : "";
-    const body = [continued, action, ...locks]
+    const continued =
+      shotIndex > 0 && sameCameraPerspective(camera, previousCamera)
+        ? "Same place, distance, and body as the previous shot."
+        : "";
+    const body = [continued, action, wear, ...locks]
       .map((part) => part.trim())
       .filter(Boolean)
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
       .join(" ");
+    const sceneTags = sceneAssetTags(project, scene, images);
+    const localSwaps = swaps.filter((swap) => swap.person || sceneTags.includes(swap.tag));
     const tagged = dropPlaceOnlySentences(
-      scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project)),
+      scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, localSwaps), project)),
       locationTags,
     );
     const pictured = scrubDirections(
-      ensureAsSeen(markAsSeen(tagged, seenTags, images, look), sceneAssetTags(project, scene, images), images, look),
+      ensureAsSeen(markAsSeen(tagged, sceneTags, images, look), sceneTags, images, look),
     );
-    const packageTag = images.map((item, imageIndex) => (item.kind === "product" ? `@Image${imageIndex + 1}` : "")).find(Boolean) || "";
-    const sceneText = `${scene?.summary || ""} ${scene?.title || ""}`;
-    const mentionsPackage = !productKeptOut(sceneText) && textShowsPackage(pictured);
+    const packageTag = sceneTags.find((tag) => imageKind(images, tag) === "product") || "";
+    const sceneText = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""}`;
+    const mentionsPackage = sceneRequiresAsset("product", sceneText) && textShowsPackage(actionWithoutSpeech(pictured));
     const withPackage =
       packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
         ? `${pictured.replace(/[. ]+$/, "")}. The product on screen is ${packageTag}, matching the photo: the item and the package, same shape, color, and print.`
@@ -2037,10 +2091,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage,
       slice.map((line) => line.line || ""),
     );
-    const placeTag = sceneAssetTags(project, scene, images).find((tag) => imageKind(images, tag) === "location");
+    const placeTag = sceneTags.find((tag) => imageKind(images, tag) === "location");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
-    const said = sceneSays(project, scene, people, narratorTag, slice);
+    const cardLine = cards.cards.map((card) => `On-screen text, no lipsync: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')).join(" ");
+    const said = [graphicScene(scene) ? "" : sceneSays(project, scene, people, narratorTag, slice), cardLine].filter(Boolean).join(" ");
     const spoken = song
       ? singsAlong
         ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
@@ -2050,19 +2105,22 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         : (cutSeconds[i] || shot.seconds) > 3
           ? "From the first second the body keeps moving. Do not hold on a look."
           : "";
+    const propTag = sceneTags.find((tag) => imageKind(images, tag) === "product" || imageKind(images, tag) === "logo") || "";
     return [
       `SCENE ${i + 1} (${cutSeconds[i]}s).`,
       `${camera}.`,
-      participateLine(sceneOnScreenNames(scene, project), people, project),
+      participateLine(peopleHere, people, project, graphicScene(scene), propTag),
       visual,
-      sceneAssetTags(project, scene, images)
-        .filter((tag) => imageKind(images, tag) === "product")
+      sceneTags
+        .filter((tag) => imageKind(images, tag) === "product" && sceneRequiresAsset("product", sceneText))
         .map((tag) => productSceneLine(project, tag, images))
         .filter(Boolean)
         .join(" "),
       spoken,
-      eyesOffCamera(scene, project) ||
-        (/close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : ""),
+      graphicScene(scene)
+        ? ""
+        : eyesOffCamera(scene, project) ||
+          (/close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : ""),
       placeTag ? `The place is ${placeTag}.` : "",
     ]
       .filter(Boolean)

@@ -36,6 +36,13 @@ export function productFacts(project: Project, label: string) {
   return { name, use };
 }
 
+export function productUsePhysics(project: Project, label: string) {
+  const facts = productFacts(project, label);
+  const name = facts.name || "The product in the photo";
+  const observed = facts.use ? ` The recorded use says: ${facts.use}` : "";
+  return `${name} follows real contact. A hand holds it the way the photo shows. It sits on the body, the face, or a surface only where this action places it. The material keeps the shape, color, and stiffness in the photo. Pressed on, it stays stuck. Fitted or closed, it stays seated. It does not float, pass through skin, or turn into another container.${observed}`;
+}
+
 export function productUseBrief(project: Project) {
   const notes = (project.references || []).filter((item) => item.kind === "product" && item.useVideoNote?.trim());
   if (!notes.length) return "";
