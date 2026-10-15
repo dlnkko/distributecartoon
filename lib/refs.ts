@@ -242,27 +242,7 @@ export function textShowsPackage(text: string) {
 const SPOKEN_QUOTES = /"[^"]*"|“[^”]*”/g;
 
 const SHOWN_PACK =
-  /\b(?:attached product|the product|the package|the pack|the pouch|the sachet|the box|mouth tapes?|the tapes?|a tapes?|the strips?|a strips?|blue strips?|the logo|brand mark|wordmark)\b/i;
-
-const COMMON_NAME_WORDS = new Set([
-  "mouth",
-  "tape",
-  "tapes",
-  "strip",
-  "strips",
-  "natural",
-  "naturals",
-  "skin",
-  "sleep",
-  "night",
-  "water",
-  "pack",
-  "packs",
-  "product",
-  "logo",
-  "bottle",
-  "box",
-]);
+  /\b(?:attached product|the product|the package|the pack|the pouch|the sachet|the box|the logo|brand mark|wordmark)\b/i;
 
 export function actionWithoutSpeech(text: string) {
   return text.replace(SPOKEN_QUOTES, " ");
@@ -276,20 +256,45 @@ export function sceneRequiresAsset(kind: string, text: string) {
   return SHOWN_PACK.test(action);
 }
 
-/** The product photo is uploaded only when this part's own scenes show it. */
+function namePhrases(value: string) {
+  const words = value
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((word) => word.length >= 2 && !/^(?:a|an|the)$/.test(word));
+  if (!words.length) return [];
+  if (words.length === 1) return words[0].length >= 3 ? [words[0]] : [];
+  const phrases: string[] = [];
+  for (let size = 2; size <= words.length; size += 1) {
+    for (let start = 0; start + size <= words.length; start += 1) phrases.push(words.slice(start, start + size).join(" "));
+  }
+  return phrases;
+}
+
+function textHasPhrase(text: string, phrases: string[]) {
+  const blob = ` ${text.toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ").trim()} `;
+  return phrases.some((phrase) => blob.includes(` ${phrase} `));
+}
+
+function packshotAsset(project: Project, kind: string, name: string) {
+  const named = name.trim().toLowerCase();
+  return (
+    (project.references || []).find((item) => item.kind === kind && item.label.trim().toLowerCase() === named) ||
+    (project.references || []).find((item) => item.kind === kind)
+  );
+}
+
+/** The product photo is uploaded only when this part's own scenes show that product. */
 export function partNeedsPackshot(project: Project, kind: string, name: string, text: string) {
   if (kind !== "product" && kind !== "logo") return false;
   if (!text.trim() || (productKeptOut(text) && !sceneRequiresAsset(kind, text))) return false;
   if (sceneRequiresAsset(kind, text)) return true;
-  const asset =
-    (project.references || []).find((item) => item.kind === kind && item.label.trim().toLowerCase() === name.trim().toLowerCase()) ||
-    (project.references || []).find((item) => item.kind === kind);
+  const asset = packshotAsset(project, kind === "logo" ? "product" : kind, name);
   if (!asset) return false;
-  const phrase = productFacts(project, asset.label).name.trim().toLowerCase();
-  if (phrase.length >= 6 && text.toLowerCase().includes(phrase)) return true;
-  return productMentionWords(project, asset).some(
-    (word) => word.length >= 6 && !COMMON_NAME_WORDS.has(word) && hasPositiveWord(text, word),
-  );
+  const phrases = [
+    ...namePhrases(productFacts(project, asset.label).name),
+    ...namePhrases(GENERIC_LABELS.has(asset.label.trim().toLowerCase()) ? "" : asset.label),
+  ];
+  return textHasPhrase(text, phrases);
 }
 
 function hasPositiveWord(text: string, word: string) {
