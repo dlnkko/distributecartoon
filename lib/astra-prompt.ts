@@ -1,5 +1,6 @@
 import OpenAI from "openai";
 import { getSecrets, TEXT_MODEL, TEXT_REASONING } from "./config";
+import { reasonedResponse } from "./reason";
 
 function sceneBlocks(text: string) {
   const matches = [...text.matchAll(/\bSCENE\s+\d+\s*\(/gi)];
@@ -66,31 +67,11 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "") {
       .filter(Boolean)
       .join(" ");
     const input = prior ? `PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}` : trimmed;
-    const timeout = new AbortController();
-    const timer = setTimeout(() => timeout.abort(), 45_000);
-    let response;
-    try {
-      response = await client.responses.create(
-        {
-          model: TEXT_MODEL,
-          reasoning: { effort: TEXT_REASONING },
-          instructions,
-          input,
-        },
-        { signal: timeout.signal },
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (timeout.signal.aborted || !/effort|reasoning/i.test(message)) throw error;
-      response = await client.responses.create({
-        model: TEXT_MODEL,
-        reasoning: { effort: "medium" },
-        instructions,
-        input,
-      });
-    } finally {
-      clearTimeout(timer);
-    }
+    const response = await reasonedResponse(
+      client,
+      { model: TEXT_MODEL, instructions, input },
+      { waitMs: 4 * 60 * 1000 },
+    );
     const revised = (response.output_text || "").trim();
     if (!/SCENE\s+1\b/i.test(revised)) return trimmed;
     if (!sameQuotes(trimmed, revised)) return trimmed;

@@ -1,5 +1,5 @@
 import OpenAI from "openai";
-import { getSecrets, TEXT_MODEL, TEXT_REASONING } from "./config";
+import { getSecrets, TEXT_MODEL } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
 import { driveProduce } from "./produce";
@@ -11,6 +11,7 @@ import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStory
 import { productPageBrief, productUseBrief } from "./product-facts";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
+import { reasonedResponse } from "./reason";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
 
 const SYSTEM_PROMPT = `You are the director-agent of distribute.to, a studio that turns scripts into Pixar, claymation, or realistic live-action shorts.
@@ -1450,36 +1451,16 @@ export async function runAgent(options: {
   ];
 
   throwIfAborted(signal);
+  const planDeadline = Date.now() + 11 * 60 * 1000;
   async function respond(body: OpenAI.Responses.ResponseCreateParamsNonStreaming) {
     if (mode !== "plan") {
       return client.responses.create({ ...body, reasoning: { effort: "medium" } }, { signal });
     }
-    const efforts = [TEXT_REASONING, "medium"] as const;
-    let lastError: unknown;
-    for (const effort of efforts) {
-      const timeout = new AbortController();
-      const timer = setTimeout(() => timeout.abort(), 120_000);
-      const onAbort = () => timeout.abort();
-      signal?.addEventListener("abort", onAbort);
-      try {
-        return await client.responses.create(
-          { ...body, reasoning: { effort } },
-          { signal: timeout.signal },
-        );
-      } catch (error) {
-        lastError = error;
-        if (signal?.aborted) throw error;
-        const message = error instanceof Error ? error.message : String(error);
-        const stalled = timeout.signal.aborted || /timeout|timed out/i.test(message);
-        const rejectedEffort = /effort|reasoning/i.test(message);
-        if (!stalled && !rejectedEffort) throw error;
-        if (effort === "medium") throw new Error("The story plan took too long. Try again.");
-      } finally {
-        clearTimeout(timer);
-        signal?.removeEventListener("abort", onAbort);
-      }
-    }
-    throw lastError instanceof Error ? lastError : new Error("The story plan took too long. Try again.");
+    return reasonedResponse(client, { ...body, model: TEXT_MODEL }, {
+      signal,
+      waitMs: Math.max(30_000, planDeadline - Date.now()),
+      onWait: () => onStatus("Reading the story…"),
+    });
   }
   let response = await respond({
     model: TEXT_MODEL,
