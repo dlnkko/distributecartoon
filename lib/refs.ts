@@ -1,4 +1,4 @@
-import { createId } from "./ids";
+import { createId, slugify } from "./ids";
 import { productFacts } from "./product-facts";
 import type { Character, Project, ReferenceAsset, ReferenceKind, Scene } from "./types";
 
@@ -474,8 +474,100 @@ export function isUnseenVoice(character: Pick<Character, "name" | "description">
   );
 }
 
+function labelIsNarrator(name: string) {
+  return /^(the\s+)?(narrator|narradora|voice[- ]?over|voiceover|vo|v\.o\.|off[- ]?screen|voz en off|text|on-?screen text|super|caption|title|end card)$/i.test(
+    name.trim(),
+  );
+}
+
+const PROSE_NAME_SKIP = new Set([
+  "morning",
+  "night",
+  "phone",
+  "scene",
+  "text",
+  "end",
+  "lamp",
+  "kitchen",
+  "bedroom",
+  "office",
+  "glass",
+  "chat",
+  "mouth",
+  "close",
+  "stay",
+  "really",
+  "anyone",
+  "group",
+  "card",
+  "super",
+  "caption",
+  "title",
+  "narrator",
+  "voice",
+  "boom",
+  "boomboom",
+]);
+
+function namedOnScreen(project: Project, name: string) {
+  const key = characterKey(name);
+  return (project.scenes || []).some(
+    (scene) =>
+      (scene.characterNames || []).some((item) => characterKey(item) === key) ||
+      (scene.dialogue || []).some((line) => !line.voiceover && characterKey(line.speaker || "") === key),
+  );
+}
+
+function ensureOnScreenCast(project: Project) {
+  const names = new Map<string, string>();
+  const remember = (raw: string) => {
+    const name = raw.trim();
+    if (!name || labelIsNarrator(name) || isCrowdName(name)) return;
+    const key = characterKey(name);
+    if (!names.has(key)) names.set(key, name);
+  };
+  const prose = new Map<string, { name: string; count: number }>();
+  for (const scene of project.scenes || []) {
+    for (const name of scene.characterNames || []) remember(name);
+    for (const line of scene.dialogue || []) {
+      if (line.voiceover) continue;
+      remember(line.speaker || "");
+    }
+    for (const match of `${scene.title || ""} ${scene.summary || ""}`.matchAll(/\b[A-Z][a-z]{2,}(?:[A-Z][a-z]+)?\b/g)) {
+      const name = match[0];
+      if (PROSE_NAME_SKIP.has(name.toLowerCase()) || labelIsNarrator(name)) continue;
+      const key = characterKey(name);
+      const hit = prose.get(key) || { name, count: 0 };
+      hit.count += 1;
+      prose.set(key, hit);
+    }
+  }
+  for (const item of prose.values()) {
+    if (item.count >= 2) remember(item.name);
+  }
+  for (const [key, name] of names) {
+    const existing = project.characters.find((character) => characterKey(character.name) === key);
+    if (existing) {
+      if (!labelIsNarrator(existing.name)) existing.isExtra = false;
+      continue;
+    }
+    project.characters.push({
+      id: createId("char"),
+      name,
+      slug: slugify(name),
+      description: "",
+      voiceNotes: "",
+      isExtra: false,
+      lookConfirmed: false,
+      clips: [],
+    });
+  }
+}
+
 function mergeUnseenNarrators(project: Project) {
-  const unseen = project.characters.filter(isUnseenVoice);
+  const unseen = project.characters.filter(
+    (character) => labelIsNarrator(character.name) || (isUnseenVoice(character) && !namedOnScreen(project, character.name)),
+  );
   if (!unseen.length) return;
 
   for (const narrator of unseen) {
@@ -508,6 +600,7 @@ function isCrowdScene(scene: Scene) {
 }
 
 export function refineStoryLeads(project: Project) {
+  ensureOnScreenCast(project);
   mergeUnseenNarrators(project);
   const speakers = new Set<string>();
   const storyKeys = new Set<string>();
@@ -518,13 +611,13 @@ export function refineStoryLeads(project: Project) {
     const crowdShot = isCrowdScene(scene);
     for (const line of scene.dialogue || []) {
       const key = characterKey(line.speaker);
-      if (!key) continue;
+      if (!key || line.voiceover || labelIsNarrator(line.speaker)) continue;
       speakers.add(key);
       storyKeys.add(key);
     }
     for (const name of scene.characterNames || []) {
       const key = characterKey(name);
-      if (!key) continue;
+      if (!key || labelIsNarrator(name)) continue;
       sceneHits.set(key, (sceneHits.get(key) || 0) + 1);
       if (crowdShot) montageOnly.add(key);
       else storyKeys.add(key);
@@ -548,7 +641,9 @@ export function refineStoryLeads(project: Project) {
   const leadKeys = new Set<string>();
   for (const item of ranked) {
     if (leadKeys.size >= MAX_CAST_LEADS) break;
-    if (isUnseenVoice(item.character) || isCrowdName(item.character.name) || montageOnly.has(item.key)) continue;
+    const onCamera = (speakers.has(item.key) || storyKeys.has(item.key)) && !labelIsNarrator(item.character.name);
+    if (isCrowdName(item.character.name) || montageOnly.has(item.key)) continue;
+    if (!onCamera && isUnseenVoice(item.character)) continue;
     const keep = speakers.has(item.key) || storyKeys.has(item.key) || Boolean(item.character.sourceRefId);
     if (!keep) continue;
     leadKeys.add(item.key);
