@@ -605,6 +605,52 @@ export function syncReferenceInclusion(project: Project) {
   return project.references;
 }
 
+function spokenKey(text: string) {
+  return text.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+}
+
+function lineWasWritten(script: string, line: string) {
+  const said = spokenKey(line);
+  if (said.length < 2) return false;
+  return ` ${spokenKey(script)} `.includes(` ${said} `);
+}
+
+function writtenSpeech(script: string, line: string) {
+  const sentences = line
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+  const kept = (sentences.length ? sentences : [line]).filter((part) => lineWasWritten(script, part));
+  return kept.join(" ");
+}
+
+/** When the user wrote the lines, drop any speech the model added. */
+export function dropUnscriptedDialogue(project: Project) {
+  if (project.song) return project;
+  const script = project.scriptText || "";
+  if (!/["“][^"”]{1,400}["”]/.test(script)) return project;
+  const strip = (text: string) =>
+    text
+      .replace(/["“]([^"”]+)["”]/g, (_full, inner: string) => {
+        const kept = writtenSpeech(script, inner);
+        return kept ? `"${kept}"` : "";
+      })
+      .replace(/\b(?:narrator|vo|voice-?over)\s*:\s*(?=[.]|$)/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .trim();
+  for (const scene of project.scenes || []) {
+    scene.dialogue = (scene.dialogue || []).flatMap((line) => {
+      const kept = writtenSpeech(script, line.line || "");
+      return kept ? [{ ...line, line: kept }] : [];
+    });
+    if (scene.summary) scene.summary = strip(scene.summary);
+    for (const shot of scene.shots || []) {
+      if (shot.action) shot.action = strip(shot.action);
+    }
+  }
+  return project;
+}
+
 export function projectStage(project: Project) {
   if (project.workflowStep) return project.workflowStep;
   if (!project.scriptText.trim() && project.scenes.length === 0) return "script" as const;

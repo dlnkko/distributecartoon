@@ -9,7 +9,7 @@ import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage } from "./product-use-video";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, isUnseenVoice, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
+import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
@@ -329,7 +329,13 @@ function storyPlaces(project: Project) {
     }
     places.push({ name: clean, photo });
   }
-  for (const scene of project.scenes) add(scene.location);
+  for (const scene of project.scenes) {
+    if (!scene.location?.trim()) {
+      const title = (scene.title || "").split(/[.:|]/)[0]?.trim() || "";
+      if (title && title.length <= 32 && !/^(?:scene|shot|hook|body|pivot|ending|end card)$/i.test(title)) scene.location = title;
+    }
+    add(scene.location || "");
+  }
   for (const photo of photos) {
     const label = photo.label.trim();
     if (!label || /^location\s*\d+$/i.test(label)) continue;
@@ -579,9 +585,12 @@ async function ensureProductImageNotes(project: Project) {
 }
 
 async function prepareStoryPrompt(project: Project, batch: Batch) {
-  const beforeLooks = project.characters.map((character) => character.description).join("\n");
+  const before = `${project.characters.map((character) => character.description).join("\n")}\n${project.scenes.map((scene) => `${scene.summary}|${(scene.dialogue || []).map((line) => line.line).join("~")}`).join("\n")}`;
+  dropUnscriptedDialogue(project);
   applyScriptLooks(project);
-  if (project.characters.map((character) => character.description).join("\n") !== beforeLooks) await saveProject(project);
+  if (`${project.characters.map((character) => character.description).join("\n")}\n${project.scenes.map((scene) => `${scene.summary}|${(scene.dialogue || []).map((line) => line.line).join("~")}`).join("\n")}` !== before) {
+    await saveProject(project);
+  }
   await ensureProductImageNotes(project);
   const previous = previousStoryBatch(project, batch);
   const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);

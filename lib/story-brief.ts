@@ -43,8 +43,8 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       system: [
         "You are the story editor for a short film. Read the script once and return a directing note in English, under 450 words.",
         "Write the through-line in order: who wants what, and what changes by the end.",
-        "For each beat, name the place, who is in frame, how far apart they are, what the body does, and the spoken line when there is one. A distance the script states stays that distance.",
-        "Name the product, the package, and the brand only in a beat that puts them in a hand, on a surface, or in frame.",
+        "For each beat, name the place, who is in frame, how far apart they are, what the body does, and the spoken line when the script has one. A distance the script states stays that distance. A place keeps one name, and a later return to that room uses the same name.",
+        "If the script has spoken lines, copy those lines only. Do not write a new line, a voice-over, or a closing speech. Product marketing is not dialogue.",
         "Each later part starts from the consequence of the previous beat.",
         "Do not write camera tags, @Image tags, or a video prompt.",
       ].join(" "),

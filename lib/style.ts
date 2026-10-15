@@ -714,20 +714,6 @@ function attributeDialogueInPrompt(prompt: string, project: Project, sceneIndexe
   return collapseRepeatedSays(next).replace(/\s{2,}/g, " ").trim();
 }
 
-function ensureVisibleAction(summary: string) {
-  let text = summary.trim();
-  if (!text) return text;
-  if (
-    /\b(eat|eats|eating|chew|chews|swallow|swallows|takes a gummy|take a gummy|takes one|take one|puts it in (?:his|her|their) mouth)\b/i.test(
-      text,
-    ) &&
-    !/\b(hand|picks? it|brings? it to|lifts? it to|puts? it (?:in|into) (?:his|her|their)?\s*mouth|chews)\b/i.test(text)
-  ) {
-    text +=
-      " On camera, a hand takes it from the pack, lifts it to the mouth, and the character chews.";
-  }
-  return text;
-}
 
 function alreadyHas(text: string, lock: string) {
   return text.toLowerCase().includes(lock.slice(0, 28).toLowerCase());
@@ -913,9 +899,7 @@ function withOnScreenProps(action: string, project: Project, sceneIndex: number)
 
 function rewriteProductContainers(text: string, project: Project) {
   const products = (project.references || []).filter((item) => item.kind === "product");
-  if (!products.length) {
-    return text.replace(/\b(gummies?|creatine) (?:bottle|jar|tub|canister|flask)\b/gi, "$1 pack");
-  }
+  if (!products.length) return text;
   let next = text;
   for (const product of products) {
     const label = product.label.trim();
@@ -925,7 +909,7 @@ function rewriteProductContainers(text: string, project: Project) {
       label,
     );
   }
-  return next.replace(/\b(gummies?|creatine) (?:bottle|jar|tub|canister|flask)\b/gi, "$1 pack");
+  return next;
 }
 
 function replaceOutsideQuotes(text: string, pattern: RegExp, replacer: (match: string) => string) {
@@ -1449,7 +1433,7 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
     usedCameras.push(camera);
     const summary = withoutQuotedDialogue(rewriteProductContainers(scene?.summary || scene?.title || "", project), scene);
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
-    const action = withOnScreenProps(expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space), project, index);
+    const action = withOnScreenProps(expandMontageAction(summary) || ensurePhysicalLogic(summary, space), project, index);
     const place = cleanPlace(scene?.location || "");
     const moved = places.length > 1 && place && !samePlace(place, lastPlace || "");
     if (place) lastPlace = place;
@@ -1646,7 +1630,7 @@ export function directorBriefPrompt(options: CompactPromptOptions) {
     const summaryText = withoutQuotedDialogue(rewriteProductContainers(scene?.summary || scene?.title || "", project), scene);
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
     const action = withOnScreenProps(
-      expandMontageAction(summaryText) || ensurePhysicalLogic(ensureVisibleAction(summaryText), space),
+      expandMontageAction(summaryText) || ensurePhysicalLogic(summaryText, space),
       project,
       index,
     );
@@ -1856,10 +1840,10 @@ function referenceLock(project: Project, images: PromptRef[]) {
       if (item.kind === "character") {
         const role = faceLabel(project, name);
         const who = /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${role} ${name}` : name;
-        return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else. Sunglasses, a jacket, and a cap are not part of this tag.`;
+        return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else.`;
       }
       if (item.kind === "location") {
-        return `@Image${index + 1} is the place ${name}. Use this photo as the set only in a scene that happens here. Match its walls, doors, furniture, and layout. A scene set somewhere else leaves this tag out.`;
+        return `@Image${index + 1} is the place ${name}. Use this photo as the set every time the story is here, including when it comes back later. Match its walls, doors, furniture, and layout. A scene set somewhere else leaves this tag out.`;
       }
       return `@Image${index + 1} is ${name}, a ${item.kind}`;
     })
@@ -2103,7 +2087,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const cards = takeOnScreenCards(rawSummary);
     const summary = cards.visual;
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
-    const action = expandMontageAction(summary) || ensurePhysicalLogic(ensureVisibleAction(summary), space);
+    const action = expandMontageAction(summary) || ensurePhysicalLogic(summary, space);
     const wear = peopleHere
       .map((name) => sceneWardrobeCue(project, name, `${scene?.location || ""} ${scene?.summary || ""} ${shot.action || ""}`))
       .filter(Boolean)
