@@ -8,6 +8,7 @@ import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, norma
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage } from "./product-use-video";
+import { ensureProductScenes } from "./story-brief";
 import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
@@ -592,6 +593,7 @@ async function prepareStoryPrompt(project: Project, batch: Batch) {
     await saveProject(project);
   }
   await ensureProductImageNotes(project);
+  await ensureProductScenes(project);
   const previous = previousStoryBatch(project, batch);
   const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
   const { imageEntries, videoEntries } = await collectReferences(project, batch);
@@ -1306,7 +1308,10 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
       const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
       return `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`;
     });
-    const needed = texts.some((text) => partNeedsPackshot(project, "product", entry.kind === "product" ? entry.name : "", text));
+    const shown = new Set(project.productShownIndexes || []);
+    const needed =
+      scenes.some((scene) => shown.has(scene.index)) ||
+      texts.some((text) => partNeedsPackshot(project, "product", entry.kind === "product" ? entry.name : "", text));
     if (!needed) entries.splice(index, 1);
   }
 }
@@ -1517,6 +1522,8 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   if (!storyBatchNeedsSubmit(batch)) return false;
   throwIfAborted(abortSignal);
   onStatus("Generating your video…");
+  await ensureProductImageNotes(project);
+  await ensureProductScenes(project, abortSignal);
   const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
   if (!batch.promptReady) await prepareStoryPrompt(project, batch);
   batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
@@ -1689,6 +1696,8 @@ async function runGenerateBatchVideo(
   await saveProject(project);
 
   try {
+    await ensureProductImageNotes(project);
+    await ensureProductScenes(project, abortSignal);
     const { imageEntries, videoEntries } = await collectReferences(project, batch);
     const labeled = labeledReferencePrompt({
       images: imageEntries,

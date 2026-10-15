@@ -1,9 +1,9 @@
 import { humanKinName, humanKinPhrase, speciesAbout } from "./cast-roster";
-import { characterRole, charactersPresent, continuityPass, sceneWardrobeCue } from "./continuity";
+import { characterRole, charactersPresent, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
 import { productFacts, productUseHint, productUsePhysics } from "./product-facts";
-import { actionWithoutSpeech, isUnseenVoice, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference, textShowsPackage } from "./refs";
+import { actionWithoutSpeech, isUnseenVoice, partNeedsPackshot, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { planShots, sameCameraPerspective } from "./shots";
 
@@ -37,10 +37,8 @@ function portraitCraft(style: VisualStyle) {
 }
 
 function styleThroughout(style: VisualStyle) {
-  if (style === "realistic") {
-    return "realistic commercial, handheld camera fake documentary style. Realistic live-action throughout the whole video.";
-  }
-  return `${styleLookName(style)} style throughout the whole video.`;
+  if (style === "realistic") return "Realistic live-action, handheld.";
+  return `${styleLookName(style)} style.`;
 }
 
 function globalLookPhrase(style: VisualStyle) {
@@ -770,10 +768,13 @@ function sceneShowsProduct(project: Project, scene: Scene | undefined, asset: Re
 
 function scenePropCues(project: Project, sceneIndex: number) {
   const scene = project.scenes.find((item) => item.index === sceneIndex);
-  const blob = `${scene?.title || ""} ${scene?.summary || ""} ${(scene?.shots || []).map((shot) => shot.action).join(" ")}`;
+  const blob = `${scene?.title || ""} ${scene?.summary || ""} ${(scene?.shots || []).map((shot) => shot.action).join(" ")} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
   return promptReadyReferences(project, [sceneIndex], true).filter((item) => {
     if (item.kind === "location") return Boolean(scene?.location && samePlace(item.label, scene.location));
     if (item.kind !== "product" && item.kind !== "logo") return false;
+    if (item.kind === "product" && ((project.productShownIndexes || []).includes(sceneIndex) || partNeedsPackshot(project, "product", item.label, blob))) {
+      return true;
+    }
     if (!sceneRequiresAsset(item.kind, blob)) return false;
     if (project.song && item.kind === "product") return sceneShowsProduct(project, scene, item);
     return true;
@@ -1154,16 +1155,16 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     const key = item.name.trim().toLowerCase();
     if (item.kind === "narrator") {
       narratorTag = tag;
-      refs.push(`${tag} is the narrator's voice only: an off-screen voice-over, never shown, with no lipsync; use its voice, none of its images`);
+      refs.push(`${tag} is the narrator voice. Off screen.`);
     } else if (item.kind === "character" && key) people.set(key, tag);
     else if (item.kind === "previous") {
-      refs.push(`${tag} is the previous generation in full. Match the people and their voices from it. Do not replay it. This part starts after that video.`);
+      refs.push(`${tag} is the previous part. This part starts after it.`);
     }
     else if (item.kind === "video")
       refs.push(
         project.song
-          ? `${tag} is a continuation reference only: the last 5 seconds of the previous part, so the cut is not abrupt. Use the picture for clothes, hands, and the music already playing. Do not generate those 5 seconds again. Do not have anyone speak a line already heard in that fragment.`
-          : `${tag} is a continuation reference only: the last 5 seconds of the previous part, picture only. Use it so the cut is not abrupt: same clothes, same things in their hands, same body position. Do not play its audio and do not copy its voice. Do not lipsync, quote, or paraphrase any line heard in those 5 seconds. Those words already happened. This part says only the lines written below.`,
+          ? `${tag} is the last 5 seconds, picture and music. Do not replay those seconds or their lines.`
+          : `${tag} is the last 5 seconds, picture only. Continue clothes and hands. Do not replay its lines.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
@@ -1177,7 +1178,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     }
     if (item.kind === "product") {
       const called = productPromptName(project, name, item.notes || "");
-      refs.push(`${tag} is ${called}, matching the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box.`);
+      refs.push(`${tag} is ${called}.`);
     } else if (item.kind === "logo") refs.push(`${tag} is the ${name} logo`);
     else refs.push(`${tag} is ${name}`);
     const called = item.kind === "product" ? productPromptName(project, name, item.notes || "") : "";
@@ -1295,7 +1296,7 @@ function withoutQuotedDialogue(summary: string, scene?: Scene) {
     if (!text) continue;
     const quote = `["“]${escapeRegExp(text)}["”]`;
     next = next
-      .replace(new RegExp(`\\b(?:says|asks|whispers|shouts|yells|replies|mutters|exclaims|lipsyncs)[:,]?\\s*${quote}`, "gi"), "speaks.")
+      .replace(new RegExp(`\\b(?:says|asks|whispers|shouts|yells|replies|mutters|exclaims|lipsyncs)[:,]?\\s*${quote}`, "gi"), "")
       .replace(new RegExp(quote, "g"), "");
   }
   return next
@@ -1826,32 +1827,38 @@ function referenceLock(project: Project, images: PromptRef[]) {
     .map((item, index) => {
       const name = item.name.trim();
       if (!name) return "";
-      if (item.kind === "logo") {
-        return `@Image${index + 1} is ${name}. Match the logo photo exactly. Name this tag only in a scene whose action has it in frame. Every other scene leaves the tag out.`;
-      }
-      if (item.kind === "product") {
-        const called = productPromptName(project, name, item.notes || "");
-        const seen = productFacts(project, name).seen;
-        const match = seen
-          ? `Match the photo and this description of it: ${seen} If both the product and the package are visible, show both. Do not swap them or show only the box.`
-          : "Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box.";
-        return `@Image${index + 1} is ${called}. ${match} Name this tag only in a scene whose action has it in a hand, on a surface, or in frame. Every other scene leaves the tag out.`;
-      }
+      const tag = `@Image${index + 1}`;
+      if (item.kind === "logo") return `${tag} is the logo.`;
+      if (item.kind === "product") return `${tag} is ${productPromptName(project, name, item.notes || "")}.`;
       if (item.kind === "character") {
         const role = faceLabel(project, name);
-        const who = /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${role} ${name}` : name;
-        return `@Image${index + 1} is ${who}. This face stays on this tag. Do not give it to anyone else.`;
+        const who = /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${name}, ${role}` : name;
+        return `${tag} is ${who}.`;
       }
       if (item.kind === "location") {
-        return `@Image${index + 1} is the place ${name}. Use this photo as the set every time the story is here, including when it comes back later. Match its walls, doors, furniture, and layout. A scene set somewhere else leaves this tag out.`;
+        const place = name.replace(/^(?:the|a|an)\s+/i, "");
+        return `${tag} is the ${place}.`;
       }
-      return `@Image${index + 1} is ${name}, a ${item.kind}`;
+      return `${tag} is ${name}.`;
     })
     .filter(Boolean);
-  return parts.length ? `Reference tags stay fixed for the whole film: ${parts.join(". ")}.` : "";
+  return parts.join(" ");
 }
 
-function omitUnneededProduct(text: string, project: Project, sceneText: string) {
+function actionOnly(text: string) {
+  return text
+    .replace(/["“][^"”]{0,240}["”]/g, " ")
+    .replace(/\b(?:she|he|they)\s+speaks\.?/gi, " ")
+    .replace(/\b(?:she|he|they)\s*(?=\.|$)/gi, " ")
+    .replace(/\bNo product or package appears in this scene\.?/gi, " ")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .replace(/\.{2,}/g, ".")
+    .trim();
+}
+
+function omitUnneededProduct(text: string, project: Project, sceneText: string, sceneIndex?: number) {
+  if (sceneIndex != null && (project.productShownIndexes || []).includes(sceneIndex)) return text;
   if (sceneRequiresAsset("product", sceneText) || sceneRequiresAsset("logo", sceneText)) return text;
   const names = (project.references || [])
     .filter((item) => item.kind === "product" || item.kind === "logo")
@@ -1965,23 +1972,23 @@ function sceneSays(
     const text = spokenQuote(entry.line || "");
     if (!entry.speaker || !text) continue;
     if (graphic && !entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
-      parts.push(`On-screen text, no lipsync: "${text}"`);
+      parts.push(`On-screen text: "${text}"`);
       continue;
     }
     if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
       const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
       const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-      parts.push(`Voiceover in ${who}'s voice, no lipsync: "${text}"`);
+      parts.push(`${who}, voice-over: "${text}"`);
       continue;
     }
     if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
-      const voice = narratorTag ? `, voice as heard in ${narratorTag}` : "";
-      parts.push(`Voiceover${voice}: "${text}"`);
+      const voice = narratorTag ? ` ${narratorTag}` : "";
+      parts.push(`Voice-over${voice}: "${text}"`);
       continue;
     }
     const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
     const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-    parts.push(onScreen.includes(name.toLowerCase()) ? `${who} lipsyncs: "${text}"` : `Voiceover in ${who}'s voice, no lipsync: "${text}"`);
+    parts.push(onScreen.includes(name.toLowerCase()) ? `${who}: "${text}"` : `${who}, voice-over: "${text}"`);
   }
   return parts.join(" ");
 }
@@ -1996,12 +2003,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const tailBan = alreadySaid.length
     ? `Already said in that 5 second reference, do not say them again: ${alreadySaid.map((line) => `"${line}"`).join(" ")}.`
     : "";
-  const previousLine = refs.find((line) => /previous generation in full/i.test(line)) || "";
+  const previousLine = refs.find((line) => /previous part/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
   const shots = continuityPass(project);
-  const look = styleLookName(project.style);
   const locationTags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
   const song = Boolean(project.song);
   const narrated = scenes.some((scene) => (scene?.dialogue || []).some((line) => line.speaker && isVoiceoverSpeaker(project, line.speaker)));
@@ -2088,16 +2094,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const summary = cards.visual;
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
     const action = expandMontageAction(summary) || ensurePhysicalLogic(summary, space);
-    const wear = peopleHere
-      .map((name) => sceneWardrobeCue(project, name, `${scene?.location || ""} ${scene?.summary || ""} ${shot.action || ""}`))
-      .filter(Boolean)
-      .join(" ");
     const locks = shotIndex === 0 ? (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock)) : [];
     const continued =
       shotIndex > 0 && sameCameraPerspective(camera, previousCamera)
-        ? "Same place, distance, and body as the previous shot."
+        ? "Same place and body as the previous shot."
         : "";
-    const body = [continued, action, wear, ...locks]
+    const body = [continued, action, ...locks]
       .map((part) => part.trim())
       .filter(Boolean)
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
@@ -2108,90 +2110,62 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, localSwaps), project)),
       locationTags,
     );
-    const pictured = scrubDirections(
-      ensureAsSeen(markAsSeen(tagged, sceneTags, images, look), sceneTags, images, look),
-    );
-    const packageTag = sceneTags.find((tag) => imageKind(images, tag) === "product") || "";
-    const sceneText = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""}`;
-    const mentionsPackage = sceneRequiresAsset("product", sceneText) && textShowsPackage(actionWithoutSpeech(pictured));
-    const withPackage =
-      packageTag && mentionsPackage && !new RegExp(escapeRegExp(packageTag), "i").test(pictured)
-        ? `${pictured.replace(/[. ]+$/, "")}. The product on screen is ${packageTag}, matching the photo: the item and the package, same shape, color, and print.`
-        : pictured;
+    const sceneText = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
+    const productHere = (project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText);
     const slice = linesByShot[i] || [];
-    const visual = omitUnneededProduct(
-      alignActionToVoice(
-        song ? withPackage.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : withPackage,
-        slice.map((line) => line.line || ""),
+    const visual = actionOnly(
+      omitUnneededProduct(
+        alignActionToVoice(
+          song ? tagged.replace(/\bWhile the song plays\b/gi, "While @Audio1 plays") : tagged,
+          slice.map((line) => line.line || ""),
+        ),
+        project,
+        sceneText,
+        index,
       ),
-      project,
-      sceneText,
     );
-    const placeTag = sceneTags.find((tag) => imageKind(images, tag) === "location");
+    const missing = (tag: string) => Boolean(tag) && !new RegExp(`${escapeRegExp(tag)}\\b`, "i").test(visual);
+    const placeTag = sceneTags.find((tag) => imageKind(images, tag) === "location") || "";
+    const productTags = sceneTags.filter((tag) => imageKind(images, tag) === "product" && productHere && missing(tag));
+    const logoTags = sceneTags.filter((tag) => imageKind(images, tag) === "logo" && sceneRequiresAsset("logo", sceneText) && missing(tag));
+    const cites = [missing(placeTag) ? `In ${placeTag}.` : "", ...productTags, ...logoTags].filter(Boolean).join(" ");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
-    const cardLine = cards.cards.map((card) => `On-screen text, no lipsync: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')).join(" ");
+    const cardLine = cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')).join(" ");
     const said = [graphicScene(scene) ? "" : sceneSays(project, scene, people, narratorTag, slice), cardLine].filter(Boolean).join(" ");
-    const spoken = song
-      ? singsAlong
-        ? "That mouth matches the lyric already playing in @Audio1. Do not create a voice."
-        : ""
-      : said
-        ? said
-        : "";
-    const propTag = sceneTags.find((tag) => imageKind(images, tag) === "product" || imageKind(images, tag) === "logo") || "";
-    return [
-      `SCENE ${i + 1} (${cutSeconds[i]}s).`,
-      `${camera}.`,
-      participateLine(peopleHere, people, project, graphicScene(scene), propTag),
-      visual,
-      sceneTags
-        .filter((tag) => imageKind(images, tag) === "product" && sceneRequiresAsset("product", sceneText))
-        .map((tag) => productSceneLine(project, tag, images))
-        .filter(Boolean)
-        .join(" "),
-      spoken,
-      graphicScene(scene)
-        ? ""
-        : eyesOffCamera(scene, project) ||
-          (/close-up|close up/i.test(camera) ? "Gaze must not be directed at lens unless explicitly stated." : ""),
-      placeTag
-        ? `They are in ${placeTag}. Match that photo: same walls, doors, furniture, and layout. Keep the distance the action states, including far apart.`
-        : "",
-      song ? "" : `Speech and action fill all ${cutSeconds[i]} seconds, from the first frame to the last. No pause, no frozen look, and no silent tail.`,
-    ]
+    const spoken = song ? (singsAlong ? "Mouth matches @Audio1." : "") : said;
+    return [`SCENE ${i + 1} (${cutSeconds[i]}s).`, `${camera}.`, graphicScene(scene) ? "No people." : "", visual, cites, spoken]
       .filter(Boolean)
       .join(" ");
   });
 
+  const hasPlace = images.some((item) => item.kind === "location");
+  const inTheRoom = hasPlace ? "People stand in that room, on its floor, at the size of its doors. Do not paste them on top." : "";
   const lead = (
     song
       ? [
           `${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds.`,
           styleThroughout(project.style),
           continues
-            ? `This video is the next ${Math.round(options.maxSeconds || project.song?.durationSeconds || 30)} seconds, the slice that belongs to this part. Do not regenerate the previous 5 seconds. The video reference is that ending, picture and music, only so the cut is not abrupt. @Audio1 is this slice and plays from 00:00 of this video. No title card, no logo sting, no black frame, and no new intro.`
-            : "Frame one is already inside the song. @Audio1 is the only sound and it is playing at 00:00. No title card, no logo sting, no black frame, no silence, and no intro before the song.",
-          "Each scene shows the lyric quoted in it, while @Audio1 is singing that line. Do not show a different event during that line. Do not generate a speaking voice, a singing voice, or any other music. @Audio1 is the only audio. Mouths stay closed unless a scene says the character sings along, and then that mouth matches the quoted lyric already in @Audio1. The attached product stays out of frame until a scene already shows it as the solution. Do not add it to a problem scene.",
-          characterVideos
-            ? "Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
-            : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
+            ? "@Audio1 is this slice from 00:00. Do not replay the previous 5 seconds."
+            : "@Audio1 plays from 00:00. No intro.",
+          "Each scene shows its quoted lyric. No other voice. The product appears only in a scene that uses it.",
           referenceLock(project, images),
+          inTheRoom,
           tailLine,
           tailBan,
         ]
       : [
           styleThroughout(project.style),
-          "A speaker looks at the person they address while the line is coming out.",
+          referenceLock(project, images),
+          inTheRoom,
+          characterVideos ? "Speaking faces are @Video, with that voice." : "",
+          "Eyes on the person they speak to. Each scene fills its seconds. The action comes first, then the line.",
           previousLine,
           tailLine,
           tailBan,
-          characterVideos
-            ? "Speaking characters are @Video, with that reference's own voice. Silent characters, places, and products are @Image. Those numbers stay the same in every generation."
-            : "Characters, places, and products are @Image. Those numbers stay the same in every generation.",
-          referenceLock(project, images),
-          tailLine ? "" : continues ? "This clip picks up straight from the previous part." : "",
-          narrated ? "Narrator lines are off-screen voice-over, no lipsync. During each line, show the action those words describe. A mouth stays closed only when that line is not about the mouth. Say each line once, and do not repeat it in the next shot." : "",
+          tailLine ? "" : continues ? "This part starts where the last one ended." : "",
+          narrated ? "Narrator lines are voice-over. Show what they describe." : "",
         ]
   )
     .filter(Boolean)

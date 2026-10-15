@@ -27,6 +27,23 @@ function sameQuotes(draft: string, revised: string) {
   return left.every((line, index) => line === right[index]);
 }
 
+function tightenPrompt(text: string) {
+  return text
+    .replace(/Use this photo as the set every time the story is here, including when it comes back later\.?/gi, "")
+    .replace(/Match (?:its|that photo: same) walls, doors, furniture, and layout\.?/gi, "")
+    .replace(/A scene set somewhere else leaves this tag out\.?/gi, "")
+    .replace(/Keep the distance the action states, including far apart\.?/gi, "")
+    .replace(/No product or package appears in this scene\.?/gi, "")
+    .replace(/Speech and action fill all \d+ seconds, from the first frame to the last\. No pause, no frozen look, and no silent tail\.?/gi, "")
+    .replace(/Name this tag only in a scene whose action has it in (?:a hand, on a surface, or )?in frame\. Every other scene leaves the tag out\.?/gi, "")
+    .replace(/This face stays on this tag\. Do not give it to anyone else\.?/gi, "")
+    .replace(/Reference tags stay fixed for the whole film:?/gi, "")
+    .replace(/Gaze must not be directed at lens unless explicitly stated\.?/gi, "")
+    .replace(/\s{2,}/g, " ")
+    .replace(/\s+([,.])/g, "$1")
+    .trim();
+}
+
 function sameSceneTags(draft: string, revised: string) {
   const left = sceneBlocks(draft);
   const right = sceneBlocks(revised);
@@ -47,19 +64,16 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const client = new OpenAI({ apiKey: openaiApiKey });
     console.info("seedance prompt model", TEXT_MODEL, TEXT_REASONING);
     const instructions = [
-      "Revise this Seedance prompt from the story reading. The reading already decided the place, the distance, the acting, and the cause. Keep that. Return only the prompt.",
-      "Keep every SCENE heading, its duration, every @Video and @Image tag already inside that scene, and every quoted line. Do not rename a tag and do not add one. A character written as @Video stays @Video. A character written as @Image stays @Image.",
-      "Each SCENE (Ns) stays busy for all N seconds. The line and the physical action start together and finish together. After the last word the body finishes the gesture in that same second. Continue the story action through the last frame: the step, the reach, the turn, the reaction. Do not add a pause, a frozen look, a silent tail, or a new quoted line.",
-      "Write the space. Say who is left, right, near, far, in front, and behind. If the draft says they are far, across the room, down the hall, or small in frame, keep a wide shot and that distance.",
-      "Write the performance in the action: breath, hands, weight, and eyes on the person they address.",
-      "A location image is the set. In a scene that happens in that place, the walls, doors, furniture, and layout match that image, and the scene names that tag. A scene set somewhere else leaves that tag out.",
-      "Keep the product and the logo only in a scene that already has them in a hand, on a surface, or in frame. Every other scene leaves out the product, the package, the box, the brand, and its tag. When the product is on screen, match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box.",
-      "Watching this part after the previous one should read as one drama. The first scene starts from the previous ending's place, distance, and body, unless this draft moves them.",
-      "Each scene is one action and one camera move. If one scene walks through many places, leave the scene breaks.",
+      "Revise this Seedance prompt. Return only the prompt, and make it shorter than the draft.",
+      "Keep every SCENE heading, its duration, every @Video and @Image tag already inside that scene, and every quoted line. Do not rename a tag and do not add one.",
+      "Each scene is one forward action, then the spoken line. Do not put the line inside the action. Do not add a pause, a frozen look, or a new line.",
+      "A place is named once in the header, like @Image4 is the cabin. Inside a scene, cite that tag once. Do not explain how to use the photo, and do not repeat walls, doors, furniture, or layout.",
+      "People are standing in that room. Do not describe them as pasted on the photo.",
+      "Keep a product tag only in a scene that already has it. Do not write that the product is absent.",
+      "The first scene continues the previous ending unless this draft moves them.",
       "If the draft includes @Audio1, keep @Audio1. That is this part's song slice and it plays from the first frame of this video. Keep every 'While @Audio1 plays' cue with the lyric in quotes and the action that follows it. Do not drop a lyric or move it to another scene. Do not add @Audio2. The previous ending is the video reference only: do not regenerate those 5 seconds. Do not add a silent intro, a title card, or spoken dialogue when the draft has none. If a scene says a character sings along or mouths a lyric, keep it: that mouth matches @Audio1 only. Do not add a second voice and do not close that mouth.",
       "If this draft shows the product or an end card, keep those scenes and the product image tag inside the action. Do not turn the tag into a style note, and do not drop it because the previous part left the product out.",
-      "Each character speaks only their own line. A face stays on the tag named at the start. Do not swap two characters.",
-      "Before any gaze, state the camera position relative to the look target. Do not leave two competing face directions. If the eyes are not on the lens, say eyes NOT on camera. On an emotional close-up keep: gaze must not be directed at lens unless explicitly stated.",
+      "Each character speaks only their own line. A face stays on its tag. Do not swap two characters.",
       prior
         ? "A previous part prompt is included. This clip is the next slice, not a replay of the previous ending. The attached video of the last 5 seconds is a continuation reference for the picture only: clothes, hands, and body position. Do not copy its audio. Do not repeat, lipsync, or paraphrase any spoken line from that fragment. If the draft lists lines already said in that reference, keep that list. This part may open in a new place."
         : "",
@@ -76,7 +90,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       { waitMs: 90_000 },
     );
     const revised = (response.output_text || "").trim();
-    if (!/SCENE\s+1\b/i.test(revised)) return trimmed;
+    if (!/SCENE\s+1\b/i.test(revised)) return tightenPrompt(trimmed);
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (!sameSceneTags(trimmed, revised)) return trimmed;
     const draftTags = tagsIn(trimmed);
@@ -87,10 +101,10 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     if (/@Audio2\b/.test(revised)) return trimmed;
     if (/While @Audio1 plays/i.test(trimmed) && !/While @Audio1 plays/i.test(revised)) return trimmed;
-    if (/\bsings along\b/i.test(trimmed) && !/\bsings along\b/i.test(revised)) return trimmed;
-    return revised;
+    if (/\bsings along\b/i.test(trimmed) && !/\bsings along\b/i.test(revised)) return tightenPrompt(trimmed);
+    return tightenPrompt(revised);
   } catch (error) {
     console.warn("astra prompt revise failed", error instanceof Error ? error.message : error);
-    return trimmed;
+    return tightenPrompt(trimmed);
   }
 }

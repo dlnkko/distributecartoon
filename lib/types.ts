@@ -225,6 +225,8 @@ export type Project = {
   scriptText: string;
   storyBrief?: string;
   storyBriefKey?: string;
+  productShownKey?: string;
+  productShownIndexes?: number[];
   scriptCast?: ScriptCastMember[];
   song?: Song;
   characters: Character[];

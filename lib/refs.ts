@@ -591,6 +591,14 @@ export function scriptCallsForReference(
   if (asset.kind === "character") return false;
   if (sceneIndexes && sceneIndexes.length === 0) return false;
   if ((asset.kind === "product" || asset.kind === "logo") && sceneIndexes?.length) {
+    const shown = project.productShownIndexes || [];
+    if (asset.kind === "product" && sceneIndexes.some((index) => shown.includes(index))) return true;
+    if (
+      asset.kind === "product" &&
+      sceneIndexes.some((index) => partNeedsPackshot(project, "product", asset.label, sceneBlob(project, [index])))
+    ) {
+      return true;
+    }
     const texts = sceneIndexes.map((index) => sceneBlob(project, [index]));
     if (texts.length && texts.every((text) => productKeptOut(text))) return false;
     if (texts.length && !texts.some((text) => sceneRequiresAsset(asset.kind, text))) return false;
