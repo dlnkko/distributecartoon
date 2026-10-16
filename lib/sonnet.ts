@@ -51,13 +51,13 @@ async function postSonnet(body: Record<string, unknown>, signal: AbortSignal | u
   return payload?.content || [];
 }
 
-async function postWithFallback(body: Record<string, unknown>, signal?: AbortSignal) {
+async function postWithFallback(body: Record<string, unknown>, signal: AbortSignal | undefined, effort: boolean) {
   try {
-    return await postSonnet(body, signal, true);
+    return await postSonnet(body, signal, effort);
   } catch (error) {
     const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
     const message = error instanceof Error ? error.message : "";
-    if (status === 400 && /output_config|effort/i.test(message)) return postSonnet(body, signal, false);
+    if (effort && status === 400 && /output_config|effort/i.test(message)) return postSonnet(body, signal, false);
     throw error;
   }
 }
@@ -70,6 +70,7 @@ export async function sonnetText(system: string, user: string, options?: { maxTo
       messages: [{ role: "user", content: user }],
     },
     options?.signal,
+    true,
   );
   return content
     .filter((block) => block.type === "text" && block.text?.trim())
@@ -93,6 +94,7 @@ export async function sonnetTools(options: {
       messages: options.messages,
     },
     options.signal,
+    false,
   );
   const toolUses = content
     .filter((block) => block.type === "tool_use" && block.name && block.id)

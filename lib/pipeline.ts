@@ -599,8 +599,9 @@ export async function ensureProductUnderstanding(project: Project) {
       else if (!asset.imageNote?.trim()) asset.imageNote = read.slice(0, 700);
       wrote = true;
     } catch (error) {
-      console.warn("product photo", project.id, error instanceof Error ? error.message : error);
-      if (asset.imageNote?.trim()) continue;
+      const message = error instanceof Error ? error.message : "";
+      console.warn("product photo", project.id, message);
+      if (/quota|rate.limit/i.test(message) || asset.imageNote?.trim()) continue;
       try {
         const note = await describeProductImage(await readPublicFile(src), productImageMime(src));
         if (!note) continue;
