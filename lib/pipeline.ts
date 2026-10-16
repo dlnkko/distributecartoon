@@ -1,7 +1,7 @@
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
 import { concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
 import { charactersPresent, continuityFlags, projectSeed } from "./continuity";
-import { placeLabel, richerPlaceName, samePlace } from "./places";
+import { assignScenePlaces, isJunkPlace, placeLabel, richerPlaceName, samePlace } from "./places";
 import { refineSeedancePrompt } from "./astra-prompt";
 import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask, submitSeedance25ReferenceVideo, uploadKieFile, waitForTask } from "./kie";
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
@@ -315,13 +315,14 @@ function hasFreshAnchor(character: Character) {
 }
 
 function storyPlaces(project: Project) {
+  assignScenePlaces(project.scenes);
   const photos = project.references.filter(
     (asset) => asset.kind === "location" && (asset.originalRemoteUrl || asset.originalPublicPath),
   );
   const places: Array<{ name: string; photo?: ReferenceAsset }> = [];
   function add(name: string, photo?: ReferenceAsset) {
     const clean = placeLabel(name);
-    if (!clean || /^(unknown|none|n\/a|tbd)$/i.test(clean)) return;
+    if (!clean || isJunkPlace(clean) || /^(unknown|none|n\/a|tbd)$/i.test(clean)) return;
     const hit = places.find((place) => samePlace(place.name, clean));
     if (hit) {
       if (photo && !hit.photo) hit.photo = photo;
@@ -330,13 +331,7 @@ function storyPlaces(project: Project) {
     }
     places.push({ name: clean, photo });
   }
-  for (const scene of project.scenes) {
-    if (!scene.location?.trim()) {
-      const title = (scene.title || "").split(/[.:|]/)[0]?.trim() || "";
-      if (title && title.length <= 32 && !/^(?:scene|shot|hook|body|pivot|ending|end card)$/i.test(title)) scene.location = title;
-    }
-    add(scene.location || "");
-  }
+  for (const scene of project.scenes) add(scene.location || "");
   for (const photo of photos) {
     const label = photo.label.trim();
     if (!label || /^location\s*\d+$/i.test(label)) continue;
@@ -830,7 +825,9 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
 }
 
 async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
-  project.locationPlates = Array.isArray(project.locationPlates) ? project.locationPlates : [];
+  project.locationPlates = (Array.isArray(project.locationPlates) ? project.locationPlates : []).filter(
+    (plate) => !isJunkPlace(plate.name),
+  );
   const missing = storyPlaces(project).filter(
     (place) => !project.locationPlates!.some((plate) => samePlace(plate.name, place.name) && isHttpUrl(plate.remoteUrl)),
   );
