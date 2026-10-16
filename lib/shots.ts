@@ -67,7 +67,7 @@ function storyBeats(summary: string) {
 }
 
 function shareSeconds(total: number, count: number, minimum: number) {
-  const floor = Math.max(2, minimum);
+  const floor = Math.max(1, minimum);
   const safe = Math.max(floor, Math.round(total));
   const room = Math.max(1, Math.floor(safe / floor));
   const used = Math.min(count, room);
@@ -79,8 +79,8 @@ function shareSeconds(total: number, count: number, minimum: number) {
 
 export function planShots(scene: Pick<Scene, "summary" | "camera" | "estimatedSeconds">): SceneShot[] {
   const fast = isFastCut(`${scene.summary || ""} ${scene.camera || ""}`);
-  const minimum = fast ? 2 : 3;
-  const seconds = Math.max(minimum, Math.round(scene.estimatedSeconds || 4));
+  const seconds = Math.max(1, Math.round(scene.estimatedSeconds || 4));
+  const minimum = Math.min(fast ? 2 : 3, seconds);
   const beats = storyBeats(scene.summary || "");
   const onlyLook = beats.length === 1 && isHeldLook(beats[0]);
   const sizes = shareSeconds(onlyLook ? Math.min(5, Math.max(minimum, seconds)) : seconds, beats.length, minimum);
@@ -98,13 +98,13 @@ export function planShots(scene: Pick<Scene, "summary" | "camera" | "estimatedSe
 
 export function ensureSceneShots(scene: Scene): Scene {
   const fast = isFastCut(`${scene.summary || ""} ${scene.camera || ""}`);
-  const minimum = fast ? 2 : 3;
-  const seconds = Math.max(minimum, Math.round(Number(scene.estimatedSeconds) || 4));
+  const seconds = Math.max(1, Math.round(Number(scene.estimatedSeconds) || 4));
+  const minimum = Math.min(fast ? 2 : 3, seconds);
   const seeded = (scene.shots || []).filter((shot) => shot.action?.trim() || shot.camera?.trim());
   const planned = planShots({ summary: scene.summary, camera: scene.camera, estimatedSeconds: seconds });
   const base = seeded.length
     ? seeded.map((shot) => ({
-        seconds: Math.max(minimum, Math.round(shot.seconds || minimum)),
+        seconds: Math.max(1, Math.round(shot.seconds || minimum)),
         camera: shot.camera.trim(),
         action: shot.action.trim(),
       }))
@@ -115,17 +115,27 @@ export function ensureSceneShots(scene: Scene): Scene {
     if (spoken && base.length === 1) return shot;
     return { ...shot, seconds: Math.min(5, Math.max(minimum, shot.seconds)) };
   });
-  const sum = shots.reduce((total, shot) => total + shot.seconds, 0);
+  let sum = shots.reduce((total, shot) => total + shot.seconds, 0);
   const gap = seconds - sum;
-  if (gap > 0) {
+  if (gap > 0 && shots.length) {
     const host = shots.findIndex((shot) => !isHeldLook(shot.action));
     const index = host >= 0 ? host : 0;
     shots[index] = { ...shots[index], seconds: shots[index].seconds + gap };
+  } else if (gap < 0) {
+    let overflow = -gap;
+    for (let index = shots.length - 1; index >= 0 && overflow > 0; index -= 1) {
+      const room = shots[index].seconds - 1;
+      if (room <= 0) continue;
+      const cut = Math.min(room, overflow);
+      shots[index] = { ...shots[index], seconds: shots[index].seconds - cut };
+      overflow -= cut;
+    }
   }
+  sum = shots.reduce((total, shot) => total + shot.seconds, 0);
   return {
     ...scene,
-    estimatedSeconds: shots.reduce((total, shot) => total + shot.seconds, 0),
+    estimatedSeconds: Math.min(seconds, sum || seconds),
     camera: shots[0]?.camera || scene.camera,
-    shots,
+    shots: shots.filter((shot) => shot.seconds > 0),
   };
 }

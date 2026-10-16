@@ -1080,18 +1080,24 @@ type CompactPromptOptions = {
 type TagSwap = { names: string[]; tag: string; person?: boolean; exact?: boolean };
 
 function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number) {
-  const budget = maxSeconds && maxSeconds > 0 ? maxSeconds : 0;
-  const raw = scenes.map((scene) => Math.max(2, Math.round(scene?.estimatedSeconds || 4)));
+  const budget = maxSeconds && maxSeconds > 0 ? Math.round(maxSeconds) : 0;
+  const raw = scenes.map((scene) => Math.max(1, Math.round(scene?.estimatedSeconds || 4)));
   const sum = raw.reduce((total, value) => total + value, 0);
-  if (!(budget > 0) || !sum || Math.abs(sum - budget) < 0.5) return raw;
+  if (!(budget > 0) || !sum || sum === budget) return raw;
   const scale = budget / sum;
-  let used = 0;
-  return raw.map((value, index) => {
-    if (index === raw.length - 1) return Math.max(2, Math.round(budget - used));
-    const next = Math.max(2, Math.round(value * scale));
-    used += next;
-    return next;
-  });
+  const next = raw.map((value) => Math.max(1, Math.round(value * scale)));
+  let used = next.reduce((total, value) => total + value, 0);
+  for (let index = next.length - 1; index >= 0 && used > budget; index -= 1) {
+    const cut = Math.min(Math.max(0, next[index] - 1), used - budget);
+    if (cut <= 0) continue;
+    next[index] -= cut;
+    used -= cut;
+  }
+  for (let index = next.length - 1; index >= 0 && used < budget; index -= 1) {
+    next[index] += budget - used;
+    used = budget;
+  }
+  return next;
 }
 
 function spokenKey(value: string) {

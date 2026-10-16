@@ -17,7 +17,7 @@ import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, par
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
-import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, fitPartsToBudget, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1480,6 +1480,7 @@ export function planSeedanceBatches(project: Project) {
         project.song.clips.map((clip) => clip.durationSeconds),
       )
     : groupConsecutiveTakes(project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })));
+  const bounded = project.song ? parts : fitPartsToBudget(parts, target);
   if (project.song) {
     const capped = balancePartSceneSeconds(timed, parts);
     const filled = fillPartSceneSeconds(
@@ -1492,7 +1493,7 @@ export function planSeedanceBatches(project: Project) {
     });
   }
   const previous = project.batches;
-  project.batches = parts.map((part, index) => {
+  project.batches = bounded.map((part, index) => {
     const sceneIndexes = part.sceneIndexes.length
       ? part.sceneIndexes
       : project.song
@@ -1525,7 +1526,7 @@ export function planSeedanceBatches(project: Project) {
       videoPrompt: prior?.videoPrompt || packedScenePrompt(project, sceneIndexes, "", duration),
       promptReady: prior?.promptReady,
       framePrompt: prior?.framePrompt || "",
-      pacingNotes: `Part ${index + 1} of ${parts.length}, ${duration}s.`,
+      pacingNotes: `Part ${index + 1} of ${bounded.length}, ${duration}s.`,
       status: (prior?.videoPublicPath || prior?.videoRemoteUrl
         ? "done"
         : prior?.kieVideoTaskId

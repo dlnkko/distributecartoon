@@ -489,6 +489,43 @@ export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
   return out.map((scene, index) => ({ ...scene, index: index + 1 }));
 }
 
+// The joined video is the sum of these takes. It may land on the requested
+// length or one second under it. It does not run longer.
+export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): SeedancePartPlan[] {
+  const goal = Math.max(4, Math.round(target));
+  const next = parts
+    .filter((part) => part.sceneIndexes.length)
+    .map((part) => ({
+      ...part,
+      sceneIndexes: [...part.sceneIndexes],
+      duration: Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))),
+    }));
+  const sum = () => next.reduce((total, part) => total + part.duration, 0);
+  let extra = sum() - goal;
+  for (let index = next.length - 1; index >= 0 && extra > 0; index -= 1) {
+    const room = next[index].duration - 4;
+    if (room <= 0) continue;
+    const cut = Math.min(room, extra);
+    next[index].duration -= cut;
+    extra -= cut;
+  }
+  while (extra > 0 && next.length > 1) {
+    const last = next[next.length - 1];
+    next[next.length - 2].sceneIndexes.push(...last.sceneIndexes);
+    extra -= last.duration;
+    next.pop();
+  }
+  let short = goal - sum();
+  for (let index = next.length - 1; index >= 0 && short > 0; index -= 1) {
+    const room = SEEDANCE_MAX_SECONDS - next[index].duration;
+    if (room <= 0) continue;
+    const add = Math.min(room, short);
+    next[index].duration += add;
+    short -= add;
+  }
+  return next;
+}
+
 export function groupConsecutiveTakes(scenes: Array<{ index: number; estimatedSeconds: number }>): SeedancePartPlan[] {
   const parts: SeedancePartPlan[] = [];
   let sceneIndexes: number[] = [];
@@ -537,12 +574,19 @@ export function scaleEstimatedSeconds(values: number[], target: number): number[
   }
   const scale = total / sum;
   let used = 0;
-  return values.map((value, index) => {
-    if (index === values.length - 1) return Math.max(2, Math.round((total - used) * 10) / 10);
-    const next = Math.max(2, Math.round((value || 0) * scale * 10) / 10);
+  const fitted = values.map((value, index) => {
+    if (index === values.length - 1) return Math.max(0, Math.round((total - used) * 10) / 10);
+    const next = Math.max(0, Math.round((value || 0) * scale * 10) / 10);
     used += next;
     return next;
   });
+  let overflow = Math.round((fitted.reduce((acc, value) => acc + value, 0) - total) * 10) / 10;
+  for (let index = fitted.length - 1; index >= 0 && overflow > 0.05; index -= 1) {
+    const cut = Math.min(fitted[index], overflow);
+    fitted[index] = Math.round((fitted[index] - cut) * 10) / 10;
+    overflow = Math.round((overflow - cut) * 10) / 10;
+  }
+  return fitted;
 }
 
 export function sceneIndexesForParts(
