@@ -19,21 +19,55 @@ export function productUseHint(project: Project, label: string) {
 const PAGE_JUNK =
   /skip to main content|halloween sale|%\s*off|free (?:u\.s\.|gift|shipping)|add to cart|shop now|subscribe|sign in|cookie|^\s*#+\s*$/i;
 
-export function productFacts(project: Project, label: string) {
+const CALLED_STOP = new Set(["product", "products", "item", "items", "photo", "package", "people", "person", "scene", "brand", "object"]);
+
+function readLine(read: string, label: string) {
+  return (read.match(new RegExp(`^${label}:\\s*(.+)$`, "im"))?.[1] || "").replace(/\s+/g, " ").trim();
+}
+
+function productMatch(project: Project, label: string) {
   const products = (project.references || []).filter((item) => item.kind === "product");
-  const match =
+  return (
     products.find((item) => item.label.trim().toLowerCase() === label.trim().toLowerCase()) ||
-    (products.length === 1 ? products[0] : undefined);
+    (products.length === 1 ? products[0] : undefined)
+  );
+}
+
+export function productUnderstandingBrief(project: Project) {
+  const reads = (project.references || []).filter((item) => item.kind === "product" && item.productRead?.trim());
+  if (!reads.length) return "";
+  return reads.map((item) => `PRODUCT UNDERSTANDING:\n${item.productRead?.trim()}`).join("\n\n");
+}
+
+export function productCalledPhrases(project: Project, label: string) {
+  const line = readLine(productMatch(project, label)?.productRead || "", "ALSO CALLED");
+  const items = line
+    .split(/[,;/]|\band\b/i)
+    .map((item) => item.replace(/^["']+|["']+$/g, "").trim())
+    .filter((item) => item.length >= 3 && item.length <= 40 && !CALLED_STOP.has(item.toLowerCase()));
+  const phrases = [...items];
+  for (const item of items) {
+    const words = item.split(/\s+/);
+    const last = words[words.length - 1] || "";
+    if (words.length > 1 && last.length >= 5 && !CALLED_STOP.has(last.toLowerCase())) phrases.push(last);
+  }
+  return phrases;
+}
+
+export function productFacts(project: Project, label: string) {
+  const match = productMatch(project, label);
   const blocks = pageBlocks(match?.pageContext || "");
   const title = blocks[0] || "";
   const blurb = blocks.find((block, index) => index > 0 && block.length > 70) || "";
+  const fromRead = readLine(match?.productRead || "", "NAME");
   const fromPage = nameFromPage(title, blurb);
   const plain = label.trim();
-  const name = fromPage || (plain && !/^product\s*\d+$/i.test(plain) ? plain : "");
+  const name = (fromRead.length >= 2 && fromRead.length <= 80 ? fromRead : "") || fromPage || (plain && !/^product\s*\d+$/i.test(plain) ? plain : "");
   const video = (match?.useVideoNote || "").replace(/\s+/g, " ").trim();
   const seen = (match?.imageNote || "").replace(/\s+/g, " ").trim();
+  const readUse = readLine(match?.productRead || "", "HOW IT IS USED");
   const pageUse = useFromBlurb(blurb);
-  const use = [pageUse, video].filter(Boolean).join(" ");
+  const use = [readUse || pageUse, video].filter(Boolean).join(" ");
   return { name, use, seen };
 }
 

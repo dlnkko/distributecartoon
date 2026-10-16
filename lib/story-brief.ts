@@ -1,14 +1,20 @@
 import { createHash } from "node:crypto";
 import { getSecrets } from "./config";
-import { SONNET_MODEL } from "./sonnet";
+import { isJunkPlace } from "./places";
+import { productUnderstandingBrief } from "./product-facts";
+import { SONNET_MODEL, sonnetText } from "./sonnet";
 import { saveProject } from "./store";
 import type { Project } from "./types";
 
 export const STORY_MODEL = SONNET_MODEL;
 
 function scriptKey(project: Project) {
+  const read = (project.references || [])
+    .filter((item) => item.kind === "product")
+    .map((item) => item.productRead || "")
+    .join("\n");
   return createHash("sha256")
-    .update(`${project.targetDurationSeconds || 0}\n${project.style}\n${project.scriptText}`)
+    .update(`${project.targetDurationSeconds || 0}\n${project.style}\n${project.scriptText}\n${read}`)
     .digest("hex")
     .slice(0, 20);
 }
@@ -44,7 +50,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       system: [
         "You are the story editor for a short film. Read the script once and return a directing note in English, under 450 words.",
         "Write the through-line in order: who wants what, and what changes by the end.",
-        "For each beat, name the place, who is in frame, how far apart they are, what the body does, and the spoken line when the script has one. A distance the script states stays that distance. A place keeps one name, and a later return to that room uses the same name.",
+        "For each beat, name the place the camera is actually in, who is in frame, how far apart they are, what the body does, and the spoken line when the script has one. A distance the script states stays that distance. If they leave a room, the next beat is the new room. Reuse one place name every time the story returns there, including after a time jump.",
         "If the script has spoken lines, copy those lines only. Do not write a new line, a voice-over, or a closing speech. Product marketing is not dialogue.",
         "Each later part starts from the consequence of the previous beat.",
         "Do not write camera tags, @Image tags, or a video prompt.",
@@ -52,7 +58,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       messages: [
         {
           role: "user",
-          content: `Style: ${project.style}. Target: ${project.targetDurationSeconds || 15} seconds.\n\nSCRIPT:\n${script}`,
+          content: `Style: ${project.style}. Target: ${project.targetDurationSeconds || 15} seconds.\n\n${productBlock(project)}SCRIPT:\n${script}`,
         },
       ],
     }),
@@ -96,7 +102,7 @@ export async function ensureStoryBrief(project: Project, signal?: AbortSignal) {
 function productSceneKey(project: Project) {
   const products = (project.references || [])
     .filter((item) => item.kind === "product")
-    .map((item) => `${item.label}|${item.imageNote || ""}|${item.originalRemoteUrl || item.originalPublicPath || ""}`)
+    .map((item) => `${item.label}|${item.productRead || ""}|${item.imageNote || ""}|${item.originalRemoteUrl || item.originalPublicPath || ""}`)
     .join("\n");
   const scenes = (project.scenes || [])
     .map((scene) =>
@@ -136,16 +142,17 @@ function parseShownScenes(text: string) {
   }
 }
 
+function productBlock(project: Project) {
+  const understood = productUnderstandingBrief(project);
+  return understood ? `${understood}\n\n` : "";
+}
+
 async function requestProductScenes(apiKey: string, project: Project, signal: AbortSignal | undefined, effort: boolean) {
   const products = (project.references || []).filter((item) => item.kind === "product");
   const named = products
-    .map((item) => {
-      const name = item.label.trim();
-      const looks = (item.imageNote || "").replace(/\s+/g, " ").trim().slice(0, 400);
-      return looks ? `${name}. Looks like: ${looks}` : name;
-    })
+    .map((item) => item.productRead?.trim() || item.imageNote?.trim() || item.label.trim())
     .filter(Boolean)
-    .join("\n");
+    .join("\n\n");
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     signal,
@@ -156,8 +163,8 @@ async function requestProductScenes(apiKey: string, project: Project, signal: Ab
       ...(effort ? { output_config: { effort: "high" } } : {}),
       system: [
         "Decide which scenes physically show the attached product in frame.",
-        "Count a scene when someone holds it, wears it, applies it, opens it, or it sits where the camera can see it.",
-        "The script may call it a strip, tape, pouch, bottle, pack, or another everyday word instead of the brand.",
+        "The PRODUCT brief names the object and the other words a script may use for it. Those words are this product.",
+        "Count a scene when someone holds it, wears it, applies it, opens it, removes it, or it sits where the camera can see it.",
         "A scene that only talks about it does not count. A line that says it stays out does not count unless that same scene then puts it in frame.",
         'Return JSON only: {"scenes":[2,4]}',
       ].join(" "),
@@ -210,4 +217,67 @@ export async function ensureProductScenes(project: Project, signal?: AbortSignal
   project.productShownKey = key;
   await saveProject(project);
   return project.productShownIndexes;
+}
+
+function placeKey(project: Project) {
+  const scenes = (project.scenes || []).map((scene) => `${scene.index}|${scene.title || ""}|${scene.summary || ""}`).join("\n");
+  return createHash("sha256").update(scenes).digest("hex").slice(0, 20);
+}
+
+function parsePlaces(text: string) {
+  const match = text.match(/\{[\s\S]*\}/);
+  if (!match) return [];
+  try {
+    const payload = JSON.parse(match[0]) as { places?: Array<{ index?: unknown; place?: unknown }> };
+    return (payload.places || [])
+      .map((item) => ({ index: Number(item.index), place: String(item.place || "").replace(/\s+/g, " ").trim() }))
+      .filter((item) => Number.isInteger(item.index) && item.index > 0);
+  } catch {
+    return [];
+  }
+}
+
+/** One physical set per scene, named by Claude from the action. The same set keeps the same name. */
+export async function ensureScenePlaces(project: Project, signal?: AbortSignal) {
+  if (!project.scenes.length) return;
+  const key = placeKey(project);
+  if (project.placeReadKey === key) return;
+  const { claudeApiKey } = getSecrets();
+  if (!claudeApiKey) return;
+  console.info("scene places", STORY_MODEL);
+  let text = "";
+  try {
+    text = await sonnetText(
+      [
+        "Name the physical set the camera is in for every scene.",
+        "Read the action. A label left over from an earlier room is wrong once they have left it.",
+        "When someone leaves a room, the next scene is the place the action is in now. Name it from what that action shows, not from the room they left.",
+        "Reuse one short place name, two or three words, and copy that exact name every time the story is in that same set, including after a time jump.",
+        "Do not use a clock, a scene number, or a beat name as the place.",
+        "An end card with no room gets an empty place.",
+        'Return JSON only: {"places":[{"index":1,"place":"name"}]}',
+      ].join(" "),
+      `SCENES:\n${sceneCard(project)}`,
+      { maxTokens: 2000, signal },
+    );
+  } catch (error) {
+    console.warn("scene places", project.id, error instanceof Error ? error.message : error);
+    return;
+  }
+  const places = parsePlaces(text);
+  if (places.length < Math.ceil(project.scenes.length * 0.6)) return;
+  const known = new Set(project.scenes.map((scene) => scene.index));
+  for (const item of places) {
+    if (!known.has(item.index)) continue;
+    const scene = project.scenes.find((entry) => entry.index === item.index);
+    if (!scene) continue;
+    const name = item.place.replace(/^(?:the|a|an)\s+/i, "").slice(0, 48);
+    if (!name || isJunkPlace(name)) {
+      if (/\bend\s*card\b/i.test(`${scene.title} ${scene.summary}`)) scene.location = "";
+      continue;
+    }
+    scene.location = name;
+  }
+  project.placeReadKey = key;
+  await saveProject(project);
 }

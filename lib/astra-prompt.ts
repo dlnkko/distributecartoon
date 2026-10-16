@@ -65,6 +65,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       "A place is named once in the header, like @Image4 is the cabin. Inside a scene, cite that tag once. Do not explain how to use the photo, and do not repeat walls, doors, furniture, or layout.",
       "People are standing in that room. Do not describe them as pasted on the photo.",
       "Keep a product tag only in a scene that already has it. Do not write that the product is absent.",
+      "If a product understanding is included, those names are the attached product. Keep its image tag in every scene that already uses that object.",
       "The first scene continues the previous ending unless this draft moves them.",
       "If the draft includes @Audio1, keep @Audio1. That is this part's song slice and it plays from the first frame of this video. Keep every 'While @Audio1 plays' cue with the lyric in quotes and the action that follows it. Do not drop a lyric or move it to another scene. Do not add @Audio2. The previous ending is the video reference only: do not regenerate those 5 seconds. Do not add a silent intro, a title card, or spoken dialogue when the draft has none. If a scene says a character sings along or mouths a lyric, keep it: that mouth matches @Audio1 only. Do not add a second voice and do not close that mouth.",
       "If this draft shows the product or an end card, keep those scenes and the product image tag inside the action. Do not turn the tag into a style note, and do not drop it because the previous part left the product out.",

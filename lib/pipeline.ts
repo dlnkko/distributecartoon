@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
 import { concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
 import { charactersPresent, continuityFlags, projectSeed } from "./continuity";
@@ -7,8 +8,10 @@ import { generateGptImage25Flare, generateSeedance25ReferenceVideo, peekKieTask,
 import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, normalizeAspectRatio } from "./ids";
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
-import { describeProductImage } from "./product-use-video";
-import { ensureProductScenes } from "./story-brief";
+import { describeProductImage, readAttachedProduct } from "./product-use-video";
+import { productUnderstandingBrief } from "./product-facts";
+import { scrapeProductPage } from "./product-page";
+import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
 import { applyScriptLooks } from "./cast-roster";
 import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
@@ -315,7 +318,7 @@ function hasFreshAnchor(character: Character) {
 }
 
 function storyPlaces(project: Project) {
-  assignScenePlaces(project.scenes);
+  if (!project.placeReadKey) assignScenePlaces(project.scenes);
   const photos = project.references.filter(
     (asset) => asset.kind === "location" && (asset.originalRemoteUrl || asset.originalPublicPath),
   );
@@ -554,6 +557,10 @@ async function savePartTail(project: Project, batch: Batch) {
   batch.tailRemoteUrl = saved.publicPath;
 }
 
+function directingNotes(project: Project) {
+  return [project.storyBrief || "", productUnderstandingBrief(project)].filter(Boolean).join("\n\n");
+}
+
 function productImageMime(src: string) {
   const lower = src.split("?")[0].toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
@@ -563,18 +570,45 @@ function productImageMime(src: string) {
 }
 
 async function ensureProductImageNotes(project: Project) {
+  await ensureProductUnderstanding(project);
+}
+
+export async function ensureProductUnderstanding(project: Project) {
   let wrote = false;
   for (const asset of project.references || []) {
-    if (asset.kind !== "product" || asset.imageNote?.trim()) continue;
+    if (asset.kind !== "product") continue;
     const src = asset.originalRemoteUrl || asset.originalPublicPath;
     if (!src) continue;
+    if (asset.pageUrl && !asset.pageContext?.trim()) {
+      try {
+        asset.pageContext = await scrapeProductPage(asset.pageUrl);
+        wrote = true;
+      } catch (error) {
+        console.warn("product page", project.id, error instanceof Error ? error.message : error);
+      }
+    }
+    const key = createHash("sha256").update(`${src}\n${asset.pageContext || ""}`).digest("hex").slice(0, 20);
+    if (asset.productRead?.trim() && asset.productReadKey === key) continue;
     try {
-      const note = await describeProductImage(await readPublicFile(src), productImageMime(src));
-      if (!note) continue;
-      asset.imageNote = note;
+      const read = await readAttachedProduct(await readPublicFile(src), productImageMime(src), asset.pageContext || "", asset.pageUrl || "");
+      if (!read) continue;
+      asset.productRead = read;
+      asset.productReadKey = key;
+      const photo = read.match(/^IN THE PHOTO:\s*(.+)$/im)?.[1]?.replace(/\s+/g, " ").trim();
+      if (photo) asset.imageNote = photo;
+      else if (!asset.imageNote?.trim()) asset.imageNote = read.slice(0, 700);
       wrote = true;
     } catch (error) {
       console.warn("product photo", project.id, error instanceof Error ? error.message : error);
+      if (asset.imageNote?.trim()) continue;
+      try {
+        const note = await describeProductImage(await readPublicFile(src), productImageMime(src));
+        if (!note) continue;
+        asset.imageNote = note;
+        wrote = true;
+      } catch (fallback) {
+        console.warn("product photo", project.id, fallback instanceof Error ? fallback.message : fallback);
+      }
     }
   }
   if (wrote) await saveProject(project);
@@ -601,7 +635,7 @@ async function prepareStoryPrompt(project: Project, batch: Batch) {
     videoPrompt: prompt,
     duration: batch.duration,
   });
-  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", project.storyBrief || "");
+  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", directingNotes(project));
   batch.promptReady = true;
 }
 
@@ -825,6 +859,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
 }
 
 async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
+  await ensureScenePlaces(project, abortSignal);
   project.locationPlates = (Array.isArray(project.locationPlates) ? project.locationPlates : []).filter(
     (plate) => !isJunkPlace(plate.name),
   );
@@ -1313,8 +1348,30 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
   }
 }
 
+async function appendNeededPackshots(project: Project, entries: PromptRef[], sceneIndexes: number[], abortSignal?: AbortSignal) {
+  const scenes = (sceneIndexes || [])
+    .map((index) => project.scenes.find((item) => item.index === index))
+    .filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
+  const shown = new Set(project.productShownIndexes || []);
+  const needed =
+    scenes.some((scene) => shown.has(scene.index)) ||
+    scenes.some((scene) => {
+      const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
+      const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
+      return partNeedsPackshot(project, "product", "", `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`);
+    });
+  if (!needed) return;
+  for (const asset of project.references || []) {
+    if (asset.kind !== "product" && asset.kind !== "logo") continue;
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (!url || entries.some((entry) => entry.url === url)) continue;
+    entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });
+  }
+}
+
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
+  await appendNeededPackshots(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
@@ -1337,6 +1394,7 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
     return collectLongformReferences(project, batch, abortSignal);
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
+  await appendNeededPackshots(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
@@ -1707,7 +1765,7 @@ async function runGenerateBatchVideo(
     });
 
     onStatus("Generating your video…");
-    const revised = await refineSeedancePrompt(labeled, previousStoryBatch(project, batch)?.videoPrompt || "", project.storyBrief || "");
+    const revised = await refineSeedancePrompt(labeled, previousStoryBatch(project, batch)?.videoPrompt || "", directingNotes(project));
     const audioUrls = await songAudioUrls(project, batch);
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,

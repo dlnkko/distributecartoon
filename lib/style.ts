@@ -2128,7 +2128,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const placeTag = sceneTags.find((tag) => imageKind(images, tag) === "location") || "";
     const productTags = sceneTags.filter((tag) => imageKind(images, tag) === "product" && productHere && missing(tag));
     const logoTags = sceneTags.filter((tag) => imageKind(images, tag) === "logo" && sceneRequiresAsset("logo", sceneText) && missing(tag));
-    const cites = [missing(placeTag) ? `In ${placeTag}.` : "", ...productTags, ...logoTags].filter(Boolean).join(" ");
+    const cites = [missing(placeTag) ? `In ${placeTag}.` : "", productTags.length ? `The product in this action is ${productTags.join(" ")}.` : "", ...logoTags]
+      .filter(Boolean)
+      .join(" ");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
     const cardLine = cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')).join(" ");

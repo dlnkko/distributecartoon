@@ -81,6 +81,68 @@ export async function describeProductUse(buffer: Buffer, mime: string) {
   return text.slice(0, 700);
 }
 
+export async function readAttachedProduct(buffer: Buffer, mime: string, page = "", url = "") {
+  const key = getSecrets().geminiApiKey;
+  if (!key) throw new Error("GEMINI_API_KEY is missing.");
+  const pageText = page.replace(/\s+/g, " ").trim().slice(0, 6000);
+  const source = [url ? `PRODUCT PAGE URL: ${url}` : "", pageText ? `PRODUCT PAGE TEXT:\n${pageText}` : "No product page was attached."].filter(Boolean).join("\n\n");
+  const text = await geminiText(
+    key,
+    [
+      {
+        text: [
+          "Read this product for a film. You have its photo and, when present, the text of its page.",
+          "Stay with this object. Do not invent a different product, a health claim, or a scene.",
+          "Return these lines only, in English, under 180 words:",
+          "NAME: the product name from the page, or what the photo shows if there is no page",
+          "WHAT IT IS: the object in plain words",
+          "ALSO CALLED: everyday words a script might use for this exact object, from the page and the photo, separated by commas",
+          "HOW IT IS USED: the physical action a person does with it",
+          "IN THE PHOTO: whether the frame shows the package, the product, or both, and how each looks",
+          source,
+        ].join("\n"),
+      },
+      { inlineData: { mimeType: mime, data: buffer.toString("base64") } },
+    ],
+    500,
+    true,
+  );
+  return text.replace(/\*\*/g, "").replace(/^#+\s*/gm, "").slice(0, 1200);
+}
+
+async function geminiText(
+  key: string,
+  parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }>,
+  maxOutputTokens: number,
+  keepLines = false,
+) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(55_000),
+      body: JSON.stringify({
+        contents: [{ role: "user", parts }],
+        generationConfig: { temperature: 0.1, maxOutputTokens },
+      }),
+    },
+  );
+  const json = (await response.json().catch(() => ({}))) as {
+    error?: { message?: string };
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  if (!response.ok) throw new Error(json.error?.message || "Couldn't read that product.");
+  const raw = (json.candidates || [])
+    .flatMap((candidate) => candidate.content?.parts || [])
+    .map((part) => part.text || "")
+    .join("\n")
+    .trim();
+  const text = keepLines ? raw.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim() : raw.replace(/\s+/g, " ").trim();
+  if (!text) throw new Error("Couldn't read that product.");
+  return text;
+}
+
 export async function describeProductImage(buffer: Buffer, mime: string) {
   const key = getSecrets().geminiApiKey;
   if (!key) throw new Error("GEMINI_API_KEY is missing.");

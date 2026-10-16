@@ -1,17 +1,17 @@
 import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
-import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary } from "./pipeline";
+import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary, ensureProductUnderstanding } from "./pipeline";
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { balancePartSceneSeconds, estimateSceneSeconds, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion, dropUnscriptedDialogue } from "./refs";
-import { productLookBrief, productPageBrief, productUseBrief } from "./product-facts";
+import { productLookBrief, productPageBrief, productUnderstandingBrief, productUseBrief } from "./product-facts";
 import { saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import { SONNET_MODEL, sonnetTools, type SonnetMessage } from "./sonnet";
-import { ensureStoryBrief } from "./story-brief";
+import { ensureProductScenes, ensureScenePlaces, ensureStoryBrief } from "./story-brief";
 import { isVisualStyle, type AgentMode, type Batch, type Character, type Project, type Scene, type ScriptRefCue } from "./types";
 
 const SYSTEM_PROMPT = `You are the director-agent of distribute.to, a studio that turns scripts into Pixar, claymation, or realistic live-action shorts.
@@ -1204,6 +1204,12 @@ async function executeTool(
       }));
       ensureReferenceSlots(project);
       syncReferenceInclusion(project);
+      try {
+        await ensureScenePlaces(project);
+        await ensureProductScenes(project);
+      } catch (error) {
+        console.warn("story read", project.id, error instanceof Error ? error.message : error);
+      }
       stampProductPlacement(project);
       project.workflowStep = "cast";
       await saveProject(project);
@@ -1360,12 +1366,15 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
     ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not invent a substitute line. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. Each scene lasts only as long as its own line, or about 3 or 4 seconds when nobody speaks. If a heading itself says how many seconds that one card lasts, keep that."
     : "The user gave a concept, not a timed scene list. Keep the cause order they told, name each person once, and reuse that name. Write it like a dense short ad: two or three lines share one scene of about 4 to 6 seconds. A short line is about 2 seconds. Do not give one line its own 6, 7, or 8 second scene. Open on the problem, then the middle, then the turn, with enough of those short beats to cover the requested runtime. If a product is attached or named, it is the solution and it first appears in that turn, not during the problem. If there is no product, the turn is the resolution and it also gets room. Do not leave a quiet stretch where nothing happens.";
   const known = castBrief(project);
-  const pages = productPageBrief(project)
-    ? "A product page is included. Use it only for how the product is used and how it should look, in a scene the user already puts the product in. Never read the page aloud. Never add a narrator line, a slogan, or a closing speech that the user did not write. Keep the user's spoken lines and do not add any."
-    : "";
+  const understood = productUnderstandingBrief(project);
+  const pages = understood
+    ? `${understood} Use this only to recognize the product and how a person uses it, in a scene the user already puts that object in. The other names in ALSO CALLED are the same product. Never read this aloud. Never add a line the user did not write.`
+    : productPageBrief(project)
+      ? "A product page is included. Use it only for how the product is used and how it should look, in a scene the user already puts the product in. Never read the page aloud. Never add a narrator line, a slogan, or a closing speech that the user did not write. Keep the user's spoken lines and do not add any."
+      : "";
   const presence =
     "The product image and the logo belong only to a scene whose action already has them in a hand, on a surface, or in frame. A scene that does not need them leaves out the product, the package, the box, the logo, and the brand. Do not invent a shot where someone uses the product.";
-  const watched = [productUseBrief(project), productLookBrief(project)].filter(Boolean).join(" ");
+  const watched = [understood ? "" : productLookBrief(project), productUseBrief(project)].filter(Boolean).join(" ");
   const timing = timedRows
     ? "Each clock range is that beat's length. A 15 second hook stays 15 seconds. Do not stretch it to fill a 30 second generation."
     : "Every second has a spoken line or a physical action that moves the story. There is no silent beat and no hold after the last word. A short line is 3 to 5 seconds and the body acts through the whole line. Two or three lines share one scene. In one place, keep the same shot size and eye-level height. Use 2 seconds only for a fast action cut. If the script says they are far, keep that distance in a wide shot. Keep every line the user wrote. A line marked VO or O.S. stays off-screen and is not lipsynced. The body still does what that line says. Do not repeat a line in the next scene. Do not give one line its own 6, 7, or 8 second scene.";
@@ -1415,6 +1424,8 @@ export async function runAgent(options: {
   const onStatus = (text: string) => options.onEvent({ type: "status", text });
   const signal = options.abortSignal;
   if (mode === "plan") {
+    onStatus("Reading the product…");
+    await ensureProductUnderstanding(options.project);
     onStatus("Reading the story…");
     await ensureStoryBrief(options.project, signal);
     options.onEvent({ type: "project", project: options.project });

@@ -104,6 +104,8 @@ export type ReferenceAsset = {
   lookNotes?: string;
   pageUrl?: string;
   pageContext?: string;
+  productRead?: string;
+  productReadKey?: string;
   useVideoFileName?: string;
   useVideoPublicPath?: string;
   useVideoRemoteUrl?: string;
@@ -227,6 +229,7 @@ export type Project = {
   storyBriefKey?: string;
   productShownKey?: string;
   productShownIndexes?: number[];
+  placeReadKey?: string;
   scriptCast?: ScriptCastMember[];
   song?: Song;
   characters: Character[];

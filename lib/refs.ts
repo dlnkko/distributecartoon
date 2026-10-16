@@ -1,5 +1,5 @@
 import { createId, slugify } from "./ids";
-import { productFacts } from "./product-facts";
+import { productCalledPhrases, productFacts } from "./product-facts";
 import type { Character, Project, ReferenceAsset, ReferenceKind, Scene } from "./types";
 
 export const MAX_CAST_LEADS = 4;
@@ -292,6 +292,7 @@ export function partNeedsPackshot(project: Project, kind: string, name: string, 
   if (!asset) return false;
   const phrases = [
     ...namePhrases(productFacts(project, asset.label).name),
+    ...productCalledPhrases(project, asset.label).flatMap((phrase) => namePhrases(phrase)),
     ...namePhrases(GENERIC_LABELS.has(asset.label.trim().toLowerCase()) ? "" : asset.label),
   ];
   return textHasPhrase(text, phrases);

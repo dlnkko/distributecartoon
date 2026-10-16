@@ -59,7 +59,7 @@ export function richerPlaceName(current: string, candidate: string) {
 }
 
 const ROOMS: Array<{ name: string; pattern: RegExp }> = [
-  { name: "bedroom", pattern: /\b(?:bedrooms?|in bed|on the bed|the bed|pillow|mattress|sits?\s+up)\b/i },
+  { name: "bedroom", pattern: /\b(?:bedrooms?|in bed|on the bed|the bed|his bed|her bed|their bed|pillow|mattress|sits?\s+up)\b/i },
   { name: "kitchen", pattern: /\b(?:kitchens?|fridge|refrigerator|countertop|the counter)\b/i },
   { name: "bathroom", pattern: /\b(?:bathrooms?|shower|bathtub|toilet)\b/i },
   { name: "office", pattern: /\b(?:offices?|cubicles?)\b/i },
@@ -108,25 +108,38 @@ export function placesInText(text: string) {
   return names;
 }
 
+function mentionsRoom(phrase: string, name: string) {
+  const words = phrase.toLowerCase().trim();
+  if (!words || words.length < 3) return false;
+  if (words === name || words.startsWith(`${name} `) || words.endsWith(` ${name}`)) return true;
+  if (name === "bedroom" && /^(?:bed|pillow|mattress)$/.test(words)) return true;
+  return false;
+}
+
+function leftThePlace(text: string, place: string) {
+  if (!place) return false;
+  const room = place.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  return new RegExp(`\\b(?:comes?|steps?|walks?|goes?)\\s+out\\b|\\bleaves?\\s+(?:the\\s+|her\\s+|his\\s+)?${room}\\b`, "i").test(text);
+}
+
 export function primaryPlace(text: string, previous = "") {
   const names = placesInText(text);
-  if (!names.length) return "";
+  const stayed = previous && !leftThePlace(text, previous) ? previous : "";
   const moved = text.match(
     /\b(?:walks?|goes?|heads?|steps?|moves?|enters?|returns?)\s+(?:back\s+)?(?:in)?to\s+(?:the\s+|her\s+|his\s+)?([a-z]+(?:\s+[a-z]+)?)/i,
   );
   if (moved) {
-    const phrase = moved[1].toLowerCase();
-    const hit = names.find((name) => phrase.includes(name) || name.includes(phrase));
+    const hit = names.find((name) => mentionsRoom(moved[1], name));
     if (hit) return hit;
   }
-  const staged = [...text.matchAll(/\b(?:in|into|inside)\s+(?:the\s+|her\s+|his\s+)?([a-z]+(?:\s+[a-z]+)?)/gi)];
+  const staged = [...text.matchAll(/\b(?:in|into|inside|on)\s+(?:the\s+|her\s+|his\s+|their\s+)?([a-z]+(?:\s+[a-z]+)?)/gi)];
   for (let index = staged.length - 1; index >= 0; index -= 1) {
-    const phrase = staged[index][1].toLowerCase();
-    const hit = names.find((name) => phrase.includes(name) || name.includes(phrase));
+    const hit = names.find((name) => mentionsRoom(staged[index][1], name));
     if (hit) return hit;
   }
-  if (previous && (names.includes(previous) || (!moved && !staged.length))) return previous;
-  return names[names.length - 1];
+  if (stayed && (!names.length || names.includes(stayed))) return stayed;
+  if (stayed && names.length) return stayed;
+  return names[names.length - 1] || "";
 }
 
 export function assignScenePlaces<T extends { title?: string; summary?: string; location?: string; shots?: Array<{ action?: string }> }>(
@@ -169,7 +182,9 @@ export function samePlace(left: string, right: string) {
   const a = placeLabel(left).toLowerCase();
   const b = placeLabel(right).toLowerCase();
   if (!a || !b) return false;
-  if (a === b || a.includes(b) || b.includes(a)) return true;
+  const hasWord = (haystack: string, needle: string) =>
+    new RegExp(`(?:^|\\s)${needle.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}(?:$|\\s)`).test(haystack);
+  if (a === b || hasWord(a, b) || hasWord(b, a)) return true;
   const leftTokens = placeTokens(left);
   const rightTokens = new Set(placeTokens(right));
   if (!leftTokens.length || !rightTokens.size) return false;
