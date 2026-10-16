@@ -25,6 +25,13 @@ function sameQuotes(draft: string, revised: string) {
   return left.every((line, index) => line === right[index]);
 }
 
+function keepDialogueLanguage(draft: string, revised: string) {
+  const lead = draft.match(/^The dialogues are in (?:English|Spanish)\./)?.[0] || "";
+  if (!lead) return revised;
+  const rest = revised.replace(/The dialogues are in (?:English|Spanish)\.?\s*/gi, "").trim();
+  return `${lead} ${rest}`.replace(/\s{2,}/g, " ").trim();
+}
+
 function tightenPrompt(text: string) {
   return text
     .replace(/Use this photo as the set every time the story is here, including when it comes back later\.?/gi, "")
@@ -61,6 +68,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const instructions = [
       "Revise this Seedance prompt. Return only the prompt, and make it shorter than the draft.",
       "Keep every SCENE heading, its duration, every @Video and @Image tag already inside that scene, and every quoted line. Do not rename a tag and do not add one.",
+      "Keep the opening sentence that says which language the dialogues are in. Leave it first. Do not translate a quoted line into another language.",
       "Each scene is one forward action, then the spoken line. Do not put the line inside the action. Do not add a pause, a frozen look, or a new line.",
       "A place is named once in the header, like @Image4 is the cabin. Inside a scene, cite that tag once. Do not explain how to use the photo, and do not repeat walls, doors, furniture, or layout.",
       "People are standing in that room. Do not describe them as pasted on the photo.",
@@ -93,7 +101,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (/@Audio2\b/.test(revised)) return trimmed;
     if (/While @Audio1 plays/i.test(trimmed) && !/While @Audio1 plays/i.test(revised)) return trimmed;
     if (/\bsings along\b/i.test(trimmed) && !/\bsings along\b/i.test(revised)) return tightenPrompt(trimmed);
-    return tightenPrompt(revised);
+    return keepDialogueLanguage(trimmed, tightenPrompt(revised));
   } catch (error) {
     console.warn("astra prompt revise failed", error instanceof Error ? error.message : error);
     return tightenPrompt(trimmed);

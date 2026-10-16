@@ -644,6 +644,7 @@ export function narratorVoiceSample(project: Project) {
 export function narratorVoicePrompt(project: Project) {
   const language = spokenLanguage(project);
   return [
+    dialogueLanguageLine(project),
     `4 seconds, one continuous shot. ${globalLookPhrase(project.style)}.`,
     "An empty, softly lit backdrop with gentle light drifting across a plain textured wall. The frame holds no people, no characters, no faces and no mouths.",
     `NARRATOR — off-screen voice-over, heard only, with no lipsync. Voice: ${narratorVoiceNotes(project)}. Spoken in ${language.speech}: {${narratorVoiceSample(project)}}`,
@@ -1467,13 +1468,12 @@ function secondsLabel(value: number) {
 }
 
 function spokenLanguage(project: Project) {
-  const lines = project.scenes.flatMap((scene) => scene.dialogue.map((line) => line.line)).join(" ");
-  if (!lines.trim()) return { label: "ENGLISH", speech: "American English" };
-  const spanish =
-    /[ñ¿¡áéíóú]/i.test(lines) ||
-    (lines.match(/\b(que|el|la|los|las|de|y|es|no|por|para|con|pero|como|está|estoy|yo|tú|qué)\b/gi) || []).length >
-      (lines.match(/\b(the|and|is|you|to|of|it|that|what|this|are|not|with|but)\b/gi) || []).length;
-  return spanish ? { label: "SPANISH", speech: "natural Latin American Spanish" } : { label: "ENGLISH", speech: "American English" };
+  if (project.dialogueLanguage === "spanish") return { label: "SPANISH", speech: "natural Latin American Spanish" };
+  return { label: "ENGLISH", speech: "American English" };
+}
+
+function dialogueLanguageLine(project: Project) {
+  return `The dialogues are in ${project.dialogueLanguage === "spanish" ? "Spanish" : "English"}.`;
 }
 
 function wordsIn(text: string) {
@@ -2172,7 +2172,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   )
     .filter(Boolean)
     .join(" ");
-  return `${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."}`
+  return `${dialogueLanguageLine(project)} ${lead} ${blocks.join(" CUT. ")} ${song ? "The only soundtrack is @Audio1, from the first frame to the last." : "No background music."}`
     .replace(/[ \t]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();

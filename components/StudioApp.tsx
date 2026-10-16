@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { type AgentMode, type AspectRatio, type Character, type Project, type ReferenceAsset, type ScriptCastMember, type VisualStyle, type WorkflowStep } from "@/lib/types";
+import { type AgentMode, type AspectRatio, type Character, type DialogueLanguage, type Project, type ReferenceAsset, type ScriptCastMember, type VisualStyle, type WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
 import { DURATION_CHOICES } from "@/lib/ids";
@@ -657,6 +657,7 @@ export function StudioApp() {
       body: JSON.stringify({
         projectId: current.id,
         style: current.style,
+        dialogueLanguage: current.dialogueLanguage || "english",
         aspectRatio: current.aspectRatio,
         targetDurationSeconds: current.targetDurationSeconds,
       }),
@@ -742,6 +743,7 @@ export function StudioApp() {
       body: JSON.stringify({
         projectId: latest.id,
         style: latest.style,
+        dialogueLanguage: latest.dialogueLanguage || "english",
         aspectRatio: latest.aspectRatio,
         targetDurationSeconds: latest.targetDurationSeconds,
         ...payload,
@@ -754,6 +756,7 @@ export function StudioApp() {
       ...(live && live.id === json.id
         ? {
             style: live.style,
+            dialogueLanguage: live.dialogueLanguage,
             aspectRatio: live.aspectRatio,
             targetDurationSeconds: live.targetDurationSeconds,
           }
@@ -1313,7 +1316,7 @@ export function StudioApp() {
     await run("produce");
   }
 
-  function applySettings(patch: { style?: VisualStyle; aspectRatio?: AspectRatio; targetDurationSeconds?: number }) {
+  function applySettings(patch: { style?: VisualStyle; aspectRatio?: AspectRatio; targetDurationSeconds?: number; dialogueLanguage?: DialogueLanguage }) {
     const current = projectRef.current;
     if (!current) return;
     const next = { ...current, ...patch };
@@ -1328,6 +1331,11 @@ export function StudioApp() {
   function changeStyle(style: VisualStyle) {
     if (projectRef.current?.style === style) return;
     applySettings({ style });
+  }
+
+  function changeLanguage(dialogueLanguage: DialogueLanguage) {
+    if ((projectRef.current?.dialogueLanguage || "english") === dialogueLanguage) return;
+    applySettings({ dialogueLanguage });
   }
 
   function changeAspect(aspectRatio: AspectRatio) {
@@ -1779,6 +1787,7 @@ export function StudioApp() {
               busy={working}
               onBack={() => void patchProject({ workflowStep: project.song ? "song" : "script" })}
               onStyle={changeStyle}
+              onLanguage={changeLanguage}
               onAspect={changeAspect}
               onDuration={(seconds) => void changeDuration(seconds)}
               onPickSlot={(slot) => pickRef(slot)}
@@ -2320,6 +2329,7 @@ function SetupStep({
   busy,
   onBack,
   onStyle,
+  onLanguage,
   onAspect,
   onDuration,
   onPickSlot,
@@ -2343,6 +2353,7 @@ function SetupStep({
   busy: boolean;
   onBack: () => void;
   onStyle: (style: VisualStyle) => void;
+  onLanguage: (language: DialogueLanguage) => void;
   onAspect: (aspect: AspectRatio) => void;
   onDuration: (seconds: number) => void;
   onPickSlot: (slot: ReferenceAsset) => void;
@@ -2381,6 +2392,17 @@ function SetupStep({
                 { id: "realistic", label: "Realistic" },
               ]}
               onChange={(value) => onStyle(value as VisualStyle)}
+            />
+          </div>
+          <div>
+            <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Language</p>
+            <Segmented
+              value={project.dialogueLanguage === "spanish" ? "spanish" : "english"}
+              options={[
+                { id: "english", label: "English" },
+                { id: "spanish", label: "Español" },
+              ]}
+              onChange={(value) => onLanguage(value === "spanish" ? "spanish" : "english")}
             />
           </div>
           <div>

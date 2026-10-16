@@ -19,7 +19,7 @@ function nudgeGenerations(projects: Project[]) {
   after(Promise.allSettled(live.map((project) => driveProduce(project.id, 40_000))));
 }
 import { createProject, deleteProject, listProjects, resetStoryboard, saveProject, archiveReadyVideos } from "@/lib/store";
-import { isVisualStyle, type AspectRatio, type Scene, type VisualStyle, type WorkflowStep } from "@/lib/types";
+import { isDialogueLanguage, isVisualStyle, type AspectRatio, type DialogueLanguage, type Scene, type VisualStyle, type WorkflowStep } from "@/lib/types";
 
 export async function GET(request: Request) {
   const user = await getAuthUser();
@@ -71,6 +71,7 @@ export async function PATCH(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     projectId?: string;
     style?: VisualStyle;
+    dialogueLanguage?: DialogueLanguage;
     aspectRatio?: AspectRatio;
     targetDurationSeconds?: number | null;
     durationAuto?: boolean;
@@ -94,6 +95,7 @@ export async function PATCH(request: Request) {
     project.workflowStep = body.clearSong ? "song" : "script";
   }
   if (isVisualStyle(body.style)) project.style = body.style;
+  if (isDialogueLanguage(body.dialogueLanguage)) project.dialogueLanguage = body.dialogueLanguage;
   if (body.aspectRatio) project.aspectRatio = normalizeAspectRatio(body.aspectRatio);
   if (typeof body.targetDurationSeconds === "number" && !project.song && !body.clearSong) {
     project.targetDurationSeconds = clampTotalDuration(body.targetDurationSeconds);

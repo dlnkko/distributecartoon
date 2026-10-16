@@ -3,7 +3,7 @@ import path from "node:path";
 import { createClient } from "@/lib/supabase/server";
 import { createId, nowIso, normalizeAspectRatio } from "./ids";
 import { ensureReferenceSlots, syncReferenceInclusion } from "./refs";
-import { type AspectRatio, type Project, type VisualStyle, type WorkflowStep } from "./types";
+import { isDialogueLanguage, type AspectRatio, type Project, type VisualStyle, type WorkflowStep } from "./types";
 
 const projectsDir = () => path.join(process.cwd(), "data", "projects");
 
@@ -83,6 +83,7 @@ export function normalizeProject(project: Project): Project {
   project.messages = project.messages || [];
   project.pendingQuestions = project.pendingQuestions || [];
   project.aspectRatio = normalizeAspectRatio(project.aspectRatio);
+  if (!isDialogueLanguage(project.dialogueLanguage)) project.dialogueLanguage = "english";
   if (typeof project.targetDurationSeconds !== "number") {
     project.targetDurationSeconds = 15;
     project.durationAuto = false;
@@ -208,6 +209,7 @@ export async function createProject(
     id: createId("proj"),
     title: "New video",
     style,
+    dialogueLanguage: "english",
     aspectRatio: normalizeAspectRatio(aspectRatio),
     scriptName: "",
     scriptText: "",

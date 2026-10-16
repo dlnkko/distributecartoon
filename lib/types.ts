@@ -1,7 +1,12 @@
 export type VisualStyle = "pixar" | "claymation" | "realistic";
+export type DialogueLanguage = "english" | "spanish";
 
 export function isVisualStyle(value: unknown): value is VisualStyle {
   return value === "pixar" || value === "claymation" || value === "realistic";
+}
+
+export function isDialogueLanguage(value: unknown): value is DialogueLanguage {
+  return value === "english" || value === "spanish";
 }
 
 export type AspectRatio = "16:9" | "9:16";
@@ -222,6 +227,7 @@ export type Project = {
   id: string;
   title: string;
   style: VisualStyle;
+  dialogueLanguage?: DialogueLanguage;
   aspectRatio: AspectRatio;
   scriptName: string;
   scriptText: string;
