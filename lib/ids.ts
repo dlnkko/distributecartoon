@@ -18,7 +18,7 @@ export function clampClipDuration(seconds: unknown, fallback = 8) {
   return Math.min(30, Math.max(4, value));
 }
 
-export const DURATION_CHOICES = [15, 30, 45, 60, 75, 90, 100, 120] as const;
+export const DURATION_CHOICES = [15, 30, 45, 60, 75, 90, 100, 120, 150, 180] as const;
 
 export function clampTotalDuration(seconds: unknown, fallback = 15) {
   const value = Math.round(Number(seconds));

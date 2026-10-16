@@ -98,7 +98,7 @@ export const COPY = {
 
 export const PERSONAL_EDGE = [
   { title: "Cinematic on the first try", text: "A well made film from the first generation. No rounds of trial and error." },
-  { title: "Continuity up to 2 minutes", text: "Same voices, looks, places, and scenes from start to finish. Up to 5 minutes is coming soon." },
+  { title: "Continuity up to 3 minutes", text: "Same voices, looks, places, and scenes from start to finish. Up to 5 minutes is coming soon." },
   { title: "Stories that needed a studio budget", text: "The films you used to dream about now fit in your hands." },
 ];
 
@@ -163,7 +163,7 @@ export function faqFor(mode: Mode) {
     },
     { q: "How long does it take?", a: "About 10 minutes for most animations." },
     { q: "What is a credit?", a: "1 credit = 1 second of video." },
-    { q: "How long can a video be?", a: "Up to 2 minutes today. Up to 5 minutes is coming soon." },
+    { q: "How long can a video be?", a: "Up to 3 minutes today. Up to 5 minutes is coming soon." },
     { q: "Who owns the video?", a: "You do. You own all the rights to every video you create on Clickframes." },
   ];
 }
