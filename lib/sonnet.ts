@@ -99,7 +99,21 @@ export async function sonnetTools(options: {
     .map((block) => ({
       id: block.id || "",
       name: block.name || "",
-      input: block.input && typeof block.input === "object" ? (block.input as Record<string, unknown>) : {},
+      input: toolInput(block.input),
     }));
   return { content, toolUses };
+}
+
+function toolInput(input: unknown): Record<string, unknown> {
+  if (!input) return {};
+  if (typeof input === "string") {
+    try {
+      const parsed = JSON.parse(input) as unknown;
+      return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+    } catch {
+      return {};
+    }
+  }
+  if (typeof input === "object" && !Array.isArray(input)) return input as Record<string, unknown>;
+  return {};
 }

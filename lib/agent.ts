@@ -1105,6 +1105,8 @@ async function executeTool(
       };
     }
     case "extract_storyboard": {
+      const incoming = parseSceneList(args.scenes);
+      if (!incoming.length) throw new Error("extract_storyboard needs every scene. The scenes array was empty.");
       project.title = String(args.title || project.title);
       const characters = (args.characters as Array<Record<string, unknown>>) || [];
       const previousCharacters = new Map<string, Character>();
@@ -1135,8 +1137,7 @@ async function executeTool(
           clips: prior?.clips || [],
         };
       });
-      const scenes = (args.scenes as Array<Record<string, unknown>>) || [];
-      project.scenes = scenes.map((item) => {
+      project.scenes = incoming.map((item) => {
         const dialogue = project.song
           ? []
           : ((item.dialogue as Array<{ speaker: string; line: string }>) || []).map((line) => ({
@@ -1336,6 +1337,20 @@ function asRecord(value: unknown) {
   return JSON.parse(value) as Record<string, unknown>;
 }
 
+function parseSceneList(value: unknown) {
+  const list = typeof value === "string" ? asRecordArray(value) : value;
+  if (!Array.isArray(list)) return [];
+  return list.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === "object" && Boolean(String((item as Record<string, unknown>).summary || (item as Record<string, unknown>).title || "").trim()));
+}
+
+function asRecordArray(value: string) {
+  try {
+    return JSON.parse(value) as unknown;
+  } catch {
+    return [];
+  }
+}
+
 const NARRATOR_NAME = /^(the\s+)?(narrator|narradora|voice[- ]?over|voiceover|vo|off[- ]?screen|voz en off)$/i;
 
 function planTask(project: Project) {
@@ -1388,6 +1403,55 @@ function withStoryReading(project: Project, task: string) {
   const brief = project.storyBrief?.trim();
   if (!brief) return task;
   return `STORY READING. Follow this for place, distance, acting, cause and effect, and the beats where the product is present.\n${brief}\n\n${task}`;
+}
+
+async function applyLyricStoryboard(project: Project) {
+  const lyrics = project.song?.lyrics?.trim() || "";
+  const lines = lyrics
+    .split(/\n+|(?<=[.!?])\s+/)
+    .map((line) => line.replace(/^["']+|["']+$/g, "").trim())
+    .filter((line) => line.length > 1);
+  if (!lines.length) return;
+  const total = Math.max(4, Math.round(project.song?.durationSeconds || lines.length * 3));
+  const seconds = Math.max(2, Math.min(8, Math.round((total / lines.length) * 10) / 10));
+  const turn = Math.ceil(lines.length * 0.6);
+  if (!project.characters.some((character) => !character.isExtra)) {
+    project.characters = [
+      {
+        id: createId("char"),
+        name: "Lead",
+        slug: slugify("Lead") || "lead",
+        description: "One person on screen.",
+        voiceNotes: "",
+        isExtra: false,
+        lookConfirmed: false,
+        lookRevisionUsed: false,
+        clips: [],
+      },
+    ];
+  }
+  const name = project.characters.find((character) => !character.isExtra)?.name || "Lead";
+  project.scenes = lines.map((line, index) => ({
+    id: createId("scene"),
+    index: index + 1,
+    title: `Line ${index + 1}`,
+    summary: `While the song plays "${line.replace(/"/g, "")}", ${name} does what that line shows.${index >= turn ? " The attached product is in frame." : ""}`,
+    location: "",
+    characterNames: [name],
+    extraNames: [],
+    dialogue: [],
+    estimatedSeconds: seconds,
+    camera: "",
+    shots: [],
+  }));
+  if (!project.title.trim() || project.title === "placeholder") project.title = lines[0].slice(0, 48);
+  refineStoryLeads(project);
+  try {
+    await ensureScenePlaces(project);
+    await ensureProductScenes(project);
+  } catch (error) {
+    console.warn("song scenes", project.id, error instanceof Error ? error.message : error);
+  }
 }
 
 export async function runAgent(options: {
@@ -1473,7 +1537,21 @@ export async function runAgent(options: {
   for (let step = 0; step < maxSteps; step += 1) {
     throwIfAborted(signal);
     const calls = turn.toolUses;
-    if (!calls.length) break;
+    if (!calls.length) {
+      if (mode === "plan" && !options.project.scenes.length && step < maxSteps - 1) {
+        messages = [
+          ...messages,
+          { role: "assistant", content: turn.content.length ? turn.content : [{ type: "text", text: "No scenes yet." }] },
+          {
+            role: "user",
+            content: "Call extract_storyboard now. Include the on-screen characters and every scene. Do not write the storyboard as prose.",
+          },
+        ];
+        turn = await sonnetTools({ system: instructions, messages, tools: activeTools, signal });
+        continue;
+      }
+      break;
+    }
 
     const results: Array<{ type: "tool_result"; tool_use_id: string; content: string }> = [];
     let planned = false;
@@ -1515,6 +1593,7 @@ export async function runAgent(options: {
   throwIfAborted(signal);
 
   if (mode === "plan") {
+    if (!options.project.scenes.length && options.project.song) await applyLyricStoryboard(options.project);
     if (!options.project.scenes.length) {
       throw new Error("Couldn't extract scenes from that script.");
     }
