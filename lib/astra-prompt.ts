@@ -29,7 +29,7 @@ function keepDialogueLanguage(draft: string, revised: string) {
   const lead = draft.match(/^The dialogues are in (?:English|Spanish)\./)?.[0] || "";
   if (!lead) return revised;
   const rest = revised.replace(/The dialogues are in (?:English|Spanish)\.?\s*/gi, "").trim();
-  return `${lead} ${rest}`.replace(/\s{2,}/g, " ").trim();
+  return `${lead}\n${rest}`.replace(/[^\S\n]{2,}/g, " ").trim();
 }
 
 function tightenPrompt(text: string) {
@@ -44,7 +44,7 @@ function tightenPrompt(text: string) {
     .replace(/This face stays on this tag\. Do not give it to anyone else\.?/gi, "")
     .replace(/Reference tags stay fixed for the whole film:?/gi, "")
     .replace(/Gaze must not be directed at lens unless explicitly stated\.?/gi, "")
-    .replace(/\s{2,}/g, " ")
+    .replace(/[^\S\n]{2,}/g, " ")
     .replace(/\s+([,.])/g, "$1")
     .trim();
 }
@@ -66,20 +66,17 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
   try {
     console.info("seedance prompt model", SONNET_MODEL);
     const instructions = [
-      "Revise this Seedance prompt. Return only the prompt, and make it shorter than the draft.",
-      "Keep every SCENE heading, its duration, every @Video and @Image tag already inside that scene, and every quoted line. Do not rename a tag and do not add one.",
-      "Keep the opening sentence that says which language the dialogues are in. Leave it first. Do not translate a quoted line into another language.",
-      "Each scene is one forward action, then the spoken line. Do not put the line inside the action. Do not add a pause, a frozen look, or a new line.",
-      "A place is named once in the header, like @Image4 is the cabin. Inside a scene, cite that tag once. Do not explain how to use the photo, and do not repeat walls, doors, furniture, or layout.",
-      "People are standing in that room. Do not describe them as pasted on the photo.",
-      "Keep a product tag only in a scene that already has it. Do not write that the product is absent.",
-      "If a product understanding is included, those names are the attached product. Keep its image tag in every scene that already uses that object.",
-      "The first scene continues the previous ending unless this draft moves them.",
-      "If the draft includes @Audio1, keep @Audio1. That is this part's song slice and it plays from the first frame of this video. Keep every 'While @Audio1 plays' cue with the lyric in quotes and the action that follows it. Do not drop a lyric or move it to another scene. Do not add @Audio2. The previous ending is the video reference only: do not regenerate those 5 seconds. Do not add a silent intro, a title card, or spoken dialogue when the draft has none. If a scene says a character sings along or mouths a lyric, keep it: that mouth matches @Audio1 only. Do not add a second voice and do not close that mouth.",
-      "If this draft shows the product or an end card, keep those scenes and the product image tag inside the action. Do not turn the tag into a style note, and do not drop it because the previous part left the product out.",
-      "Each character speaks only their own line. A face stays on its tag. Do not swap two characters.",
+      "Revise this Seedance prompt. Return only the prompt. Keep it in this shape: the dialogue-language line, then [GLOBAL SETUP], then [CHARACTERS & LOCATIONS], then [SCENE BREAKDOWN], then one SCENE block per scene.",
+      "Each scene stays `SCENE N (Xs) | Place (@Image) | camera`, then the action, then the quoted line, then CUT.",
+      "In GLOBAL SETUP, give each place one physical position taken from the action already written: who stands where, relative to the furniture that action names. Keep that position out of the way of counters and chairs. Use the tags and names already in the draft.",
+      "Write what the picture does. Replace a sentence that only forbids something with the positive action: characters carry on from the previous frame, they stand on the floor with natural shadows, the soundtrack is room tone and the spoken lines.",
+      "When these scenes change feeling, add one Tone line under GLOBAL SETUP, using the feeling, the light, and the people this draft already shows.",
+      "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene.",
+      "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag.",
+      "Each scene is one forward action, then the spoken line. The first scene continues the previous ending unless this draft moves them.",
+      "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. A mouth that sings along matches @Audio1.",
       prior
-        ? "A previous part prompt is included. This clip is the next slice, not a replay of the previous ending. The attached video of the last 5 seconds is a continuation reference for the picture only: clothes, hands, and body position. Do not copy its audio. Do not repeat, lipsync, or paraphrase any spoken line from that fragment. If the draft lists lines already said in that reference, keep that list. This part may open in a new place."
+        ? "A previous part prompt is included. This clip is the next slice. The attached video of the last 5 seconds carries clothes, hands, and body position. Characters carry on silently from that frame. The new lines are the only words. This part may open in a new place."
         : "",
     ]
       .filter(Boolean)
@@ -90,6 +87,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       : `${reading}DRAFT:\n${trimmed}`;
     const revised = (await sonnetText(instructions, input, { maxTokens: 8000 })).trim();
     if (!/SCENE\s+1\b/i.test(revised)) return tightenPrompt(trimmed);
+    if (/\[GLOBAL SETUP\]/.test(trimmed) && !/\[GLOBAL SETUP\]/.test(revised)) return trimmed;
+    if (/\[SCENE BREAKDOWN\]/.test(trimmed) && !/\[SCENE BREAKDOWN\]/.test(revised)) return trimmed;
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (!sameSceneTags(trimmed, revised)) return trimmed;
     const draftTags = tagsIn(trimmed);
