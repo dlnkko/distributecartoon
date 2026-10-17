@@ -236,7 +236,12 @@ export function characterRole(project: Project, name: string) {
   const character = findCharacter(project, name);
   const first = (character?.description || "")
     .replace(/\b(claymation|pixar|stop-motion|photorealistic|live-action)\s+(style\s+)?/gi, "")
+    .replace(
+      /\b(?:yesterday's\s+|her\s+|his\s+|their\s+)?(?:(?:light|dark|faded|old|worn|gray|grey|blue|black|white|red|green|brown|navy|pink|yellow|beige|olive|purple|orange)\s+){0,2}(?:hoodie|t-?shirt|tee|shirt|blouse|dress|skirt|jeans|pants|trousers|shorts|jacket|coat|sweater|sweatshirt|cardigan|suit|uniform|scrubs|sneakers?|shoes?|boots?|sandals?|heels?|hat|cap|beanie|scarf|glasses|sunglasses|leggings|sweatpants|joggers|blazer|vest|polo|tank top|crop top)\b/gi,
+      " ",
+    )
     .replace(VOLATILE_WEAR, " ")
+    .replace(/\s+\bin\b\s*(?:yesterday's|a|an|the|her|his|their)?\s*(?=[.,]|$)/gi, " ")
     .split(/[.;]/)[0]
     .split(/,|\bwith\b|\bwearing\b/i)[0]
     .replace(/\s{2,}/g, " ")

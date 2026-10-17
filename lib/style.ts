@@ -188,8 +188,87 @@ function portraitSubject(character: Character, script = "") {
   return `${character.name}, ${person}. ${rest}`;
 }
 
+const GARMENT =
+  /\b((?:yesterday's\s+|her\s+|his\s+|their\s+)?(?:(?:light|dark|faded|old|worn|gray|grey|blue|black|white|red|green|brown|navy|pink|yellow|beige|olive|purple|orange)\s+){0,2}(?:hoodie|t-?shirt|tee|shirt|blouse|dress|skirt|jeans|pants|trousers|shorts|jacket|coat|sweater|sweatshirt|cardigan|suit|uniform|scrubs|sneakers?|shoes?|boots?|sandals?|heels?|hat|cap|beanie|scarf|glasses|sunglasses|leggings|sweatpants|joggers|blazer|vest|polo|tank top|crop top))\b/gi;
+
+function garmentPhrases(text: string) {
+  return [...text.matchAll(GARMENT)].map((match) => match[1].replace(/\s+/g, " ").trim()).filter(Boolean);
+}
+
+function garmentNoun(phrase: string) {
+  return (
+    phrase
+      .toLowerCase()
+      .match(
+        /\b(hoodie|t-?shirt|tee|shirt|blouse|dress|skirt|jeans|pants|trousers|shorts|jacket|coat|sweater|sweatshirt|cardigan|suit|uniform|scrubs|sneakers?|shoes?|boots?|sandals?|heels?|hat|cap|beanie|scarf|glasses|sunglasses|leggings|sweatpants|joggers|blazer|vest|polo|tank top|crop top)\b/,
+      )?.[1] || phrase.toLowerCase()
+  );
+}
+
+function garmentColor(phrase: string) {
+  return (
+    phrase
+      .toLowerCase()
+      .match(/\b(light|dark|faded|old|worn|gray|grey|blue|black|white|red|green|brown|navy|pink|yellow|beige|olive|purple|orange)\b/)?.[1] || ""
+  );
+}
+
+function sameGarment(opening: string, phrase: string) {
+  if (garmentNoun(opening) !== garmentNoun(phrase)) return false;
+  const color = garmentColor(phrase);
+  return !color || color === garmentColor(opening);
+}
+
+function openingOutfit(character: Character, script = "") {
+  const described = garmentPhrases(character.description || "");
+  if (described.length) return described.join(" and ");
+  const name = character.name.trim();
+  if (!name || !script.trim()) return "";
+  const named = new RegExp(`\\b${escapeRegExp(name)}\\b`, "i");
+  for (const sentence of script.split(/(?<=[.!?\n])\s+/)) {
+    if (!named.test(sentence)) continue;
+    const found = garmentPhrases(sentence);
+    if (found.length) return found.join(" and ");
+  }
+  return "";
+}
+
+function openingGarments(project: Project, name: string) {
+  const character = project.characters.find((item) => item.name.trim().toLowerCase() === name.trim().toLowerCase());
+  if (!character) return [];
+  const script = [project.scriptText || "", ...project.scenes.map((scene) => scene.summary || "")].join("\n");
+  return garmentPhrases(openingOutfit(character, script));
+}
+
+function hideOpeningOutfit(text: string, project: Project) {
+  const names = project.characters.map((character) => character.name.trim()).filter(Boolean);
+  if (!names.length) return text;
+  let last = "";
+  const sentences = text.split(/(?<=[.!?])\s+/).map((sentence) => {
+    const mentioned = names.filter((name) => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(sentence));
+    if (mentioned.length) last = mentioned[0];
+    const person = mentioned[0] || last;
+    const opening = person ? openingGarments(project, person) : [];
+    const worn = garmentPhrases(sentence);
+    if (!opening.length || !worn.length) return sentence;
+    const changed =
+      /\b(?:changes? into|changed into|puts? on|takes? off|now wears?|now wearing|switches? (?:to|into)|gets? dressed)\b/i.test(sentence) ||
+      worn.some((phrase) => !opening.some((item) => sameGarment(item, phrase)));
+    if (changed) return sentence;
+    return sentence
+      .replace(GARMENT, " ")
+      .replace(/\s+\b(?:in|wearing)\b\s*(?=[.,]|$)/gi, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/\s+([,.])/g, "$1")
+      .trim();
+  });
+  return sentences.filter(Boolean).join(" ");
+}
+
 export function characterLookPrompt(character: Character, style: VisualStyle, script = "") {
-  return `${imageStyleLead(style)} portrait of ${portraitSubject(character, script)}. ${portraitCraft(style)} One character, plain gray background.`;
+  const outfit = openingOutfit(character, script);
+  const wearing = outfit ? ` Wearing ${outfit}.` : "";
+  return `${imageStyleLead(style)} portrait of ${portraitSubject(character, script)}.${wearing} ${portraitCraft(style)} One character, plain gray background.`;
 }
 
 export function characterLookFromPhotoPrompt(character: Character, style: VisualStyle, lookNote = "") {
@@ -201,7 +280,7 @@ export function characterLookFromPhotoPrompt(character: Character, style: Visual
         : "Same person as the photo. Keep their real features. Do not replace the face with a generic hero.";
   const note = lookNote.trim().slice(0, 180);
   const extra = note ? ` Where it does not fight the photo, also use: ${note}.` : "";
-  return `${imageStyleLead(style)} portrait from the attached photo. ${craft}${extra} One character, plain gray background.`;
+  return `${imageStyleLead(style)} portrait from the attached photo. ${craft} Wearing the clothes shown in the attached photo.${extra} One character, plain gray background.`;
 }
 
 export function characterAnchorPrompt(name: string, style: VisualStyle) {
@@ -2132,7 +2211,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene),
     );
     const cards = takeOnScreenCards(rawSummary);
-    const summary = cards.visual;
+    const summary = hideOpeningOutfit(cards.visual, project);
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
     const action = expandMontageAction(summary) || ensurePhysicalLogic(summary, space);
     const locks = shotIndex === 0 ? (shots.get(index)?.locks || []).filter((lock) => !alreadyHas(action, lock)) : [];
