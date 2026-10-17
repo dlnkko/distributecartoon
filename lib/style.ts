@@ -5,7 +5,7 @@ import { samePlace } from "./places";
 import { productFacts, productUseHint, productUsePhysics } from "./product-facts";
 import { actionWithoutSpeech, isUnseenVoice, partNeedsPackshot, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
-import { planShots, sameCameraPerspective } from "./shots";
+import { sameCameraPerspective } from "./shots";
 
 export type PromptRef = {
   url: string;
@@ -721,7 +721,7 @@ function alreadyHas(text: string, lock: string) {
 function ensurePhysicalLogic(summary: string, context = "") {
   let text = summary.trim();
   if (!text) return text;
-  const blob = `${text} ${context}`.toLowerCase();
+  const blob = `${text} ${context}`.replace(/\b(?:on[\s-]?screen(?:\s+text)?|super|caption)\s*:\s*[^\n]+/gi, " ").toLowerCase();
   const locks: string[] = [];
 
   if (/\b(treadmill|running machine|caminadora)\b/.test(blob)) {
@@ -732,7 +732,9 @@ function ensurePhysicalLogic(summary: string, context = "") {
   if (/\b(bike|bicycle|cycle|spin bike|stationary bike)\b/.test(blob)) {
     locks.push("Sit on the saddle facing the handlebars. Pedal forward so cranks and wheels turn the right way.");
   }
-  if (/\b(car|truck|drive|driving|steering wheel)\b/.test(blob)) {
+  const inVehicle = /\b(?:in the (?:car|truck|van)|driver'?s seat|behind the wheel|steering wheel)\b/.test(blob) || /\b(?:car|truck|van|vehicle)\b/.test(context.toLowerCase());
+  const vehicleMoves = /\b(?:driv(?:e|es|ing)|pulls? (?:away|out|off)|steers?|speeds?|rolls? forward)\b/.test(blob);
+  if (inVehicle && vehicleMoves) {
     locks.push("Sit facing the windshield with hands on the wheel. The vehicle moves the direction it is pointing.");
   }
   if (/\b(escalator)\b/.test(blob)) {
@@ -1787,8 +1789,14 @@ function sceneAssetTags(project: Project, scene: Scene | undefined, images: Prom
   return tags;
 }
 
+function exactCastName(project: Project, name: string) {
+  const raw = name.trim();
+  return project.characters.some((character) => character.name.trim() === raw);
+}
+
 function faceLabel(project: Project, name: string) {
   const raw = name.trim();
+  if (exactCastName(project, raw) && /^(?:Him|He|Her|She)$/.test(raw)) return "";
   const role = characterRole(project, name);
   if (/^(?:her|she)$/i.test(raw)) return role ? `the woman, ${role}` : "the woman";
   if (/^(?:him|he)$/i.test(raw)) return role ? `the man, ${role}` : "the man";
@@ -1804,8 +1812,9 @@ function referenceLock(project: Project, images: PromptRef[]) {
       if (item.kind === "logo") return `${tag} is the logo.`;
       if (item.kind === "product") return `${tag} is ${productPromptName(project, name, item.notes || "")}.`;
       if (item.kind === "character") {
+        if (exactCastName(project, name) && /^(?:Him|He|Her|She)$/.test(name)) return `${tag} is ${name}.`;
         const role = faceLabel(project, name);
-        const who = /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${name}, ${role}` : name;
+        const who = !exactCastName(project, name) && /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${name}, ${role}` : name;
         return `${tag} is ${who}.`;
       }
       if (item.kind === "location") {
@@ -1912,14 +1921,32 @@ function graphicScene(scene?: Scene) {
 function takeOnScreenCards(summary: string) {
   const cards: string[] = [];
   const visual = purgeDirection(summary).replace(
-    /\b(?:vo\s*\/\s*)?on-?screen text\s*:\s*["“]?([^"”\n.]+)["”]?/gi,
+    /\b(?:vo\s*\/\s*)?on[\s-]?screen(?:\s+text)?\s*:\s*["“]?([^"”\n]+)["”]?/gi,
     (_full, card: string) => {
-      const text = card.trim();
+      const text = card.replace(/[.]+$/, "").trim();
       if (text) cards.push(text);
       return " ";
     },
   );
   return { visual: visual.replace(/\s{2,}/g, " ").trim(), cards };
+}
+
+function productInteraction(text: string) {
+  const action = text.replace(/\b(?:on[\s-]?screen(?:\s+text)?|super|caption)\s*:\s*[^\n]+/gi, " ");
+  if (/\b(?:holds?|holding|presses?|pressed|peels?|peeled|applies?|applied|wears?|wearing|opens?|opened|touches?|puts?\s+on|looks?\s+at)\b/i.test(action)) {
+    return true;
+  }
+  return /\b(?:on|onto)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:wooden\s+|bedside\s+)?(?:nightstand|table|counter|desk|shelf|dresser|tray)\b/i.test(action);
+}
+
+function positiveContinuity(text: string) {
+  return text
+    .replace(/\bDo not (?:slow|replay)\b[^.?!]*[.?!]?/gi, " ")
+    .replace(/\bPlay only the opening \d+s of this beat\b[^.?!]*[.?!]?/gi, " ")
+    .replace(/\bContinue this beat from the previous generation\b[^.?!]*[.?!]?/gi, "Action continues in real time.")
+    .replace(/\bStop here\.\s*The rest of this beat is the next generation\.?/gi, "The rest of this beat continues in the next generation.")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 function spokenQuote(line: string) {
@@ -2017,10 +2044,23 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const spatial: string[] = [];
   const seenPlaces = new Set<string>();
 
-  const flat = sceneIndexes.flatMap((index, i) => {
+  const flat = sceneIndexes.map((index, i) => {
     const scene = scenes[i];
-    const cuts = scene?.shots?.length ? scene.shots : planShots(scene || { summary: "", camera: "", estimatedSeconds: seconds[i] || 3 });
-    return cuts.map((shot, shotIndex) => ({ scene, index, shot, shotIndex, shotCount: cuts.length }));
+    const action =
+      scene?.summary?.trim() ||
+      (scene?.shots || [])
+        .map((shot) => shot.action)
+        .filter((part) => part?.trim())
+        .join(" ") ||
+      scene?.title ||
+      "";
+    return {
+      scene,
+      index,
+      shot: { seconds: seconds[i] || scene?.estimatedSeconds || 3, camera: scene?.camera || "", action: action || scene?.title || "" },
+      shotIndex: 0,
+      shotCount: 1,
+    };
   });
   const cutSeconds = fittedSeconds(
     flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
@@ -2088,7 +2128,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     }
     const previousCamera = usedCameras[usedCameras.length - 1] || "";
     usedCameras.push(camera);
-    const rawSummary = withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene);
+    const rawSummary = positiveContinuity(
+      withoutQuotedDialogue(rewriteProductContainers(shot.action || scene?.summary || scene?.title || "", project), scene),
+    );
     const cards = takeOnScreenCards(rawSummary);
     const summary = cards.visual;
     const space = `${scene?.title || ""} ${scene?.location || ""}`;
@@ -2103,14 +2145,16 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       .filter(Boolean)
       .map((part) => (/[.!?]$/.test(part) ? part : `${part}.`))
       .join(" ");
-    const sceneTags = sceneAssetTags(project, scene, images);
+    const sceneTextForProduct = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
+    const handlesProduct = productInteraction(sceneTextForProduct);
+    const sceneTags = sceneAssetTags(project, scene, images).filter((tag) => imageKind(images, tag) !== "product" || handlesProduct);
     const localSwaps = swaps.filter((swap) => swap.person || sceneTags.includes(swap.tag));
     const tagged = dropPlaceOnlySentences(
       scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, localSwaps), project)),
       locationTags,
     );
-    const sceneText = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
-    const productHere = (project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText);
+    const sceneText = sceneTextForProduct;
+    const productHere = handlesProduct && ((project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText));
     const slice = linesByShot[i] || [];
     const visual = actionOnly(
       omitUnneededProduct(

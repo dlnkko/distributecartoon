@@ -406,14 +406,12 @@ function sliceProse(text: string, start: number, end: number, role: "head" | "ta
   const sentences = proseSentences(text);
   if (!sentences.length) {
     return role === "head"
-      ? `Play only the opening ${seconds}s of this beat. Do not slow it down.`
-      : `Continue this beat from the previous generation. Do not replay the opening. Only the next ${seconds}s.`;
+      ? `The opening ${seconds}s of this beat play in real time.`
+      : `Action continues in real time. The next ${seconds}s.`;
   }
   if (sentences.length === 1) {
     const line = sentences[0];
-    return role === "head"
-      ? `Play only the opening ${seconds}s of this beat. Do not slow this action down to fill time. ${line}`
-      : `Continue this beat from the previous generation. Do not replay its opening and do not slow it down. Only the next ${seconds}s. ${line}`;
+    return role === "head" ? `The opening ${seconds}s play in real time. ${line}` : `Action continues in real time. ${line}`;
   }
   const weights = sentences.map((sentence) => Math.max(1, sentence.split(/\s+/).filter(Boolean).length));
   const total = weights.reduce((sum, value) => sum + value, 0);
@@ -428,8 +426,8 @@ function sliceProse(text: string, start: number, end: number, role: "head" | "ta
   });
   const body = (kept.length ? kept : role === "head" ? sentences.slice(0, 1) : sentences.slice(-1)).join(" ");
   return role === "head"
-    ? `${body} Stop here. The rest of this beat is the next generation. Do not slow this action down.`
-    : `Continue this beat from the previous generation. Do not replay what already happened. ${body}`;
+    ? `${body} The rest of this beat continues in the next generation.`
+    : `Action continues in real time. ${body}`;
 }
 
 function sliceDialogue(lines: DialogueLine[], start: number, end: number, role: "head" | "tail") {

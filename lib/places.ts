@@ -108,12 +108,53 @@ export function placesInText(text: string) {
   return names;
 }
 
-function mentionsRoom(phrase: string, name: string) {
-  const words = phrase.toLowerCase().trim();
-  if (!words || words.length < 3) return false;
-  if (words === name || words.startsWith(`${name} `) || words.endsWith(` ${name}`)) return true;
-  if (name === "bedroom" && /^(?:bed|pillow|mattress)$/.test(words)) return true;
-  return false;
+const FURNISHING: Array<{ name: string; pattern: RegExp }> = [
+  { name: "bedroom", pattern: /\b(?:nightstands?|dressers?|pillows?|mattress(?:es)?|headboards?|in bed|on the bed|sits?\s+up)\b/i },
+  { name: "kitchen", pattern: /\b(?:kitchens?|sinks?|fridges?|refrigerators?|stoves?|countertops?|the counter)\b/i },
+  { name: "bathroom", pattern: /\b(?:bathrooms?|showers?|bathtubs?|toilets?)\b/i },
+  { name: "hallway", pattern: /\b(?:hallways?|corridors?)\b/i },
+  { name: "living room", pattern: /\b(?:living\s+rooms?|sofas?|couches?)\b/i },
+  { name: "office", pattern: /\b(?:offices?|cubicles?)\b/i },
+  { name: "car", pattern: /\b(?:in the (?:car|truck|van)|driver['’]?s seats?|passenger seats?|steering wheels?)\b/i },
+];
+
+const VAGUE_SET = /^(?:home|house|inside|outside|indoors|outdoors)$/i;
+const TIME_LABEL = /^(?:morning|night|later|noon|dawn|dusk|evening|afternoon|\d{1,2}:\d{2}(?:\s*(?:a\.?m\.?|p\.?m\.?))?)$/i;
+const LABEL_VERB = /\b(?:is|are|was|were|looks?|stands?|walks?|sits?|runs?|drinks?|says|asks|gets?|buckles?|lowers?|presses?|puts?|peels?|waits?|comes?|follows?|hears?|heard|unbuckles?|stops?|does|do|has|had|can|'s|’s)\b/i;
+
+function withoutOnScreen(text: string) {
+  return text.replace(/\b(?:on[\s-]?screen(?:\s+text)?|super|caption)\s*:\s*[^\n]+/gi, " ");
+}
+
+/** A short opening sentence with no action verb is a set name written in the script. */
+export function explicitSetLabel(text: string) {
+  const sentences = withoutOnScreen(text)
+    .split(/(?<=[.!?])\s+/)
+    .map((part) => part.replace(/[.]+$/, "").trim())
+    .filter(Boolean);
+  for (const sentence of sentences) {
+    if (TIME_LABEL.test(sentence)) continue;
+    if (LABEL_VERB.test(sentence)) break;
+    const name = sentence.replace(/,?\s*(?:later|earlier|morning|night|noon)$/i, "").trim();
+    if (!name || TIME_LABEL.test(name)) continue;
+    if (name.split(/\s+/).length > 6) break;
+    return name;
+  }
+  return "";
+}
+
+function roomCue(text: string) {
+  const source = withoutOnScreen(text);
+  let name = "";
+  let at = -1;
+  for (const item of FURNISHING) {
+    const match = item.pattern.exec(source);
+    item.pattern.lastIndex = 0;
+    if (!match || match.index < at) continue;
+    at = match.index;
+    name = item.name;
+  }
+  return name;
 }
 
 function leftThePlace(text: string, place: string) {
@@ -123,23 +164,14 @@ function leftThePlace(text: string, place: string) {
 }
 
 export function primaryPlace(text: string, previous = "") {
-  const names = placesInText(text);
-  const stayed = previous && !leftThePlace(text, previous) ? previous : "";
-  const moved = text.match(
-    /\b(?:walks?|goes?|heads?|steps?|moves?|enters?|returns?)\s+(?:back\s+)?(?:in)?to\s+(?:the\s+|her\s+|his\s+)?([a-z]+(?:\s+[a-z]+)?)/i,
-  );
-  if (moved) {
-    const hit = names.find((name) => mentionsRoom(moved[1], name));
-    if (hit) return hit;
-  }
-  const staged = [...text.matchAll(/\b(?:in|into|inside|on)\s+(?:the\s+|her\s+|his\s+|their\s+)?([a-z]+(?:\s+[a-z]+)?)/gi)];
-  for (let index = staged.length - 1; index >= 0; index -= 1) {
-    const hit = names.find((name) => mentionsRoom(staged[index][1], name));
-    if (hit) return hit;
-  }
-  if (stayed && (!names.length || names.includes(stayed))) return stayed;
-  if (stayed && names.length) return stayed;
-  return names[names.length - 1] || "";
+  const source = withoutOnScreen(text);
+  const label = explicitSetLabel(source);
+  const cue = roomCue(source);
+  if (label && !VAGUE_SET.test(label)) return label;
+  if (cue) return cue;
+  if (label) return label;
+  if (previous && !leftThePlace(source, previous)) return previous;
+  return "";
 }
 
 export function assignScenePlaces<T extends { title?: string; summary?: string; location?: string; shots?: Array<{ action?: string }> }>(
@@ -167,13 +199,6 @@ export function assignScenePlaces<T extends { title?: string; summary?: string; 
     } else {
       previous = placeLabel(scene.location || "");
     }
-  }
-  let upcoming = "";
-  for (let index = scenes.length - 1; index >= 0; index -= 1) {
-    const scene = scenes[index];
-    const blob = textOf(scene);
-    if (scene.location) upcoming = timeJump(blob) ? "" : scene.location;
-    else if (upcoming) scene.location = upcoming;
   }
   return scenes;
 }
