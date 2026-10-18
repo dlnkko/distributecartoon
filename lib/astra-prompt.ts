@@ -59,10 +59,15 @@ function sameSceneTags(draft: string, revised: string) {
   });
 }
 
-export async function refineSeedancePrompt(draft: string, priorPrompt = "", storyBrief = "") {
+function continuityLines(text: string) {
+  return [...text.matchAll(/Continuity: [^ \n][^\n]*/g)].map((match) => match[0].replace(/\s+/g, " ").trim());
+}
+
+export async function refineSeedancePrompt(draft: string, priorPrompt = "", storyBrief = "", seen = "") {
   const trimmed = draft.trim();
   if (!trimmed) return draft;
   const prior = priorPrompt.trim();
+  const sight = seen.trim();
   try {
     console.info("seedance prompt model", SONNET_MODEL);
     const instructions = [
@@ -78,13 +83,17 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       prior
         ? "A previous part prompt is included. This clip is the next slice. The attached video of the last 5 seconds carries clothes, hands, and body position. Characters carry on silently from that frame. The new lines are the only words. This part may open in a new place."
         : "",
+      sight
+        ? "A sighting of the finished previous video is included. The user's script decides the events. Keep each Continuity sentence word for word in its scene. Those sentences are the clothes, the pose, and the product that are still true. Do not move them. Do not add a tag that is not already in the draft."
+        : "",
     ]
       .filter(Boolean)
       .join(" ");
     const reading = storyBrief.trim() ? `STORY READING:\n${storyBrief.trim()}\n\n` : "";
+    const sightBlock = sight ? `SEEN IN THE PREVIOUS VIDEO:\n${sight}\n\n` : "";
     const input = prior
-      ? `${reading}PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}`
-      : `${reading}DRAFT:\n${trimmed}`;
+      ? `${reading}${sightBlock}PREVIOUS PART PROMPT:\n${prior}\n\nNEXT PART DRAFT:\n${trimmed}`
+      : `${reading}${sightBlock}DRAFT:\n${trimmed}`;
     const revised = (await sonnetText(instructions, input, { maxTokens: 8000 })).trim();
     if (!/SCENE\s+1\b/i.test(revised)) return tightenPrompt(trimmed);
     if (/\[GLOBAL SETUP\]/.test(trimmed) && !/\[GLOBAL SETUP\]/.test(revised)) return trimmed;
@@ -94,6 +103,9 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const draftTags = tagsIn(trimmed);
     const revisedTags = tagsIn(revised);
     if (draftTags.some((tag) => !revisedTags.includes(tag)) || revisedTags.some((tag) => !draftTags.includes(tag))) return trimmed;
+    const carried = continuityLines(trimmed);
+    const revisedFlat = revised.replace(/\s+/g, " ");
+    if (carried.some((line) => !revisedFlat.includes(line))) return tightenPrompt(trimmed);
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;

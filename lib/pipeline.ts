@@ -9,6 +9,8 @@ import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, norma
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
+import { watchRenderedPart } from "./continuity-watch";
+import { parseSeenCard, partKeepsCarriedProduct, seenCardMatters } from "./seen-continuity";
 import { productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
@@ -561,6 +563,52 @@ function directingNotes(project: Project) {
   return [project.storyBrief || "", productUnderstandingBrief(project)].filter(Boolean).join("\n\n");
 }
 
+function partOutline(project: Project, batch?: Batch) {
+  if (!batch) return "No further part.";
+  return batch.sceneIndexes
+    .map((index) => {
+      const scene = project.scenes.find((item) => item.index === index);
+      if (!scene) return "";
+      const lines = (scene.dialogue || [])
+        .map((line) => `${line.speaker}: ${line.line}`)
+        .filter((line) => line.trim().length > 2)
+        .join(" | ");
+      return [`Scene ${scene.index} (${scene.estimatedSeconds || "?"}s)`, scene.location, scene.summary || scene.title, lines].filter(Boolean).join(" — ");
+    })
+    .filter(Boolean)
+    .join("\n");
+}
+
+async function ensureRenderedContinuity(project: Project, previous?: Batch, next?: Batch) {
+  if (!previous || !next) return;
+  const src = durableVideoSrc(previous);
+  if (!src) return;
+  const key = createHash("sha256").update(src).digest("hex").slice(0, 20);
+  if (previous.seenContinuityKey && previous.seenContinuityKey !== key) previous.seenAttempts = 0;
+  if (previous.seenContinuity?.trim() && previous.seenContinuityKey === key) return;
+  if ((previous.seenAttempts || 0) >= 2) return;
+  try {
+    const context = [
+      `USER SCRIPT:\n${(project.scriptText || "").trim().slice(0, 5000) || "No script text."}`,
+      project.storyBrief?.trim() ? `STORY READING:\n${project.storyBrief.trim().slice(0, 1500)}` : "",
+      `PRODUCT:\n${productUnderstandingBrief(project) || "No product was attached."}`,
+      `THIS PART, as written:\n${partOutline(project, previous)}`,
+      `NEXT PART, as written:\n${partOutline(project, next)}`,
+    ]
+      .filter(Boolean)
+      .join("\n\n");
+    previous.seenContinuity = await watchRenderedPart(await readPublicFile(src), context);
+    previous.seenContinuityKey = key;
+    previous.seenAttempts = 0;
+    console.info("continuity watch", project.id, previous.index);
+    await saveProject(project);
+  } catch (error) {
+    previous.seenAttempts = (previous.seenAttempts || 0) + 1;
+    console.warn("continuity watch", project.id, previous.index, error instanceof Error ? error.message : error);
+    await saveProject(project);
+  }
+}
+
 function productImageMime(src: string) {
   const lower = src.split("?")[0].toLowerCase();
   if (lower.endsWith(".png")) return "image/png";
@@ -625,6 +673,7 @@ async function prepareStoryPrompt(project: Project, batch: Batch) {
   await ensureProductImageNotes(project);
   await ensureProductScenes(project);
   const previous = previousStoryBatch(project, batch);
+  await ensureRenderedContinuity(project, previous, batch);
   const prompt = packedScenePrompt(project, batch.sceneIndexes, "", batch.duration);
   const { imageEntries, videoEntries } = await collectReferences(project, batch);
   const labeled = labeledReferencePrompt({
@@ -636,7 +685,7 @@ async function prepareStoryPrompt(project: Project, batch: Batch) {
     videoPrompt: prompt,
     duration: batch.duration,
   });
-  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", directingNotes(project));
+  batch.videoPrompt = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", directingNotes(project), previous?.seenContinuity || "");
   batch.promptReady = true;
 }
 
@@ -656,6 +705,13 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       }
       await saveSoon(project);
       if (!tailUrl(previous)) return { ready: false };
+    }
+    if (previous && durableVideoSrc(previous)) {
+      await ensureRenderedContinuity(project, previous, batch);
+      if (!previous.seenContinuity?.trim() && (previous.seenAttempts || 0) < 2) return { ready: false };
+      if (seenCardMatters(parseSeenCard(previous.seenContinuity || "")) && !/Continuity:/i.test(batch.videoPrompt || "")) {
+        batch.promptReady = false;
+      }
     }
     if (
       previous &&
@@ -1310,13 +1366,30 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
     const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" || asset.kind === "character" ? asset.kind : "other";
     imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
   }
+  await ensureCarriedProducts(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
+  if (imageEntries.length > 30 && partKeepsCarriedProduct(project, batch.sceneIndexes)) {
+    const products = imageEntries.filter((entry) => entry.kind === "product");
+    const rest = imageEntries.filter((entry) => entry.kind !== "product");
+    imageEntries.length = 0;
+    imageEntries.push(...rest.slice(0, Math.max(0, 30 - products.length)), ...products);
+  }
   if (imageEntries.length > 30) imageEntries.length = 30;
   if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
     return { imageEntries, videoEntries: [] as PromptRef[] };
   }
   const tail = batch.faceRefsDropped ? undefined : await previousTailRef(project, batch, abortSignal);
   return { imageEntries, videoEntries: tail ? [tail] : [] };
+}
+
+async function ensureCarriedProducts(project: Project, entries: PromptRef[], sceneIndexes: number[], abortSignal?: AbortSignal) {
+  if (!partKeepsCarriedProduct(project, sceneIndexes)) return;
+  for (const asset of project.references || []) {
+    if (asset.kind !== "product") continue;
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (!url || entries.some((entry) => entry.url === url)) continue;
+    entries.push({ url, kind: "product", name: asset.label, notes: asset.notes });
+  }
 }
 
 function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexes: number[]) {
@@ -1336,6 +1409,7 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
       continue;
     }
     if (entry.kind !== "product" && entry.kind !== "logo") continue;
+    if (entry.kind === "product" && partKeepsCarriedProduct(project, sceneIndexes)) continue;
     const texts = scenes.map((scene) => {
       const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
       const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
@@ -1373,6 +1447,7 @@ async function appendNeededPackshots(project: Project, entries: PromptRef[], sce
 async function collectLongformReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   const imageEntries = await stableImageEntries(project, abortSignal);
   await appendNeededPackshots(project, imageEntries, batch.sceneIndexes, abortSignal);
+  await ensureCarriedProducts(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   const narrator = await narratorVoiceRef(project, batch.sceneIndexes, abortSignal);
@@ -1396,6 +1471,7 @@ async function collectReferences(project: Project, batch: Batch, abortSignal?: A
   }
   const imageEntries = await stableImageEntries(project, abortSignal);
   await appendNeededPackshots(project, imageEntries, batch.sceneIndexes, abortSignal);
+  await ensureCarriedProducts(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
   const videoEntries = await stableCharacterVideos(project, abortSignal);
   return { imageEntries, videoEntries: videoEntries.slice(0, MAX_ANCHOR_VIDEOS) };
@@ -1539,6 +1615,9 @@ export function planSeedanceBatches(project: Project) {
       videoPublicPath: prior?.videoPublicPath,
       videoRemoteUrl: prior?.videoRemoteUrl,
       kieVideoTaskId: prior?.kieVideoTaskId,
+      seenContinuity: prior?.seenContinuity,
+      seenContinuityKey: prior?.seenContinuityKey,
+      seenAttempts: prior?.seenAttempts,
     };
   });
   if (project.song && project.batches.length !== project.song.clips.length) {
@@ -1581,8 +1660,8 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   onStatus("Generating your video…");
   await ensureProductImageNotes(project);
   await ensureProductScenes(project, abortSignal);
-  const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
   if (!batch.promptReady) await prepareStoryPrompt(project, batch);
+  const { imageEntries, videoEntries } = await collectReferences(project, batch, abortSignal);
   batch.continuityFlags = continuityFlags(project, batch.sceneIndexes);
   if (batch.continuityFlags.length) console.info("continuity", project.id, batch.index, batch.continuityFlags);
   batch.status = "generating_video";
@@ -1755,6 +1834,8 @@ async function runGenerateBatchVideo(
   try {
     await ensureProductImageNotes(project);
     await ensureProductScenes(project, abortSignal);
+    const previous = previousStoryBatch(project, batch);
+    await ensureRenderedContinuity(project, previous, batch);
     const { imageEntries, videoEntries } = await collectReferences(project, batch);
     const labeled = labeledReferencePrompt({
       images: imageEntries,
@@ -1767,7 +1848,8 @@ async function runGenerateBatchVideo(
     });
 
     onStatus("Generating your video…");
-    const revised = await refineSeedancePrompt(labeled, previousStoryBatch(project, batch)?.videoPrompt || "", directingNotes(project));
+    const revised = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", directingNotes(project), previous?.seenContinuity || "");
+    batch.videoPrompt = revised;
     const audioUrls = await songAudioUrls(project, batch);
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,

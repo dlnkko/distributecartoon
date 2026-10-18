@@ -6,6 +6,7 @@ import { productFacts, productUseHint, productUsePhysics } from "./product-facts
 import { actionWithoutSpeech, isUnseenVoice, partNeedsPackshot, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { sameCameraPerspective } from "./shots";
+import { carriedProductSentence, clothesCarryIndexes, continuityLine, poseCarryIndex, previousSeenCard, productCarryIndexes } from "./seen-continuity";
 
 export type PromptRef = {
   url: string;
@@ -2122,6 +2123,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const lineKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
   const spatial: string[] = [];
   const seenPlaces = new Set<string>();
+  const seen = previousSeenCard(project, sceneIndexes);
+  const productKept = productCarryIndexes(project, sceneIndexes, seen);
+  const clothesKept = clothesCarryIndexes(project, sceneIndexes, seen);
+  const poseAt = poseCarryIndex(project, sceneIndexes, seen);
 
   const flat = sceneIndexes.map((index, i) => {
     const scene = scenes[i];
@@ -2226,14 +2231,18 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       .join(" ");
     const sceneTextForProduct = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
     const handlesProduct = productInteraction(sceneTextForProduct);
-    const sceneTags = sceneAssetTags(project, scene, images).filter((tag) => imageKind(images, tag) !== "product" || handlesProduct);
+    const carriedProduct = productKept.has(index);
+    const sceneTags = sceneAssetTags(project, scene, images).filter((tag) => imageKind(images, tag) !== "product" || handlesProduct || carriedProduct);
     const localSwaps = swaps.filter((swap) => swap.person || sceneTags.includes(swap.tag));
     const tagged = dropPlaceOnlySentences(
       scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, localSwaps), project)),
       locationTags,
     );
     const sceneText = sceneTextForProduct;
-    const productHere = handlesProduct && ((project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText));
+    const freshHandle =
+      /\b(?:holds?|holding|presses?|pressed|peels?|peeled|applies?|applied|opens?|opened)\b/i.test(sceneText) ||
+      /\b(?:on|onto)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:wooden\s+|bedside\s+)?(?:nightstand|table|counter|desk|shelf|dresser|tray)\b/i.test(sceneText);
+    const productHere = carriedProduct || (handlesProduct && ((project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText)));
     const slice = linesByShot[i] || [];
     const visual = actionOnly(
       omitUnneededProduct(
@@ -2250,14 +2259,27 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const placeTag = sceneTags.find((tag) => imageKind(images, tag) === "location") || "";
     const productTags = sceneTags.filter((tag) => imageKind(images, tag) === "product" && productHere && missing(tag));
     const logoTags = sceneTags.filter((tag) => imageKind(images, tag) === "logo" && sceneRequiresAsset("logo", sceneText) && missing(tag));
-    const placement = productTags.map((tag) => productPlacement(tag, `${visual} ${sceneText}`)).filter(Boolean).join(" ");
+    const stayed =
+      carriedProduct && !freshHandle
+        ? images
+            .map((item, imageIndex) => (item.kind === "product" ? carriedProductSentence(`@Image${imageIndex + 1}`, seen.carryDetail) : ""))
+            .filter(Boolean)
+            .join(" ")
+        : "";
+    const placement = stayed || productTags.map((tag) => productPlacement(tag, `${visual} ${sceneText}`)).filter(Boolean).join(" ");
+    const carriedLook = [
+      clothesKept.has(index) ? continuityLine(seen.carryClothes) : "",
+      poseAt === index ? continuityLine(seen.carryPose) : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     const shown = placement
       ? visual
           .split(/(?<=[.!?])\s+/)
           .filter((sentence) => !/\b(?:the box|the product|the package)\b/i.test(sentence))
           .join(" ")
       : visual;
-    const cites = [placement, ...logoTags].filter(Boolean).join(" ");
+    const cites = [placement, carriedLook, ...logoTags].filter(Boolean).join(" ");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
     const cardLine = cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')).join(" ");

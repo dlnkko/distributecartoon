@@ -175,6 +175,9 @@ export type Batch = {
   tailPublicPath?: string;
   tailRemoteUrl?: string;
   tailAttempts?: number;
+  seenContinuity?: string;
+  seenContinuityKey?: string;
+  seenAttempts?: number;
 };
 
 export type PendingTask = {
