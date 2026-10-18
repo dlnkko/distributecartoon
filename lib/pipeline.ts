@@ -709,7 +709,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     if (previous && durableVideoSrc(previous)) {
       await ensureRenderedContinuity(project, previous, batch);
       if (!previous.seenContinuity?.trim() && (previous.seenAttempts || 0) < 2) return { ready: false };
-      if (seenCardMatters(parseSeenCard(previous.seenContinuity || "")) && !/Continuity:/i.test(batch.videoPrompt || "")) {
+      if (seenCardMatters(parseSeenCard(previous.seenContinuity || "")) && !/(?:^|\n)Continuity:\s+\S/.test(batch.videoPrompt || "")) {
         batch.promptReady = false;
       }
     }

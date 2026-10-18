@@ -1,7 +1,8 @@
 import { SONNET_MODEL, sonnetText } from "./sonnet";
+import { cleanPromptSyntax } from "./style";
 
 function sceneBlocks(text: string) {
-  const matches = [...text.matchAll(/\bSCENE\s+\d+\s*\(/gi)];
+  const matches = [...text.matchAll(/\bSCENE\s+\d+\s*(?:\([^)\n]*\)|\|\s*Duration:)/gi)];
   if (!matches.length) return [text];
   return matches.map((match, index) => {
     const start = match.index || 0;
@@ -33,7 +34,7 @@ function keepDialogueLanguage(draft: string, revised: string) {
 }
 
 function tightenPrompt(text: string) {
-  return text
+  const next = text
     .replace(/Use this photo as the set every time the story is here, including when it comes back later\.?/gi, "")
     .replace(/Match (?:its|that photo: same) walls, doors, furniture, and layout\.?/gi, "")
     .replace(/A scene set somewhere else leaves this tag out\.?/gi, "")
@@ -45,8 +46,9 @@ function tightenPrompt(text: string) {
     .replace(/Reference tags stay fixed for the whole film:?/gi, "")
     .replace(/Gaze must not be directed at lens unless explicitly stated\.?/gi, "")
     .replace(/[^\S\n]{2,}/g, " ")
-    .replace(/\s+([,.])/g, "$1")
+    .replace(/[ \t]+([,.])/g, "$1")
     .trim();
+  return cleanPromptSyntax(next);
 }
 
 function sameSceneTags(draft: string, revised: string) {
@@ -71,10 +73,10 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
   try {
     console.info("seedance prompt model", SONNET_MODEL);
     const instructions = [
-      "Revise this Seedance prompt. Return only the prompt. Keep it in this shape: the dialogue-language line, then [GLOBAL SETUP], then [CHARACTERS & LOCATIONS], then [SCENE BREAKDOWN], then one SCENE block per scene.",
-      "Each scene stays `SCENE N (Xs) | Place (@Image) | camera`, then the action, then the quoted line, then CUT.",
-      "In GLOBAL SETUP, give each place one physical position taken from the action already written: who stands where, relative to the furniture that action names. Keep that position out of the way of counters and chairs. Use the tags and names already in the draft.",
-      "Write what the picture does. Replace a sentence that only forbids something with the positive action: characters carry on from the previous frame, they stand on the floor with natural shadows, the soundtrack is room tone and the spoken lines.",
+      "Revise this Seedance prompt. Return only the prompt. Keep it in this shape: the dialogue-language line, then [GLOBAL SETUP], then [CONTINUITY RULE], then [CHARACTER ROLES & POSITIONS], then [SCENE BREAKDOWN].",
+      "Each scene stays `SCENE N | Duration: Xs | Shot: ...`, then `- CAMERA:`, then `- ENVIRONMENT:` or `- CONTINUITY:`, then `- ACTION:`, then `- DIALOGUE:`. Dialogue lines sit under DIALOGUE, each as `  - @Image: \"line\"`. Do not put a spoken line on the ACTION line.",
+      "In CHARACTER ROLES & POSITIONS, keep one bullet per character, place, and product already listed. Each bullet is the tag, who it is, and the position already written. Do not invent a person, a vehicle, or a place.",
+      "Write visible action. A vague finish becomes the last sip or the last bite, then the hand lowers. A vehicle that pulls away accelerates and drives out of the frame. Name the place already in the draft instead of saying room. Keep positions until the action moves someone.",
       "When these scenes change feeling, add one Tone line under GLOBAL SETUP, using the feeling, the light, and the people this draft already shows.",
       "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene.",
       "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag.",
@@ -98,6 +100,13 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (!/SCENE\s+1\b/i.test(revised)) return tightenPrompt(trimmed);
     if (/\[GLOBAL SETUP\]/.test(trimmed) && !/\[GLOBAL SETUP\]/.test(revised)) return trimmed;
     if (/\[SCENE BREAKDOWN\]/.test(trimmed) && !/\[SCENE BREAKDOWN\]/.test(revised)) return trimmed;
+    if (/\[CHARACTER ROLES & POSITIONS\]/.test(trimmed) && !/\[CHARACTER ROLES & POSITIONS\]/.test(revised)) return trimmed;
+    if (/\[CONTINUITY RULE\]/.test(trimmed) && !/\[CONTINUITY RULE\]/.test(revised)) return trimmed;
+    if (/\|\s*Duration:/.test(trimmed) && !/\|\s*Duration:/.test(revised)) return trimmed;
+    const fieldCount = (value: string, label: string) => [...value.matchAll(new RegExp(`^- ${label}:`, "gim"))].length;
+    if (fieldCount(trimmed, "CAMERA") !== fieldCount(revised, "CAMERA")) return trimmed;
+    if (fieldCount(trimmed, "ACTION") !== fieldCount(revised, "ACTION")) return trimmed;
+    if (fieldCount(trimmed, "DIALOGUE") !== fieldCount(revised, "DIALOGUE")) return trimmed;
     if (!sameQuotes(trimmed, revised)) return trimmed;
     if (!sameSceneTags(trimmed, revised)) return trimmed;
     const draftTags = tagsIn(trimmed);

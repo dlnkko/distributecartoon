@@ -1088,7 +1088,7 @@ function applyInlineRefTags(text: string, images: PromptRef[], videos: PromptRef
 }
 
 function splitPackedScenes(text: string) {
-  const matches = [...text.matchAll(/\bSCENE\s+\d+\s*\(/gi)];
+  const matches = [...text.matchAll(/\bSCENE\s+\d+\s*(?:\([^)\n]*\)|\|\s*Duration:)/gi)];
   if (!matches.length) return { prefix: "", blocks: [text] };
   const prefix = text.slice(0, matches[0].index).trim();
   const blocks = matches.map((match, index) => {
@@ -2038,6 +2038,112 @@ function spokenQuote(line: string) {
     .trim();
 }
 
+export function cleanPromptSyntax(text: string) {
+  const lines = text.split("\n").map((line) => {
+    let openParen = 0;
+    let openBracket = 0;
+    let out = "";
+    for (const ch of line) {
+      if (ch === "(") {
+        openParen += 1;
+        out += ch;
+      } else if (ch === ")") {
+        if (openParen > 0) {
+          openParen -= 1;
+          out += ch;
+        }
+      } else if (ch === "[") {
+        openBracket += 1;
+        out += ch;
+      } else if (ch === "]") {
+        if (openBracket > 0) {
+          openBracket -= 1;
+          out += ch;
+        }
+      } else out += ch;
+    }
+    while (openParen > 0) {
+      const at = out.lastIndexOf("(");
+      if (at < 0) break;
+      out = `${out.slice(0, at)}${out.slice(at + 1)}`;
+      openParen -= 1;
+    }
+    while (openBracket > 0) {
+      const at = out.lastIndexOf("[");
+      if (at < 0) break;
+      out = `${out.slice(0, at)}${out.slice(at + 1)}`;
+      openBracket -= 1;
+    }
+    return out
+      .replace(/,{2,}/g, ",")
+      .replace(/([.!?])\1+/g, "$1")
+      .replace(/([^ \t])[ \t]{2,}/g, "$1 ")
+      .replace(/[ \t]+([,.])/g, "$1")
+      .replace(/\(\s*\)/g, "")
+      .replace(/\[\s*\]/g, "")
+      .trimEnd();
+  });
+  return lines
+    .filter((line, index, all) => line.trim() !== "" || (all[index - 1] || "").trim() !== "")
+    .join("\n")
+    .trim();
+}
+
+function concreteVisibleAction(text: string, place: string) {
+  let next = text;
+  const where = place.trim();
+  if (where && !/^the place$/i.test(where)) {
+    next = next.replace(/\b(?:are|stay|stays|remain|remains)\s+in\s+the\s+room\b/gi, `remain inside the ${where}`);
+    next = next.replace(/\b(?:in|inside)\s+the\s+room\b/gi, `inside the ${where}`);
+  }
+  next = next.replace(
+    /\b(?:finishes|finished|finishing)\s+(?:the\s+|her\s+|his\s+|their\s+)?(bottle|cup|glass|drink|water|coffee|soda|beer|wine)\b/gi,
+    (_all, vessel: string) => `drinks the last sip from the ${vessel}, then lowers the hand`,
+  );
+  next = next.replace(
+    /\b(?:finishes|finished|finishing)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:meal|food|sandwich|plate|snack|bite)\b/gi,
+    "eats the last bite, then lowers the hand",
+  );
+  if (/\b(?:car|truck|van|vehicle)\b/i.test(`${next} ${where}`)) {
+    next = next.replace(
+      /\b(?:the\s+)?(car|truck|van|vehicle)\s+pulls\s+(?:off|away|out)\b/gi,
+      (_all, kind: string) => `The ${kind} accelerates and drives out of the frame`,
+    );
+    next = next.replace(/\bpulls?\s+(?:away|off|out)(?!\s+(?:the|his|her|their|a|an)\b)/gi, "accelerates and drives out of the frame");
+  }
+  return next.replace(/[ \t]{2,}/g, " ").trim();
+}
+
+function statesMovement(text: string) {
+  return /\b(?:walks?|walking|exits?|steps?\s+out|gets?\s+out|stands?\s+up|sits?\s+down|drives?|pulls?\s+(?:away|off|out)(?!\s+(?:the|his|her|their|a|an)\b)|enters?|leaves?|climbs?|runs?|moves?\s+to|accelerates)\b/i.test(
+    text,
+  );
+}
+
+function identityPhrase(project: Project, name: string, tag: string) {
+  if (exactCastName(project, name) && /^(?:Him|He|Her|She)$/.test(name)) return `${tag} is ${name}.`;
+  const role = faceLabel(project, name);
+  const who = !exactCastName(project, name) && /^(?:her|she|him|he)$/i.test(name) ? role || name : role ? `${name}, ${role}` : name;
+  return `${tag} is ${who}.`;
+}
+
+function stanceClause(text: string, name: string, tag: string, place: string) {
+  const sentences = text.split(/(?<=[.!?])\s+/).map((sentence) => sentence.trim()).filter(Boolean);
+  const hit =
+    sentences.find((sentence) => new RegExp(`\\b${escapeRegExp(name)}\\b`, "i").test(sentence) || sentence.includes(tag)) ||
+    sentences[0] ||
+    "";
+  const words = hit.replace(/\s+/g, " ").split(/\s+/).filter(Boolean).slice(0, 18);
+  if (words.length >= 3) return `${words.join(" ").replace(/[.]+$/, "")}.`;
+  return place ? `In the ${place}.` : "In the place this scene names.";
+}
+
+function dialogueSection(lines: string[]) {
+  const said = lines.map((line) => line.trim()).filter(Boolean);
+  if (!said.length) return "- DIALOGUE: none.";
+  return ["- DIALOGUE:", ...said.map((line) => `  - ${line}`)].join("\n");
+}
+
 function sceneSays(
   project: Project,
   scene: Scene | undefined,
@@ -2070,7 +2176,7 @@ function sceneSays(
     const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
     parts.push(onScreen.includes(name.toLowerCase()) ? `${who}: "${text}"` : `${who}, voice-over: "${text}"`);
   }
-  return parts.join(" ");
+  return parts;
 }
 
 
@@ -2121,8 +2227,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   let conversationPlace = "";
   const saidAlready = new Set<string>();
   const lineKey = (value: string) => value.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
-  const spatial: string[] = [];
-  const seenPlaces = new Set<string>();
+  const positions = new Map<string, string>();
+  const openedPlaces = new Set<string>();
   const seen = previousSeenCard(project, sceneIndexes);
   const productKept = productCarryIndexes(project, sceneIndexes, seen);
   const clothesKept = clothesCarryIndexes(project, sceneIndexes, seen);
@@ -2279,70 +2385,105 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           .filter((sentence) => !/\b(?:the box|the product|the package)\b/i.test(sentence))
           .join(" ")
       : visual;
-    const cites = [placement, carriedLook, ...logoTags].filter(Boolean).join(" ");
+    const visible = concreteVisibleAction(shown, placeNow);
+    for (const name of peopleHere) {
+      const key = name.toLowerCase();
+      if (positions.has(key)) continue;
+      const tag = people.get(key) || "";
+      const identity = tag ? identityPhrase(project, name, tag) : `${name}.`;
+      positions.set(key, `- ${identity} ${stanceClause(visible || summary, name, tag, placeNow)}`.replace(/\s{2,}/g, " ").trim());
+    }
+    const placeKey = placeNow.toLowerCase();
+    const openingPlace = placeKey ? !openedPlaces.has(placeKey) : i === 0;
+    if (placeKey) openedPlaces.add(placeKey);
+    const placeBit = placeTag ? `${placeNow} (${placeTag})` : placeNow || "the place";
+    const here = peopleHere
+      .map((name) => positions.get(name.toLowerCase())?.replace(/^- /, "") || "")
+      .filter(Boolean);
+    const moving = statesMovement(`${visible} ${summary}`);
+    const stateLine = openingPlace
+      ? `- ENVIRONMENT: ${placeBit}. ${here.join(" ")}`.replace(/[ \t]{2,}/g, " ").trim()
+      : `- CONTINUITY: ${moving ? "This action is the move. Everyone else keeps the declared position." : "Positions stay as declared unless this action moves someone."}`;
+    const facts = [stayed, carriedLook].filter(Boolean).join("\n");
     const singsAlong =
       song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
-    const cardLine = cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')).join(" ");
-    const said = [graphicScene(scene) ? "" : sceneSays(project, scene, people, narratorTag, slice), cardLine].filter(Boolean).join(" ");
-    const spoken = song ? (singsAlong ? "Mouth matches @Audio1." : "") : said;
-    const placeLabel = placeTag ? `${placeNow || "the place"} (${placeTag})` : placeNow || "the place";
-    if (placeTag && placeNow && !seenPlaces.has(placeNow.toLowerCase())) {
-      seenPlaces.add(placeNow.toLowerCase());
-      const who = peopleHere
-        .map((name) => people.get(name.toLowerCase()) || name)
-        .filter(Boolean);
-      const stance = firstStance(visual) || (who.length ? `${who.join(" and ")} are in this place.` : "");
-      if (stance && (who.length || /@(?:Image|Video)\d+/.test(stance))) spatial.push(`In ${placeTag} (${placeNow}): ${stance}`);
-    }
-    const picture = [graphicScene(scene) ? "The frame holds the card." : "", shown, cites, spoken].filter(Boolean).join(" ");
-    return `SCENE ${i + 1} (${cutSeconds[i]}s) | ${placeLabel} | ${cameraTitle(camera)}\n${picture} CUT.`;
+    const spokenLines = [
+      ...(graphicScene(scene) ? [] : sceneSays(project, scene, people, narratorTag, slice)),
+      ...cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')),
+    ];
+    const shotName = cameraTitle(camera).replace(/[.]+$/, "");
+    const actionLine = [
+      graphicScene(scene) ? "The frame holds the card." : visible,
+      stayed ? "" : placement,
+      ...logoTags,
+      song && singsAlong ? "Mouth matches @Audio1." : "",
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .replace(/[ \t]{2,}/g, " ")
+      .trim();
+    return [
+      `SCENE ${i + 1} | Duration: ${cutSeconds[i]}s | Shot: ${shotName}`,
+      `- CAMERA: ${shotName}.`,
+      stateLine,
+      facts,
+      `- ACTION: ${actionLine || "The action in this scene plays out."}`,
+      dialogueSection(spokenLines),
+    ]
+      .filter(Boolean)
+      .join("\n");
   });
 
-  const hasPlace = images.some((item) => item.kind === "location");
-  const grounded = hasPlace ? "Characters stand grounded on the floor, with natural shadows, clear of the furniture." : "";
-  const castLine = referenceLock(
-    project,
-    images.map((item) =>
-      item.kind === "character" || item.kind === "location" || item.kind === "logo" ? item : { ...item, name: "" },
-    ),
-  );
-  const productLine = referenceLock(
-    project,
-    images.map((item, index) =>
-      item.kind === "product" && blocks.some((block) => new RegExp(`@Image${index + 1}\\b`).test(block)) ? item : { ...item, name: "" },
-    ),
-  );
+  const placeBullets = images
+    .map((item, index) => {
+      if (item.kind !== "location" || !item.name.trim()) return "";
+      const used = scenes.some((scene) => scene?.location && samePlace(scene.location, item.name));
+      if (!used) return "";
+      return `- @Image${index + 1} is the ${cleanPlace(item.name)}.`;
+    })
+    .filter(Boolean);
+  const productBullets = images
+    .map((item, index) => {
+      if (item.kind !== "product") return "";
+      const tag = `@Image${index + 1}`;
+      if (!blocks.some((block) => new RegExp(`${escapeRegExp(tag)}\\b`).test(block))) return "";
+      return `- ${tag} is ${productPromptName(project, item.name, item.notes || "")}.`;
+    })
+    .filter(Boolean);
+  const spokenLanguage = project.dialogueLanguage === "spanish" ? "Spanish" : "English";
+  const styleLine =
+    project.style === "realistic"
+      ? "Style: Realistic live-action, handheld, natural shadows."
+      : project.style === "claymation"
+        ? "Style: Claymation."
+        : "Style: Pixar.";
   const header = [
     dialogueLanguageLine(project),
     "[GLOBAL SETUP]",
-    styleThroughout(project.style),
-    grounded,
-    toneShift(scenes),
+    styleLine,
     song
       ? continues
-        ? "@Audio1 is this slice from 00:00. The picture continues after the previous frame."
-        : "@Audio1 plays from the first frame. The song is already playing."
-      : "",
+        ? "Audio: @Audio1 is this slice from 00:00. The picture continues after the previous frame."
+        : "Audio: @Audio1 plays from the first frame. The song is already playing."
+      : `Audio: Sync the spoken lines in ${spokenLanguage}. Room tone and those lines are the soundtrack.`,
+    toneShift(scenes),
     song ? "Each scene shows its quoted lyric. The sung lyric is the only voice. The product is on screen in the scene that uses it." : "",
-    ...spatial,
-    "[CHARACTERS & LOCATIONS]",
-    castLine,
-    productLine,
-    characterVideos ? "Speaking faces are @Video, with that voice." : "",
-    "Speakers look at the person they address. The action comes first, then the line.",
     previousLine,
     tailLine,
     continues && !tailLine ? "This part starts where the last one ended." : "",
+    characterVideos ? "Speaking faces are @Video, with that voice." : "",
     narrated ? "Narrator lines are voice-over. The picture shows what they describe." : "",
+    "[CONTINUITY RULE]",
+    "Characters keep the positions below across cuts until a scene states that they move. They stay grounded, with natural shadows, clear of the furniture.",
+    "[CHARACTER ROLES & POSITIONS]",
+    ...positions.values(),
+    ...placeBullets,
+    ...productBullets,
     "[SCENE BREAKDOWN]",
   ]
     .filter(Boolean)
     .join("\n");
-  const soundtrack = song ? "The soundtrack is @Audio1, from the first frame to the last." : "Room tone and the spoken lines are the soundtrack.";
-  return `${header}\n${blocks.join("\n")}\n${soundtrack}`
-    .replace(/[ \t]{2,}/g, " ")
-    .replace(/\s+([,.])/g, "$1")
-    .trim();
+  return cleanPromptSyntax(`${header}\n${blocks.join("\n")}`);
 }
 
 function videoPromptFor(options: CompactPromptOptions) {
