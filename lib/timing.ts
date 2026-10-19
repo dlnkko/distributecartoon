@@ -580,7 +580,7 @@ export function storyArc(totalSeconds: number) {
   const listed = parts.map((duration, index) => `part ${index + 1} (${duration}s)`).join(", ");
   const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
   const moves =
-    "Open on the hook already in motion. If the story starts in the middle of the complaint, start there. Do not add a calm introduction before it. The knot makes that conflict harder instead of repeating it. The close is the longest movement: the solution is used, then one later scene shows the change in how the people look and act. That later scene is short. It is not a tour of the new life. Do not solve the story in the opening. Do not add a slogan or a health claim.";
+    "Open on the hook already in motion. If the story starts in the middle of the complaint, start there. Do not add a calm introduction before it. A part may visit more than one place and change movement and picture when that serves the story. The knot makes that conflict harder instead of repeating it. The close is the longest movement: the solution is used, then one later scene shows the change in how the people look and act. That later scene is short. It is not a tour of the new life. Do not solve the story in the opening. Do not add a slogan or a health claim.";
   let where = "";
   if (parts.length <= 1) {
     const [opening, knot, close] = shareSeconds(total, [25, 30, 45]);
@@ -592,7 +592,7 @@ export function storyArc(totalSeconds: number) {
   } else {
     where = `Part 1 opens on the hook. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution is used, then one later scene shows the change.`;
   }
-  return `${head} ${moves} ${where}`;
+  return `${head} ${moves} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
 }
 
 export function scaleEstimatedSeconds(values: number[], target: number): number[] {
