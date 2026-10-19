@@ -100,7 +100,7 @@ export async function readAttachedProduct(buffer: Buffer, mime: string, page = "
         text: [
           "Read this product for a film. You have its photo and, when present, the text of its page and the owner's notes.",
           "Stay with this object. Do not invent a different product, a health claim, a cure, or a scene.",
-          "OWNER NOTES, when present, decide how and when this person uses it. Prefer those notes for HOW IT IS USED and WHEN IT IS USED.",
+          "OWNER NOTES may include HOW IT IS USED, WHEN IT IS USED, and ADDITIONAL CONTEXT. Prefer those how and when lines. Additional context is story detail, not a health claim.",
           "WHEN IT IS USED is the situation, not a result and not a benefit. Example shape only: before sleep. If neither the notes nor the page say, write not stated. Do not copy the example.",
           "Return these lines only, in English, under 220 words:",
           "NAME: the product name from the page, or what the photo shows if there is no page",

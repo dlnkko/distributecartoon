@@ -12,7 +12,7 @@ import { describeProductImage, readAttachedProduct } from "./product-use-video";
 import { watchRenderedPart } from "./continuity-watch";
 import { clothesShouldChange, parseSeenCard, partKeepsCarriedProduct, previousSeenCard, referenceRanges, seenCardMatters } from "./seen-continuity";
 import { REALISTIC_REFERENCE_FALLBACK_SECONDS, realisticProseCast } from "./realistic-prose";
-import { productUnderstandingBrief } from "./product-facts";
+import { ownerProductContext, productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
 import { applyScriptLooks } from "./cast-roster";
@@ -672,7 +672,8 @@ export async function ensureProductUnderstanding(project: Project) {
         console.warn("product page", project.id, error instanceof Error ? error.message : error);
       }
     }
-    const key = createHash("sha256").update(`${src}\n${asset.pageContext || ""}\n${asset.useNotes || ""}\nwhen-it-is-used`).digest("hex").slice(0, 20);
+    const owner = ownerProductContext(asset);
+    const key = createHash("sha256").update(`${src}\n${asset.pageContext || ""}\n${owner}\nwhen-it-is-used`).digest("hex").slice(0, 20);
     if (asset.productRead?.trim() && asset.productReadKey === key) continue;
     try {
       const read = await readAttachedProduct(
@@ -680,7 +681,7 @@ export async function ensureProductUnderstanding(project: Project) {
         productImageMime(src),
         asset.pageContext || "",
         asset.pageUrl || "",
-        asset.useNotes || "",
+        owner,
       );
       if (!read) continue;
       asset.productRead = read;

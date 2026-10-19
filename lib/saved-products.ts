@@ -15,6 +15,8 @@ export type SavedProduct = {
   pageUrl: string;
   pageContext: string;
   useNotes: string;
+  whenNotes: string;
+  extraContext: string;
   imagePath: string;
   imageNote: string;
   useVideoPath: string;
@@ -30,6 +32,8 @@ type SavedProductRow = {
   page_url: string | null;
   page_context: string | null;
   use_notes: string | null;
+  when_notes?: string | null;
+  extra_context?: string | null;
   image_path: string | null;
   image_note: string | null;
   use_video_path: string | null;
@@ -75,6 +79,8 @@ export function savedProductFromRow(row: SavedProductRow): SavedProduct {
     pageUrl: row.page_url || "",
     pageContext: row.page_context || "",
     useNotes: row.use_notes || "",
+    whenNotes: row.when_notes || "",
+    extraContext: row.extra_context || "",
     imagePath: columns.image_path,
     imageNote: columns.image_note,
     useVideoPath: columns.use_video_path,
@@ -103,6 +109,8 @@ export function clearProductSlot(asset: ReferenceAsset) {
   delete asset.pageUrl;
   delete asset.pageContext;
   delete asset.useNotes;
+  delete asset.whenNotes;
+  delete asset.extraContext;
   delete asset.productRead;
   delete asset.productReadKey;
   delete asset.imageNote;
@@ -124,6 +132,8 @@ export function applySavedProduct(project: Project, asset: ReferenceAsset, produ
   asset.label = product.name.trim() || "Product";
   asset.savedProductId = product.id;
   asset.useNotes = product.useNotes.trim();
+  asset.whenNotes = product.whenNotes.trim();
+  asset.extraContext = product.extraContext.trim();
   asset.status = product.imagePath ? "ready" : "empty";
   asset.includeInVideo = Boolean(product.imagePath);
   if (product.pageUrl) asset.pageUrl = product.pageUrl;

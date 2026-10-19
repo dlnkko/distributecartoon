@@ -111,6 +111,8 @@ export type ReferenceAsset = {
   pageUrl?: string;
   pageContext?: string;
   useNotes?: string;
+  whenNotes?: string;
+  extraContext?: string;
   productRead?: string;
   productReadKey?: string;
   useVideoFileName?: string;

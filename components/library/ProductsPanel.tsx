@@ -18,6 +18,8 @@ export function ProductsPanel() {
   const [name, setName] = useState("");
   const [pageUrl, setPageUrl] = useState("");
   const [useNotes, setUseNotes] = useState("");
+  const [whenNotes, setWhenNotes] = useState("");
+  const [extraContext, setExtraContext] = useState("");
   const [keptPhotos, setKeptPhotos] = useState<SavedMedia[]>([]);
   const [keptVideos, setKeptVideos] = useState<SavedMedia[]>([]);
   const [photoFiles, setPhotoFiles] = useState<File[]>([]);
@@ -44,6 +46,8 @@ export function ProductsPanel() {
     setName("");
     setPageUrl("");
     setUseNotes("");
+    setWhenNotes("");
+    setExtraContext("");
     setKeptPhotos([]);
     setKeptVideos([]);
     setPhotoFiles([]);
@@ -61,6 +65,8 @@ export function ProductsPanel() {
     setName(product.name);
     setPageUrl(product.pageUrl);
     setUseNotes(product.useNotes);
+    setWhenNotes(product.whenNotes);
+    setExtraContext(product.extraContext);
     setKeptPhotos(product.photos);
     setKeptVideos(product.videos);
     setPhotoFiles([]);
@@ -109,6 +115,8 @@ export function ProductsPanel() {
         name,
         pageUrl,
         useNotes,
+        whenNotes,
+        extraContext,
         photoPaths: keptPhotos.map((item) => item.path),
         videoPaths: keptVideos.map((item) => item.path),
       }),
@@ -245,8 +253,26 @@ export function ProductsPanel() {
           <textarea
             value={useNotes}
             onChange={(event) => setUseNotes(event.target.value)}
-            placeholder="How it is used, when it is used, and anything else the story should know."
-            className="mt-1 min-h-28 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm leading-6 text-[var(--cf-ink)] outline-none"
+            placeholder="How it is used."
+            className="mt-1 min-h-20 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm leading-6 text-[var(--cf-ink)] outline-none"
+          />
+        </label>
+        <label className="mt-3 block text-xs text-[var(--cf-muted)]">
+          When it is used
+          <textarea
+            value={whenNotes}
+            onChange={(event) => setWhenNotes(event.target.value)}
+            placeholder="When it is used."
+            className="mt-1 min-h-20 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm leading-6 text-[var(--cf-ink)] outline-none"
+          />
+        </label>
+        <label className="mt-3 block text-xs text-[var(--cf-muted)]">
+          Additional context <span className="text-[var(--cf-muted)]">· optional</span>
+          <textarea
+            value={extraContext}
+            onChange={(event) => setExtraContext(event.target.value)}
+            placeholder="Anything else the story should know."
+            className="mt-1 min-h-20 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm leading-6 text-[var(--cf-ink)] outline-none"
           />
         </label>
         <label className="mt-3 block text-xs text-[var(--cf-muted)]">

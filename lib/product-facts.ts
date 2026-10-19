@@ -33,14 +33,27 @@ function productMatch(project: Project, label: string) {
   );
 }
 
+export function ownerProductContext(item: { useNotes?: string; whenNotes?: string; extraContext?: string }) {
+  const how = item.useNotes?.trim() || "";
+  const when = item.whenNotes?.trim() || "";
+  const extra = item.extraContext?.trim() || "";
+  return [
+    how ? `HOW IT IS USED:\n${how}` : "",
+    when ? `WHEN IT IS USED:\n${when}` : "",
+    extra ? `ADDITIONAL CONTEXT:\n${extra}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
 export function productUnderstandingBrief(project: Project) {
   const products = (project.references || []).filter((item) => item.kind === "product");
   const chunks = products.flatMap((item) => {
-    const name = productFacts(project, item.label).name || item.label || "The product";
+    const owner = ownerProductContext(item);
     const parts = [
       item.productRead?.trim() ? `PRODUCT UNDERSTANDING:\n${item.productRead.trim()}` : "",
-      item.useNotes?.trim()
-        ? `HOW THE OWNER USES ${name}:\n${item.useNotes.trim()}\nUse this for when and how the product is used. Do not turn it into a slogan or a health claim.`
+      owner
+        ? `${owner}\nUse how and when exactly as written. Additional context is story detail only. Do not turn any of this into a slogan or a health claim.`
         : "",
     ];
     return parts.filter(Boolean);
@@ -78,8 +91,9 @@ export function productFacts(project: Project, label: string) {
   const readUse = readLine(match?.productRead || "", "HOW IT IS USED");
   const pageUse = useFromBlurb(blurb);
   const use = [owner, readUse || pageUse, video].filter(Boolean).join(" ");
+  const ownerWhen = (match?.whenNotes || "").replace(/\s+/g, " ").trim();
   const whenRaw = readLine(match?.productRead || "", "WHEN IT IS USED");
-  const when = /^(?:not stated|unknown|n\/a|none|empty|unspecified)\b/i.test(whenRaw) ? "" : whenRaw;
+  const when = ownerWhen || (/^(?:not stated|unknown|n\/a|none|empty|unspecified)\b/i.test(whenRaw) ? "" : whenRaw);
   return { name, use, seen, when };
 }
 

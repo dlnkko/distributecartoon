@@ -73,6 +73,8 @@ async function saveText(request: Request, userId: string) {
     name?: string;
     pageUrl?: string;
     useNotes?: string;
+    whenNotes?: string;
+    extraContext?: string;
     photoPaths?: unknown;
     videoPaths?: unknown;
   };
@@ -82,6 +84,8 @@ async function saveText(request: Request, userId: string) {
   if (body.id && !current) return NextResponse.json({ error: "Product not found." }, { status: 404 });
   const name = String(body.name || current?.name || "Product").replace(/\s+/g, " ").trim().slice(0, 80) || "Product";
   const useNotes = String(body.useNotes ?? current?.useNotes ?? "").replace(/\s+/g, " ").trim().slice(0, 2000);
+  const whenNotes = String(body.whenNotes ?? current?.whenNotes ?? "").replace(/\s+/g, " ").trim().slice(0, 2000);
+  const extraContext = String(body.extraContext ?? current?.extraContext ?? "").replace(/\s+/g, " ").trim().slice(0, 2000);
   const rawUrl = String(body.pageUrl ?? current?.pageUrl ?? "").trim();
   let pageUrl = current?.pageUrl || "";
   let pageContext = current?.pageContext || "";
@@ -102,6 +106,8 @@ async function saveText(request: Request, userId: string) {
     page_url: pageUrl,
     page_context: pageContext,
     use_notes: useNotes,
+    when_notes: whenNotes,
+    extra_context: extraContext,
     ...mediaColumns(photos, videos),
   };
   const { data, error } = await supabase.from("saved_products").upsert(row).select("*").single();
