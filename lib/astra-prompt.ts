@@ -91,8 +91,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       "Each scene is one forward action, then the spoken line. Continue a beat only when the draft says that beat is still going. When the draft says the previous scene already finished, start the next action and do not replay the last gesture.",
       "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. A mouth that sings along matches @Audio1.",
       prior
-        ? /full previous video/i.test(trimmed)
-          ? "A previous part prompt is included. The attached video is the whole previous part. Match the same people already described. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
+        ? /previous part without its first second/i.test(trimmed)
+          ? "A previous part prompt is included. The attached video is the previous part without its first second. Match the same people already described. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
           : "A previous part prompt is included. This clip is the next slice. The last 5 seconds carry clothes and where people ended up. Replay a gesture only when this draft says that same beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
         : "",
       sight
@@ -126,7 +126,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const revisedFlat = revised.replace(/\s+/g, " ");
     if (carried.some((line) => !revisedFlat.includes(line))) return tightenPrompt(trimmed);
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
-    if (/full previous video/i.test(trimmed) && !/full previous video/i.test(revised)) return trimmed;
+    if (/previous part without its first second/i.test(trimmed) && !/previous part without its first second/i.test(revised)) return trimmed;
     if (!/@Image\d+/.test(trimmed) && /@Image\d+/.test(revised)) return trimmed;
     if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;

@@ -1222,7 +1222,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
         project.song
           ? `${tag} is the last 5 seconds, picture and music. The picture continues from that frame.`
           : realisticProseCast(project)
-            ? `${tag} is the full previous video. Match the same people, faces, clothes, and place that video already showed. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
+            ? `${tag} is the previous part without its first second. Match the same people, faces, clothes, and place that video already showed. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
             : `${tag} is the last 5 seconds, picture only. Match clothes, faces, and where everyone is after that moment. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
@@ -2252,7 +2252,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const prose = realisticProseCast(project);
   const images = prose ? [] : options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
-  const tailLine = refs.find((line) => /last 5 seconds|full previous video/i.test(line)) || "";
+  const tailLine = refs.find((line) => /last 5 seconds|previous part without its first second/i.test(line)) || "";
   const previousLine = refs.find((line) => /previous part/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));

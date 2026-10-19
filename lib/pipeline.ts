@@ -11,7 +11,7 @@ import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoT
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
 import { watchRenderedPart } from "./continuity-watch";
 import { parseSeenCard, partKeepsCarriedProduct, seenCardMatters } from "./seen-continuity";
-import { realisticProseCast } from "./realistic-prose";
+import { REALISTIC_REFERENCE_SECONDS, realisticProseCast } from "./realistic-prose";
 import { productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
@@ -549,7 +549,7 @@ async function savePartTail(project: Project, batch: Batch) {
   const src = durableVideoSrc(batch);
   if (!src || tailUrl(batch)) return;
   const buffer = await readPublicFile(src);
-  const tail = await tailVideoBuffer(buffer, 5);
+  const tail = await tailVideoBuffer(buffer, realisticProseCast(project) ? REALISTIC_REFERENCE_SECONDS : 5);
   const saved = await storeGeneratedFile({
     project,
     buffer: tail,
@@ -706,7 +706,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     if (durableVideoSrc(batch)) continue;
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
-    if (!realisticProseCast(project) && previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
@@ -730,7 +730,9 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
         batch.promptReady = false;
       }
     }
-    const handoffReady = realisticProseCast(project) ? /full previous video/i.test(batch.videoPrompt || "") : /last 5 seconds/i.test(batch.videoPrompt || "");
+    const handoffReady = realisticProseCast(project)
+      ? /previous part without its first second/i.test(batch.videoPrompt || "")
+      : /last 5 seconds/i.test(batch.videoPrompt || "");
     if (
       previous &&
       !realKieVideoTaskId(batch.kieVideoTaskId) &&
@@ -1387,13 +1389,8 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
     if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
       return { imageEntries: [] as PromptRef[], videoEntries: [] as PromptRef[] };
     }
-    const previous = previousStoryBatch(project, batch);
-    const src = durableVideoSrc(previous || { videoPublicPath: "", videoRemoteUrl: "" });
-    const url = src ? await resolveUploadUrl(previous?.videoRemoteUrl, previous?.videoPublicPath, abortSignal) : "";
-    return {
-      imageEntries: [] as PromptRef[],
-      videoEntries: url ? [{ url, kind: "video" as const, name: "Previous part" }] : [],
-    };
+    const tail = await previousTailRef(project, batch, abortSignal);
+    return { imageEntries: [] as PromptRef[], videoEntries: tail ? [tail] : [] };
   }
   const imageEntries = await stableImageEntries(project, abortSignal, true);
   const seen = new Set(imageEntries.map((item) => item.url));

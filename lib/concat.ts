@@ -54,6 +54,8 @@ export async function tailVideoBuffer(buffer: Buffer, seconds = 5) {
       `-${Math.max(1, seconds)}`,
       "-i",
       input,
+      "-t",
+      String(Math.max(1, seconds)),
       "-c:v",
       "libx264",
       "-preset",
