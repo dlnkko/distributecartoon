@@ -283,27 +283,6 @@ function packshotAsset(project: Project, kind: string, name: string) {
   );
 }
 
-export function projectHasProductPhoto(project: Project) {
-  return (project.references || []).some(
-    (item) => item.kind === "product" && Boolean(item.originalPublicPath || item.originalRemoteUrl),
-  );
-}
-
-export function partIsLaterClose(project: Project, sceneIndexes: number[]) {
-  if (!sceneIndexes.length || sceneIndexes.length >= (project.scenes || []).length) return false;
-  const last = (project.scenes || []).reduce((max, scene) => Math.max(max, scene.index), 0);
-  return last > 0 && sceneIndexes.includes(last);
-}
-
-export function partShowsCloseProduct(project: Project, sceneIndexes: number[]) {
-  if (!projectHasProductPhoto(project) || !partIsLaterClose(project, sceneIndexes)) return false;
-  const text = sceneIndexes
-    .map((index) => project.scenes.find((item) => item.index === index))
-    .filter((scene): scene is Scene => Boolean(scene))
-    .map((scene) => `${scene.title || ""} ${scene.summary || ""}`)
-    .join(" ");
-  return !productKeptOut(text);
-}
 export function partNeedsPackshot(project: Project, kind: string, name: string, text: string) {
   if (kind !== "product" && kind !== "logo") return false;
   if (!text.trim() || (productKeptOut(text) && !sceneRequiresAsset(kind, text))) return false;

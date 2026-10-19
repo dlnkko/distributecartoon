@@ -12,6 +12,7 @@ export type SeenCard = {
   carryClothes: string;
   carryPose: string;
   looks: string;
+  outfit: string;
   unseen: string;
 };
 
@@ -27,6 +28,7 @@ const EMPTY: SeenCard = {
   carryClothes: "",
   carryPose: "",
   looks: "",
+  outfit: "",
   unseen: "",
 };
 
@@ -82,6 +84,12 @@ export function usableNote(text: string) {
   return value.slice(0, 240);
 }
 
+function readOutfit(text: string) {
+  const value = usableNote(readLine(text, "OUTFIT"));
+  if (!value || /^(?:same|unchanged|no change|keep|stays)\b/i.test(value)) return "";
+  return value;
+}
+
 export function parseSeenCard(raw: string): SeenCard {
   const text = raw.replace(/\r/g, "").trim();
   if (!text) return EMPTY;
@@ -108,12 +116,13 @@ export function parseSeenCard(raw: string): SeenCard {
     carryClothes: usableNote(readLine(text, "CARRY_CLOTHES")),
     carryPose: usableNote(readLine(text, "CARRY_POSE")),
     looks: readLooks(text),
+    outfit: readOutfit(text),
     unseen,
   };
 }
 
 export function seenCardMatters(card: SeenCard) {
-  return card.carryProduct || Boolean(card.carryClothes) || Boolean(card.carryPose);
+  return card.carryProduct || Boolean(card.carryClothes) || Boolean(card.carryPose) || Boolean(card.outfit);
 }
 
 const GARMENT =
@@ -179,15 +188,23 @@ export function previousSeenCard(project: Project, sceneIndexes: number[]) {
   return parseSeenCard(previous?.seenContinuity || "");
 }
 
+export function clothesShouldChange(card: SeenCard, sceneText: string) {
+  if (!card.raw && !card.outfit && !card.place && !card.clothes) return false;
+  if (card.outfit) return true;
+  const inBed = /\b(?:in bed|on the pillows?|under the covers|l(?:ie|ies|ying)\s+(?:on|in|down)|asleep|sleeping)\b/i.test(sceneText);
+  const timeShift = /\b(?:next morning|the next day|later that|time change|hours later|that night|the following morning)\b/i.test(sceneText);
+  if (!inBed && !timeShift) return false;
+  const seen = `${card.place} ${card.clothes} ${card.carryClothes} ${card.pose}`;
+  return !/\b(?:bed|pillow|asleep|sleeping|lying|bedroom)\b/i.test(seen);
+}
+
 export function productCarryIndexes(project: Project, sceneIndexes: number[], card: SeenCard) {
   const keep = new Set<number>();
   if (!card.carryProduct) return keep;
-  const takingOff = removalGesture(`${card.carryDetail} ${card.pose} ${card.product}`);
   for (const index of sceneIndexes) {
     const scene = project.scenes.find((item) => item.index === index);
     const text = sceneBlob(scene);
     if (sceneReleasesProduct(text)) break;
-    if (takingOff && !removalGesture(text)) continue;
     if (graphicScene(scene) || !sceneHasSomeone(project, scene)) continue;
     keep.add(index);
   }
@@ -196,11 +213,11 @@ export function productCarryIndexes(project: Project, sceneIndexes: number[], ca
 
 export function clothesCarryIndexes(project: Project, sceneIndexes: number[], card: SeenCard) {
   const keep = new Set<number>();
-  if (!card.carryClothes) return keep;
+  if (!card.carryClothes || card.outfit) return keep;
   for (const index of sceneIndexes) {
     const scene = project.scenes.find((item) => item.index === index);
     const text = sceneBlob(scene);
-    if (sceneChangesClothes(text)) break;
+    if (sceneChangesClothes(text) || clothesShouldChange(card, text)) break;
     if (graphicScene(scene) || !sceneHasSomeone(project, scene)) continue;
     keep.add(index);
   }

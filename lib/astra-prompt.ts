@@ -86,7 +86,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
         ? "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene. When a scene says the product is still visible after it was used, keep that sentence and its tag."
         : "When the draft describes a product in words, keep that description. Leave the product out of a scene that does not already use it. When a scene says the product is still visible after it was used, keep that sentence.",
       /Clothes have changed/i.test(trimmed)
-        ? "Keep the sentence that clothes have changed. Do not put a coat, a bag, or street shoes back on someone who is in bed. Face and hair stay."
+        ? "Keep the sentence that clothes have changed. Keep the face and hair. Do not put the previous outfit back."
         : "",
       /@Image\d+/.test(trimmed)
         ? "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag."
