@@ -90,10 +90,10 @@ export async function watchRenderedPart(video: Buffer, context: string, options?
                   "CARRY_PRODUCT is yes only when the product is still on or still in frame after the clip ends. It is no when the clip ends with it off.",
                   "Do not invent a new event, a new line, or a camera direction.",
                   options?.describeLooks
-                    ? "LOOKS: one sentence per named person who is visible. Start with the name, then 'is the same', then what this video actually shows: age, hair, height, glasses, build, and the clothes at the end. Describe the person in the picture, not a planned description. Example shape only: Sam is the same tall man, about 30, with short hair and glasses, in a gray shirt."
+                    ? "LOOKS: one short sentence per named person who is visible, including someone who leaves before the ending. Start with the name, then 'is the same', then only what this video shows: skin, hair, clothes, and where they are, such as in bed or in a doorway. Do not copy a planned description. Example shape only: Sam is the same white man in a white t-shirt, sitting in bed. Ana is the same woman standing in the doorway."
                     : "",
                   options?.describeLooks
-                    ? "CLIPS: short ranges, in seconds, to keep as a cheap reference. If this part stays in one place, one range of the last 7 seconds where the main people are visible and speaking if they speak. If the place changes, one range of about 3 seconds for each place, in order, where those people are visible and speaking if they speak. Use the real times in this video. Total at most 9 seconds. Example shape only: 4.0-7.0, 18.0-21.0."
+                    ? "CLIPS: a short range, in seconds, for every person who is visible and speaks. Use the moment that person is on screen and talking. If the last 7 seconds already show all of them, return only that one range. If the ending shows only one of them, add an earlier range of about 3 seconds for each missing person, in the order they appear. Use the real times in this video. Total at most 9 seconds. Example shape only: 8.0-11.0, 24.0-27.0."
                     : "",
                   "Return these lines only:",
                   "PEOPLE: who is visible at the end, and what each is doing",

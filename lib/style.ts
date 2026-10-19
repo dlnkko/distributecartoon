@@ -1222,7 +1222,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
         project.song
           ? `${tag} is the last 5 seconds, picture and music. The picture continues from that frame.`
           : realisticProseCast(project)
-            ? `${tag} is a short cut of the previous part. It keeps the people, their voices, and the places that matter. Match them. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
+            ? `${tag} is a short cut of the previous part. It keeps every person who speaks, their voice, their clothes, and where they stand. Match each of them. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
             : `${tag} is the last 5 seconds, picture only. Match clothes, faces, and where everyone is after that moment. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
@@ -2252,6 +2252,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const prose = realisticProseCast(project);
   const images = options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
+  const videoIndex = (options.videos || []).findIndex((item) => item.kind === "video");
+  const seenTag = videoIndex >= 0 ? `@Video${videoIndex + 1}` : "";
   const tailLine = refs.find((line) => /last 5 seconds|short cut of the previous part/i.test(line)) || "";
   const previousLine = refs.find((line) => /this part starts after it/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
@@ -2445,9 +2447,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       const key = name.toLowerCase();
       if (positions.has(key)) continue;
       const tag = people.get(key) || "";
+      const look = proseSpeaker(project, name, seen.looks, continues).replace(/[.]+$/, "");
       const identity =
         prose && !/^@Image\d+$/i.test(tag)
-          ? `${name} is ${proseSpeaker(project, name, seen.looks, continues)}.`
+          ? `${name} is ${continues && seenTag ? `${look}, seen in ${seenTag}` : look}.`
           : tag
             ? identityPhrase(project, name, tag)
             : `${name}.`;

@@ -174,6 +174,7 @@ export type Batch = {
   storedAt?: string;
   tailPublicPath?: string;
   tailRemoteUrl?: string;
+  tailCutKey?: string;
   tailAttempts?: number;
   seenContinuity?: string;
   seenContinuityKey?: string;

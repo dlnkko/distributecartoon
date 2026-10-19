@@ -92,7 +92,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. A mouth that sings along matches @Audio1.",
       prior
         ? /short cut of the previous part/i.test(trimmed)
-          ? "A previous part prompt is included. The attached video is a short cut of the previous part. Match the same people already described. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
+          ? "A previous part prompt is included. The attached video is a short cut of the previous part. It includes every person who speaks, even when they are not in the final seconds. Match each of them. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
           : "A previous part prompt is included. This clip is the next slice. The last 5 seconds carry clothes and where people ended up. Replay a gesture only when this draft says that same beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
         : "",
       sight
@@ -127,6 +127,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (carried.some((line) => !revisedFlat.includes(line))) return tightenPrompt(trimmed);
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     if (/short cut of the previous part/i.test(trimmed) && !/short cut of the previous part/i.test(revised)) return trimmed;
+    if (/seen in @Video\d+/i.test(trimmed) && !/seen in @Video\d+/i.test(revised)) return trimmed;
     if (!/@Image\d+/.test(trimmed) && /@Image\d+/.test(revised)) return trimmed;
     if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;

@@ -545,9 +545,14 @@ function tailUrl(batch?: Batch) {
   return batch.tailRemoteUrl || batch.tailPublicPath || "";
 }
 
+function voiceWatchKey(src: string) {
+  return createHash("sha256").update(`${src}\nvoices`).digest("hex").slice(0, 20);
+}
+
 async function savePartTail(project: Project, batch: Batch) {
   const src = durableVideoSrc(batch);
-  if (!src || tailUrl(batch)) return;
+  const cutKey = realisticProseCast(project) ? "voices" : "tail";
+  if (!src || (tailUrl(batch) && batch.tailCutKey === cutKey)) return;
   const buffer = await readPublicFile(src);
   const tail = realisticProseCast(project) ? await proseReferenceClip(buffer, batch.seenContinuity || "") : await tailVideoBuffer(buffer, 5);
   const saved = await storeGeneratedFile({
@@ -558,6 +563,7 @@ async function savePartTail(project: Project, batch: Batch) {
   });
   batch.tailPublicPath = saved.publicPath;
   batch.tailRemoteUrl = saved.publicPath;
+  batch.tailCutKey = cutKey;
 }
 
 async function proseReferenceClip(buffer: Buffer, card: string) {
@@ -595,7 +601,7 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
   if (!previous || !next) return;
   const src = durableVideoSrc(previous);
   if (!src) return;
-  const key = createHash("sha256").update(src).digest("hex").slice(0, 20);
+  const key = voiceWatchKey(src);
   if (previous.seenContinuityKey && previous.seenContinuityKey !== key) previous.seenAttempts = 0;
   if (previous.seenContinuity?.trim() && previous.seenContinuityKey === key) return;
   if ((previous.seenAttempts || 0) >= 2) return;
@@ -608,11 +614,10 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
       `NEXT PART, as written:\n${partOutline(project, next)}`,
       realisticProseCast(project) ? `VIDEO LENGTH: ${previous.duration || 30} seconds.` : "",
       realisticProseCast(project)
-        ? `PEOPLE TO DESCRIBE:\n${project.characters
+        ? `PEOPLE IN THIS FILM: ${project.characters
             .filter((character) => !character.isExtra && character.name.trim())
-            .map((character) => `${character.name}: ${(character.description || "").replace(/\s+/g, " ").trim()}`)
-            .join("\n")
-            .slice(0, 1500)}`
+            .map((character) => character.name.trim())
+            .join(", ")}. LOOKS and CLIPS come from the video, not from a written description. Every one of these people who appears needs a look, and a moment in CLIPS where they are visible and speaking.`
         : "",
     ]
       .filter(Boolean)
@@ -726,13 +731,22 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       }
       if (
         realisticProseCast(project) &&
-        parseSeenCard(previous.seenContinuity || "").looks &&
-        !/\bthe same\b/i.test(batch.videoPrompt || "")
+        (!/\bthe same\b/i.test(batch.videoPrompt || "") || !/seen in @Video\d+/i.test(batch.videoPrompt || ""))
       ) {
         batch.promptReady = false;
       }
     }
-    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+    const previousSrc = previous ? durableVideoSrc(previous) : "";
+    const voicesReady = Boolean(previous && previousSrc && previous.seenContinuityKey === voiceWatchKey(previousSrc));
+    const staleCut = Boolean(
+      previous &&
+      realisticProseCast(project) &&
+      tailUrl(previous) &&
+      previous.tailCutKey !== "voices" &&
+      voicesReady &&
+      (previous.tailAttempts || 0) < 4,
+    );
+    if (previous && ((!tailUrl(previous) && (previous.tailAttempts || 0) < 2) || staleCut)) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
