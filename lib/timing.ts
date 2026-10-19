@@ -489,8 +489,8 @@ export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
   return out.map((scene, index) => ({ ...scene, index: index + 1 }));
 }
 
-// The joined video is the sum of these takes. It may land on the requested
-// length or one second under it. It does not run longer.
+// The joined video is the sum of these takes. It matches the requested length.
+// A leftover of 4 seconds or more opens another part instead of stopping short.
 export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): SeedancePartPlan[] {
   const goal = Math.max(4, Math.round(target));
   const next = parts
@@ -522,6 +522,15 @@ export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): See
     const add = Math.min(room, short);
     next[index].duration += add;
     short -= add;
+  }
+  if (short >= 4 && next.length) {
+    const last = next[next.length - 1];
+    const tail = last.sceneIndexes[last.sceneIndexes.length - 1];
+    if (tail !== undefined && last.sceneIndexes.length > 1) last.sceneIndexes.pop();
+    next.push({
+      duration: Math.min(SEEDANCE_MAX_SECONDS, short),
+      sceneIndexes: tail === undefined ? [...last.sceneIndexes] : [tail],
+    });
   }
   return next;
 }
