@@ -119,6 +119,7 @@ export type ReferenceAsset = {
   useVideoNote?: string;
   imageNote?: string;
   savedProductId?: string;
+  extraImagePaths?: string[];
   includeInVideo: boolean;
   originalFileName?: string;
   originalPublicPath?: string;

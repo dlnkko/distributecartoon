@@ -85,6 +85,16 @@ async function resolveUploadUrl(remoteUrl?: string, publicPath?: string, abortSi
   return undefined;
 }
 
+async function pushExtraProductPhotos(entries: PromptRef[], asset: ReferenceAsset, abortSignal?: AbortSignal) {
+  if (asset.kind !== "product") return;
+  for (const path of asset.extraImagePaths || []) {
+    const remote = isHttpUrl(path) ? path : undefined;
+    const url = await resolveUploadUrl(remote, remote ? undefined : path, abortSignal);
+    if (!url || entries.some((entry) => entry.url === url)) continue;
+    entries.push({ url, kind: "product", name: asset.label, notes: asset.notes });
+  }
+}
+
 function uniqueNames(names: string[]) {
   const seen = new Set<string>();
   return names.filter((name) => {
@@ -1431,8 +1441,10 @@ async function proseReferenceImages(project: Project, sceneIndexes: number[], ab
   for (const asset of project.references || []) {
     if (asset.kind !== "product" && asset.kind !== "logo" && asset.kind !== "location") continue;
     const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
-    if (!url || entries.some((entry) => entry.url === url)) continue;
-    entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });
+    if (url && !entries.some((entry) => entry.url === url)) {
+      entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });
+    }
+    await pushExtraProductPhotos(entries, asset, abortSignal);
   }
   await ensureCarriedProducts(project, entries, sceneIndexes, abortSignal);
   dropUnusedPackshots(project, entries, sceneIndexes);
@@ -1460,13 +1472,15 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
   const imageEntries = await stableImageEntries(project, abortSignal, true);
   const seen = new Set(imageEntries.map((item) => item.url));
   for (const asset of project.references) {
-    if (asset.originalRemoteUrl && seen.has(asset.originalRemoteUrl)) continue;
-    if (asset.originalPublicPath && seen.has(asset.originalPublicPath)) continue;
-    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
-    if (!url || seen.has(url)) continue;
-    seen.add(url);
-    const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" || asset.kind === "character" ? asset.kind : "other";
-    imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
+    const alreadySeen = Boolean((asset.originalRemoteUrl && seen.has(asset.originalRemoteUrl)) || (asset.originalPublicPath && seen.has(asset.originalPublicPath)));
+    const url = alreadySeen ? undefined : await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (url && !seen.has(url)) {
+      seen.add(url);
+      const kind = asset.kind === "logo" || asset.kind === "product" || asset.kind === "location" || asset.kind === "character" ? asset.kind : "other";
+      imageEntries.push({ url, kind, name: asset.label, notes: asset.notes });
+    }
+    await pushExtraProductPhotos(imageEntries, asset, abortSignal);
+    for (const entry of imageEntries) seen.add(entry.url);
   }
   await ensureCarriedProducts(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
@@ -1489,8 +1503,10 @@ async function ensureCarriedProducts(project: Project, entries: PromptRef[], sce
   for (const asset of project.references || []) {
     if (asset.kind !== "product") continue;
     const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
-    if (!url || entries.some((entry) => entry.url === url)) continue;
-    entries.push({ url, kind: "product", name: asset.label, notes: asset.notes });
+    if (url && !entries.some((entry) => entry.url === url)) {
+      entries.push({ url, kind: "product", name: asset.label, notes: asset.notes });
+    }
+    await pushExtraProductPhotos(entries, asset, abortSignal);
   }
 }
 
@@ -1541,8 +1557,10 @@ async function appendNeededPackshots(project: Project, entries: PromptRef[], sce
   for (const asset of project.references || []) {
     if (asset.kind !== "product" && asset.kind !== "logo") continue;
     const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
-    if (!url || entries.some((entry) => entry.url === url)) continue;
-    entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });
+    if (url && !entries.some((entry) => entry.url === url)) {
+      entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });
+    }
+    await pushExtraProductPhotos(entries, asset, abortSignal);
   }
 }
 

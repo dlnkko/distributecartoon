@@ -5,7 +5,7 @@ import { getAuthUser } from "@/lib/auth";
 import { IMAGE_TOO_SMALL, imagePixelCount, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { productPageUrl, scrapeProductPage } from "@/lib/product-page";
 import { describeProductImage, describeProductUse, probeVideoDuration, PRODUCT_USE_MAX_SECONDS } from "@/lib/product-use-video";
-import { newSavedProductId, savedProductFromRow, type SavedProduct } from "@/lib/saved-products";
+import { MAX_PRODUCT_PHOTOS, MAX_PRODUCT_VIDEOS, mediaColumns, newSavedProductId, savedProductFromRow, type SavedMedia } from "@/lib/saved-products";
 import { createClient } from "@/lib/supabase/server";
 import type { Project } from "@/lib/types";
 
@@ -61,8 +61,21 @@ export async function POST(request: Request) {
   }
 }
 
+function keptMedia(current: SavedMedia[], paths: unknown) {
+  if (!Array.isArray(paths)) return current;
+  const allowed = new Set(paths.map((item) => String(item || "").trim()).filter(Boolean));
+  return current.filter((item) => allowed.has(item.path));
+}
+
 async function saveText(request: Request, userId: string) {
-  const body = (await request.json().catch(() => ({}))) as { id?: string; name?: string; pageUrl?: string; useNotes?: string };
+  const body = (await request.json().catch(() => ({}))) as {
+    id?: string;
+    name?: string;
+    pageUrl?: string;
+    useNotes?: string;
+    photoPaths?: unknown;
+    videoPaths?: unknown;
+  };
   const supabase = await createClient();
   const id = body.id?.trim() || newSavedProductId();
   const current = body.id ? await owned(id, userId) : null;
@@ -80,6 +93,8 @@ async function saveText(request: Request, userId: string) {
     if (!pageUrl) return NextResponse.json({ error: "Use a public http or https page." }, { status: 422 });
     pageContext = await scrapeProductPage(pageUrl);
   }
+  const photos = keptMedia(current?.photos || [], body.photoPaths).slice(0, MAX_PRODUCT_PHOTOS);
+  const videos = keptMedia(current?.videos || [], body.videoPaths).slice(0, MAX_PRODUCT_VIDEOS);
   const row = {
     id,
     owner_id: userId,
@@ -87,10 +102,7 @@ async function saveText(request: Request, userId: string) {
     page_url: pageUrl,
     page_context: pageContext,
     use_notes: useNotes,
-    image_path: current?.imagePath || "",
-    image_note: current?.imageNote || "",
-    use_video_path: current?.useVideoPath || "",
-    use_video_note: current?.useVideoNote || "",
+    ...mediaColumns(photos, videos),
   };
   const { data, error } = await supabase.from("saved_products").upsert(row).select("*").single();
   if (error) return NextResponse.json({ error: publicDbError(error.message) }, { status: 500 });
@@ -106,8 +118,12 @@ async function saveFile(request: Request, userId: string) {
   const current = await owned(id, userId);
   if (!current) return NextResponse.json({ error: "Product not found." }, { status: 404 });
   const supabase = await createClient();
-  const patch: Partial<SavedProduct> & { id: string } = { id };
+  let photos = [...current.photos];
+  let videos = [...current.videos];
   if (kind === "image") {
+    if (photos.length >= MAX_PRODUCT_PHOTOS) {
+      return NextResponse.json({ error: "You can add up to 5 photos." }, { status: 422 });
+    }
     const mime = normalizeImageMime(file.type, file.name);
     if (!IMAGE_TYPES.has(mime)) return NextResponse.json({ error: "Use a JPG, PNG, WEBP, or GIF photo." }, { status: 422 });
     const buffer = Buffer.from(await file.arrayBuffer());
@@ -120,15 +136,17 @@ async function saveFile(request: Request, userId: string) {
       relativeParts: ["products", id, `photo-${Date.now().toString(36)}${ext}`],
       contentType: mime,
     });
-    let note = current.imageNote;
+    let note = "";
     try {
       note = await describeProductImage(buffer, mime);
     } catch (error) {
       console.warn("saved product photo", error instanceof Error ? error.message : error);
     }
-    patch.imagePath = saved.publicPath;
-    patch.imageNote = note;
+    photos.push({ path: saved.publicPath, note });
   } else if (kind === "video") {
+    if (videos.length >= MAX_PRODUCT_VIDEOS) {
+      return NextResponse.json({ error: "You can add up to 2 videos." }, { status: 422 });
+    }
     const ext = path.extname(file.name).toLowerCase();
     const mime = VIDEO_EXT[ext] || (file.type.startsWith("video/") ? file.type : "");
     if (!mime) return NextResponse.json({ error: "Upload an mp4, mov, or webm video." }, { status: 415 });
@@ -145,19 +163,13 @@ async function saveFile(request: Request, userId: string) {
       relativeParts: ["products", id, `use-${Date.now().toString(36)}${ext || ".mp4"}`],
       contentType: mime,
     });
-    patch.useVideoPath = saved.publicPath;
-    patch.useVideoNote = note;
+    videos.push({ path: saved.publicPath, note });
   } else {
     return NextResponse.json({ error: "Choose a photo or a use video." }, { status: 400 });
   }
   const { data, error } = await supabase
     .from("saved_products")
-    .update({
-      image_path: patch.imagePath ?? current.imagePath,
-      image_note: patch.imageNote ?? current.imageNote,
-      use_video_path: patch.useVideoPath ?? current.useVideoPath,
-      use_video_note: patch.useVideoNote ?? current.useVideoNote,
-    })
+    .update(mediaColumns(photos, videos))
     .eq("id", id)
     .eq("owner_id", userId)
     .select("*")
