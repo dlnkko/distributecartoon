@@ -1706,16 +1706,22 @@ export function StudioApp() {
             <div className="scroll-thin relative mx-auto flex min-h-0 w-full max-w-4xl flex-1 flex-col overflow-y-auto overscroll-y-contain px-3 pb-24 md:px-6">
           {working && step === "setup" ? (
             <div className="absolute inset-0 z-10 grid place-items-center bg-[var(--bg)]/75 p-6">
-              <div className="w-full max-w-sm rounded-3xl border border-[var(--line)] bg-white px-6 py-7 text-center shadow-[0_12px_40px_rgba(28,25,23,0.08)]">
-                <span className="mx-auto grid size-10 place-items-center">
-                  <span className="size-7 animate-spin rounded-full border-2 border-stone-200 border-t-[var(--ink)]" />
-                </span>
-                <p className="display mt-4 text-2xl">Fitting the story</p>
+              <div className="w-full max-w-sm rounded-3xl border border-[var(--line)] bg-white px-6 py-8 text-center shadow-[0_12px_40px_rgba(28,25,23,0.08)]">
+                <div className="relative mx-auto grid size-16 place-items-center" aria-hidden="true">
+                  <span className="absolute inset-0 rounded-full border border-white/10" />
+                  <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-[#5B8CFF] border-r-[#7A6CFF] [animation-duration:1.1s]" />
+                  <span className="size-2.5 rounded-full bg-[#5B8CFF] shadow-[0_0_18px_rgba(91,140,255,0.85)]" />
+                </div>
+                <p className="display mt-5 text-2xl">Fitting the story</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
                   {project.song
                     ? "The story is read once. The scenes follow the song."
                     : "The story is read once. Then the scenes are built."}
                 </p>
+                <p className="mt-1 text-sm text-[var(--ink)]">This takes up to a minute.</p>
+                <div className="relative mx-auto mt-5 h-1 w-40 overflow-hidden rounded-full bg-white/10">
+                  <span className="story-sweep absolute inset-y-0 left-0 w-16 rounded-full bg-[linear-gradient(90deg,#5B8CFF,#7A6CFF)]" />
+                </div>
               </div>
             </div>
           ) : null}

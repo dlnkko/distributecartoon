@@ -182,7 +182,8 @@ a.btn-primary {
   .theater-glow,
   .shimmer,
   .status-breathe,
-  .skeleton-scan {
+  .skeleton-scan,
+  .story-sweep {
     animation: none;
   }
 }
@@ -233,6 +234,15 @@ a.btn-primary {
   25% { content: "."; }
   50% { content: ".."; }
   75% { content: "..."; }
+}
+
+@keyframes story-sweep {
+  0% { transform: translateX(-140%); }
+  100% { transform: translateX(340%); }
+}
+
+.story-sweep {
+  animation: story-sweep 1.35s ease-in-out infinite;
 }
 
 .skeleton-scan {
