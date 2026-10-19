@@ -331,6 +331,7 @@ function alreadyCovered(text: string, cue: string) {
 }
 
 function mergeRealisticDescription(project: Project, character: Project["characters"][number]) {
+  if (character.descriptionEdited) return;
   const look = scriptLookFor(project, character.name);
   const cue = scriptIdentityCue(project, character.name);
   const role = trustedRole(project, character.name);

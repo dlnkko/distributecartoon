@@ -43,11 +43,29 @@ async function castInBackground(project: Project, work: () => Promise<void>) {
   return NextResponse.json({ project });
 }
 
+function applyCastDescriptions(project: Project, descriptions?: Array<{ id?: string; description?: string }>) {
+  if (!descriptions?.length) return true;
+  let wrote = false;
+  for (const item of descriptions) {
+    const id = String(item.id || "");
+    const description = String(item.description || "").replace(/\s+/g, " ").trim().slice(0, 500);
+    if (!id || !description) continue;
+    const character = project.characters.find((entry) => entry.id === id);
+    if (!character || character.isExtra) continue;
+    character.description = description;
+    character.descriptionEdited = true;
+    wrote = true;
+  }
+  return wrote;
+}
+
 export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     projectId?: string;
     characterId?: string;
     notes?: string;
+    description?: string;
+    descriptions?: Array<{ id?: string; description?: string }>;
     confirm?: boolean;
     prepareSong?: boolean;
   };
@@ -64,6 +82,7 @@ export async function POST(request: Request) {
 
   if (body.confirm) {
     try {
+      applyCastDescriptions(project, body.descriptions);
       await confirmCharacterLooks(project);
       project.workflowStep = "produce";
       await saveProject(project);
@@ -74,6 +93,13 @@ export async function POST(request: Request) {
         { status: 500 },
       );
     }
+  }
+
+  if (typeof body.description === "string" && body.characterId) {
+    const saved = applyCastDescriptions(project, [{ id: body.characterId, description: body.description }]);
+    if (!saved) return NextResponse.json({ error: "That character is not in this cast." }, { status: 404 });
+    await saveProject(project);
+    return NextResponse.json({ project });
   }
 
   if (body.characterId) {

@@ -1277,14 +1277,14 @@ export function StudioApp() {
     }
   }
 
-  async function continueFromCast() {
+  async function continueFromCast(descriptions?: Array<{ id: string; description: string }>) {
     if (!project || busy) return;
     setBusy(true);
     try {
       const res = await fetch("/api/cast", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId: project.id, confirm: true }),
+        body: JSON.stringify({ projectId: project.id, confirm: true, descriptions }),
       });
       const json = (await res.json()) as { project?: Project; error?: string };
       if (json.project) remember(json.project);
@@ -1831,7 +1831,7 @@ export function StudioApp() {
               onBack={() => void patchProject({ workflowStep: "setup" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
               onCreateLooks={() => startCastLooks(true)}
-              onContinue={() => void continueFromCast()}
+              onContinue={(descriptions) => void continueFromCast(descriptions)}
             />
           ) : null}
 
@@ -2657,9 +2657,10 @@ function CastStep({
   onBack: () => void;
   onRevise: (characterId: string, notes: string) => void;
   onCreateLooks: () => void;
-  onContinue: () => void;
+  onContinue: (descriptions?: Array<{ id: string; description: string }>) => void;
 }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [drafts, setDrafts] = useState<Record<string, string>>({});
   const ready = wordsOnly || characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
   const affordable = credits >= creditCost;
 
@@ -2669,7 +2670,7 @@ function CastStep({
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {wordsOnly
-            ? "No portraits for this test. The video describes each person in words."
+            ? "Edit a description if something should change. The video uses these words."
             : characters.length
               ? "Main characters only. One pose each. Change a look once if needed."
               : "No on-screen characters in this script. Continue when you are ready to generate."}
@@ -2687,13 +2688,19 @@ function CastStep({
           const src = lookSrc(character);
           const fallback = lookFallbackSrc(character);
           const draft = notes[character.id] || "";
+          const description = drafts[character.id] ?? character.description ?? "";
           return (
             <article key={character.id} className="rounded-2xl border border-[var(--line)] bg-white p-3">
-              <div className="aspect-square overflow-hidden rounded-xl bg-stone-100">
+              <div className="relative aspect-square overflow-hidden rounded-xl bg-stone-100">
                 {wordsOnly ? (
-                  <div className="grid h-full place-items-center px-4 text-center text-sm text-[var(--muted)]">
-                    <span>{character.description || character.name}</span>
-                  </div>
+                  <textarea
+                    value={description}
+                    disabled={busy}
+                    aria-label={`Description of ${character.name}`}
+                    maxLength={500}
+                    onChange={(event) => setDrafts((current) => ({ ...current, [character.id]: event.target.value }))}
+                    className="absolute inset-0 resize-none bg-transparent px-4 py-4 text-left text-sm leading-relaxed text-[var(--ink)] outline-none"
+                  />
                 ) : src ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
@@ -2748,7 +2755,18 @@ function CastStep({
           <button
             type="button"
             disabled={busy || !ready || !affordable}
-            onClick={onContinue}
+            onClick={() =>
+              onContinue(
+                wordsOnly
+                  ? characters
+                      .map((character) => ({
+                        id: character.id,
+                        description: (drafts[character.id] ?? character.description ?? "").replace(/\s+/g, " ").trim(),
+                      }))
+                      .filter((item) => item.description)
+                  : undefined,
+              )
+            }
             className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
           >
             {`Generate - ${creditCost} credits`}

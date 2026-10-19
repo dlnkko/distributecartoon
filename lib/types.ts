@@ -68,6 +68,7 @@ export type Character = {
   name: string;
   slug: string;
   description: string;
+  descriptionEdited?: boolean;
   voiceNotes: string;
   isExtra: boolean;
   lookConfirmed: boolean;
