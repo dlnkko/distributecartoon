@@ -766,11 +766,24 @@ function writtenSpeech(script: string, line: string) {
   return kept.join(" ");
 }
 
-/** When the user wrote the lines, drop any speech the model added. */
+function attributedQuotes(script: string) {
+  const found: Array<{ speaker: string; line: string; voiceover: boolean }> = [];
+  const pattern =
+    /([A-Za-z][A-Za-z'’.-]{0,24}(?:\s+[A-Za-z][A-Za-z'’.-]{0,24}){0,2})\s*(?:\([^)]*\))?\s*:\s*["“]([^"”]{1,400})["”]/g;
+  for (const match of script.matchAll(pattern)) {
+    const speaker = match[1].replace(/\s+/g, " ").trim();
+    const line = match[2].replace(/\s+/g, " ").trim();
+    if (!speaker || !line || /^(?:super|small print|text|title|caption|on-?screen(?:\s+text)?)$/i.test(speaker)) continue;
+    const voiceover = /^(?:vo|v\/o|voice-?over|voiceover|o\.?\s*s\.?|narrator)$/i.test(speaker);
+    found.push({ speaker: voiceover ? "Narrator" : speaker, line, voiceover });
+  }
+  return found;
+}
+
+/** Keep lines the user wrote, and keep lines added so a thin concept can become a full film. */
 export function dropUnscriptedDialogue(project: Project) {
   if (project.song) return project;
   const script = project.scriptText || "";
-  if (!/["“][^"”]{1,400}["”]/.test(script)) return project;
   const strip = (text: string) =>
     text
       .replace(/["“]([^"”]+)["”]/g, (_full, inner: string) => {
@@ -781,14 +794,24 @@ export function dropUnscriptedDialogue(project: Project) {
       .replace(/\s{2,}/g, " ")
       .trim();
   for (const scene of project.scenes || []) {
-    scene.dialogue = (scene.dialogue || []).flatMap((line) => {
-      const kept = writtenSpeech(script, line.line || "");
-      return kept ? [{ ...line, line: kept }] : [];
-    });
     if (scene.summary) scene.summary = strip(scene.summary);
     for (const shot of scene.shots || []) {
       if (shot.action) shot.action = strip(shot.action);
     }
+  }
+  const have = new Set(
+    (project.scenes || []).flatMap((scene) => (scene.dialogue || []).map((line) => spokenKey(line.line || ""))).filter(Boolean),
+  );
+  for (const quote of attributedQuotes(script)) {
+    const key = spokenKey(quote.line);
+    if (!key || have.has(key)) continue;
+    const scene =
+      (project.scenes || []).find((item) => spokenKey(`${item.summary || ""} ${item.title || ""}`).includes(spokenKey(quote.line).split(" ").slice(0, 3).join(" "))) ||
+      (project.scenes || []).find((item) => (item.characterNames || []).some((name) => name.toLowerCase() === quote.speaker.toLowerCase())) ||
+      project.scenes?.[0];
+    if (!scene) continue;
+    scene.dialogue = [...(scene.dialogue || []), { speaker: quote.speaker, line: quote.line, ...(quote.voiceover ? { voiceover: true } : {}) }];
+    have.add(key);
   }
   return project;
 }
