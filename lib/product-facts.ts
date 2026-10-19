@@ -68,15 +68,18 @@ export function productFacts(project: Project, label: string) {
   const readUse = readLine(match?.productRead || "", "HOW IT IS USED");
   const pageUse = useFromBlurb(blurb);
   const use = [readUse || pageUse, video].filter(Boolean).join(" ");
-  return { name, use, seen };
+  const whenRaw = readLine(match?.productRead || "", "WHEN IT IS USED");
+  const when = /^(?:not stated|unknown|n\/a|none|empty|unspecified)\b/i.test(whenRaw) ? "" : whenRaw;
+  return { name, use, seen, when };
 }
 
 export function productUsePhysics(project: Project, label: string) {
   const facts = productFacts(project, label);
   const name = facts.name || "The product in the photo";
   const observed = facts.use ? ` The recorded use says: ${facts.use}` : "";
+  const moment = facts.when ? ` The page places this use in this situation: ${facts.when.replace(/[.]+$/, "")}. Show that action there.` : "";
   const seen = facts.seen ? ` The photo shows: ${facts.seen} If both the product and the package are in the photo, show both. Do not replace one with the other.` : "";
-  return `${name} follows real contact. A hand holds it the way the photo shows. It sits on the body, the face, or a surface only where this action places it. The material keeps the shape, color, and stiffness in the photo. Pressed on, it stays stuck. Fitted or closed, it stays seated. It does not float, pass through skin, or turn into another container.${seen}${observed}`;
+  return `${name} follows real contact. A hand holds it the way the photo shows. It sits on the body, the face, or a surface only where this action places it. The material keeps the shape, color, and stiffness in the photo. Pressed on, it stays stuck. Fitted or closed, it stays seated. It does not float, pass through skin, or turn into another container.${seen}${observed}${moment}`;
 }
 
 export function productLookBrief(project: Project) {

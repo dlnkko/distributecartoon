@@ -92,12 +92,14 @@ export async function readAttachedProduct(buffer: Buffer, mime: string, page = "
       {
         text: [
           "Read this product for a film. You have its photo and, when present, the text of its page.",
-          "Stay with this object. Do not invent a different product, a health claim, or a scene.",
-          "Return these lines only, in English, under 180 words:",
+          "Stay with this object. Do not invent a different product, a health claim, a cure, or a scene.",
+          "WHEN IT IS USED comes only from the page. It is the situation, not a result and not a benefit. Example shape only: before sleep. If the page does not say, write not stated. Do not copy the example.",
+          "Return these lines only, in English, under 220 words:",
           "NAME: the product name from the page, or what the photo shows if there is no page",
           "WHAT IT IS: the object in plain words",
           "ALSO CALLED: everyday words a script might use for this exact object, from the page and the photo, separated by commas",
           "HOW IT IS USED: the physical action a person does with it",
+          "WHEN IT IS USED: the situation the page gives, or not stated",
           "IN THE PHOTO: whether the frame shows the package, the product, or both, and how each looks",
           source,
         ].join("\n"),
@@ -107,7 +109,7 @@ export async function readAttachedProduct(buffer: Buffer, mime: string, page = "
     500,
     true,
   );
-  return text.replace(/\*\*/g, "").replace(/^#+\s*/gm, "").slice(0, 1200);
+  return text.replace(/\*\*/g, "").replace(/^#+\s*/gm, "").slice(0, 1500);
 }
 
 async function geminiText(

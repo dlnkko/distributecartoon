@@ -53,6 +53,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
         "For each beat, name the place the camera is actually in, who is in frame, how far apart they are, what the body does, and the spoken line when the script has one. A distance the script states stays that distance. If they leave a room, the next beat is the new room. Reuse one place name every time the story returns there, including after a time jump.",
         "If the script has spoken lines, copy those lines only. Do not write a new line, a voice-over, or a closing speech. Product marketing is not dialogue.",
         "Each later part starts from the consequence of the previous beat.",
+        "If the product brief has WHEN IT IS USED, that situation is where the use belongs. Put that action there. Do not move it into a conversation that happens at another time. Do not add a health claim.",
         "Do not write camera tags, @Image tags, or a video prompt.",
       ].join(" "),
       messages: [
