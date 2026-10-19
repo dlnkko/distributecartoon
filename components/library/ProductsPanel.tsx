@@ -363,6 +363,7 @@ export function SavedProductPicker({
   onOpenProducts: () => void;
 }) {
   const [products, setProducts] = useState<SavedProduct[]>([]);
+  const [open, setOpen] = useState(false);
   const [error, setError] = useState("");
   const [busyId, setBusyId] = useState("");
 
@@ -395,48 +396,74 @@ export function SavedProductPicker({
     setBusyId("");
   }
 
-  if (!products.length) {
-    return (
-      <div className="rounded-2xl border border-[var(--line)] bg-white px-4 py-5">
-        <p className="text-sm">No saved products yet.</p>
-        <button type="button" onClick={onOpenProducts} className="mt-3 text-sm font-medium text-[#5B8CFF]">
-          Add one in Products
-        </button>
-      </div>
-    );
-  }
+  const chosen = products.filter((product) => selectedIds.includes(product.id));
 
   return (
     <div>
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-        {products.map((product) => {
-          const selected = selectedIds.includes(product.id);
-          return (
-            <button
-              key={product.id}
-              type="button"
-              disabled={disabled || Boolean(busyId)}
-              onClick={() => void toggle(product.id)}
-              className={`rounded-2xl border p-3 text-left disabled:opacity-50 ${selected ? "border-[#5B8CFF] bg-[#5B8CFF]/10" : "border-[var(--line)] bg-white"}`}
-            >
-              <span className="flex items-center gap-2">
+      {chosen.length ? (
+        <ul className="mb-2 flex flex-col gap-2">
+          {chosen.map((product) => (
+            <li key={product.id}>
+              <button
+                type="button"
+                disabled={disabled || Boolean(busyId)}
+                onClick={() => void toggle(product.id)}
+                className="flex w-full items-center gap-2 rounded-2xl border border-[#5B8CFF] bg-[#5B8CFF]/10 p-3 text-left disabled:opacity-50"
+              >
                 {product.imagePath ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={mediaSrc(product.imagePath)} alt="" className="h-10 w-10 rounded-lg object-cover" />
                 ) : null}
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{product.name}</span>
-                  <span className="block text-[11px] text-[var(--muted)]">{selected ? "Selected" : "Use this product"}</span>
+                  <span className="block text-[11px] text-[var(--muted)]">Selected</span>
                 </span>
-              </span>
-            </button>
-          );
-        })}
-      </div>
-      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
-      <button type="button" onClick={onOpenProducts} className="mt-2 text-xs text-[var(--muted)]">
-        Manage products
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => setOpen((value) => !value)}
+        className="btn-secondary h-11 w-full rounded-xl text-sm font-medium"
+      >
+        Choose product
       </button>
+      {open ? (
+        <div className="mt-2 flex flex-col gap-2">
+          {products.length ? (
+            products.map((product) => {
+              const selected = selectedIds.includes(product.id);
+              return (
+                <button
+                  key={product.id}
+                  type="button"
+                  disabled={disabled || Boolean(busyId)}
+                  onClick={() => void toggle(product.id)}
+                  className={`flex w-full items-center gap-2 rounded-2xl border p-3 text-left disabled:opacity-50 ${selected ? "border-[#5B8CFF] bg-[#5B8CFF]/10" : "border-[var(--line)] bg-white"}`}
+                >
+                  {product.imagePath ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={mediaSrc(product.imagePath)} alt="" className="h-10 w-10 rounded-lg object-cover" />
+                  ) : null}
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium">{product.name}</span>
+                    <span className="block text-[11px] text-[var(--muted)]">{selected ? "Selected" : "Use this product"}</span>
+                  </span>
+                </button>
+              );
+            })
+          ) : (
+            <p className="text-sm text-[var(--muted)]">No saved products yet.</p>
+          )}
+          <button type="button" onClick={onOpenProducts} className="btn-secondary h-11 w-full rounded-xl text-sm font-medium">
+            Add new product
+          </button>
+        </div>
+      ) : null}
+      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>
   );
 }
