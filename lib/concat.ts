@@ -74,6 +74,50 @@ export async function tailVideoBuffer(buffer: Buffer, seconds = 5) {
   }
 }
 
+export async function clipVideoBuffer(buffer: Buffer, ranges: { start: number; end: number }[]) {
+  const clean = ranges.filter((range) => range.end - range.start >= 2).slice(0, 4);
+  if (!clean.length) return tailVideoBuffer(buffer, 7);
+  const dir = await mkdtemp(path.join(os.tmpdir(), "clips-"));
+  const input = path.join(dir, "in.mp4");
+  await writeFile(input, buffer);
+  try {
+    const files: string[] = [];
+    for (let index = 0; index < clean.length; index += 1) {
+      const range = clean[index];
+      const out = path.join(dir, `clip-${index}.mp4`);
+      await runFfmpeg([
+        "-y",
+        "-ss",
+        range.start.toFixed(2),
+        "-i",
+        input,
+        "-t",
+        (range.end - range.start).toFixed(2),
+        "-c:v",
+        "libx264",
+        "-preset",
+        "veryfast",
+        "-crf",
+        "28",
+        "-c:a",
+        "aac",
+        "-movflags",
+        "+faststart",
+        out,
+      ]);
+      files.push(out);
+    }
+    if (files.length === 1) return await readFile(files[0]);
+    const list = path.join(dir, "list.txt");
+    const joined = path.join(dir, "joined.mp4");
+    await writeFile(list, files.map((file) => `file '${listPath(file)}'`).join("\n"), "utf8");
+    await runFfmpeg(["-y", "-f", "concat", "-safe", "0", "-i", list, "-c", "copy", "-movflags", "+faststart", joined]);
+    return await readFile(joined);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
 export async function concatVideoBuffers(buffers: Buffer[]) {
   if (buffers.length < 2) throw new Error("Need at least two videos to join.");
   const dir = await mkdtemp(path.join(os.tmpdir(), "parts-"));

@@ -92,6 +92,9 @@ export async function watchRenderedPart(video: Buffer, context: string, options?
                   options?.describeLooks
                     ? "LOOKS: one sentence per named person who is visible. Start with the name, then 'is the same', then what this video actually shows: age, hair, height, glasses, build, and the clothes at the end. Describe the person in the picture, not a planned description. Example shape only: Sam is the same tall man, about 30, with short hair and glasses, in a gray shirt."
                     : "",
+                  options?.describeLooks
+                    ? "CLIPS: short ranges, in seconds, to keep as a cheap reference. If this part stays in one place, one range of the last 7 seconds where the main people are visible and speaking if they speak. If the place changes, one range of about 3 seconds for each place, in order, where those people are visible and speaking if they speak. Use the real times in this video. Total at most 9 seconds. Example shape only: 4.0-7.0, 18.0-21.0."
+                    : "",
                   "Return these lines only:",
                   "PEOPLE: who is visible at the end, and what each is doing",
                   "PLACE: the place at the end",
@@ -103,6 +106,7 @@ export async function watchRenderedPart(video: Buffer, context: string, options?
                   "CARRY_CLOTHES: one sentence of the clothes that must stay. Empty if nothing specific is visible.",
                   "CARRY_POSE: one sentence of the ending position. Empty if the next part opens in a different place.",
                   options?.describeLooks ? "LOOKS: the sentences described above. Empty if no person is visible." : "",
+                  options?.describeLooks ? "CLIPS: the ranges described above. Empty if you cannot tell the times." : "",
                   "UNSEEN: what the script still needs that you could not see. Empty if you saw everything that should carry.",
                   "",
                   context.trim(),

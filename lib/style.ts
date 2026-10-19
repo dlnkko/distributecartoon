@@ -1222,7 +1222,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
         project.song
           ? `${tag} is the last 5 seconds, picture and music. The picture continues from that frame.`
           : realisticProseCast(project)
-            ? `${tag} is the previous part without its first second. Match the same people, faces, clothes, and place that video already showed. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
+            ? `${tag} is a short cut of the previous part. It keeps the people, their voices, and the places that matter. Match them. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
             : `${tag} is the last 5 seconds, picture only. Match clothes, faces, and where everyone is after that moment. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
@@ -2250,10 +2250,10 @@ function productPlacement(tag: string, action: string) {
 function simpleScenePrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
   const prose = realisticProseCast(project);
-  const images = prose ? [] : options.images || [];
+  const images = options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
-  const tailLine = refs.find((line) => /last 5 seconds|previous part without its first second/i.test(line)) || "";
-  const previousLine = refs.find((line) => /previous part/i.test(line)) || "";
+  const tailLine = refs.find((line) => /last 5 seconds|short cut of the previous part/i.test(line)) || "";
+  const previousLine = refs.find((line) => /this part starts after it/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
   const seconds = fittedSeconds(scenes, options.maxSeconds);
@@ -2339,7 +2339,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     );
     const peopleHere = sceneOnScreenNames(scene, project);
     if (prose) {
-      for (const name of peopleHere) people.set(name.toLowerCase(), proseSpeaker(project, name, seen.looks, continues));
+      for (const name of peopleHere) {
+        const key = name.toLowerCase();
+        if (/^@Image\d+$/i.test(people.get(key) || "")) continue;
+        people.set(key, proseSpeaker(project, name, seen.looks, continues));
+      }
     }
     const placeNow = cleanPlace(scene?.location || "");
     const demanded = /\b(wide shot|extreme wide|insert|close-?up|low angle|high angle|bird'?s eye)\b/i.test(shot.action || "");
@@ -2410,9 +2414,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const logoTags = sceneTags.filter((tag) => imageKind(images, tag) === "logo" && sceneRequiresAsset("logo", sceneText) && missing(tag));
     const stayed =
       carriedProduct && !freshHandle
-        ? prose
-          ? carriedProductSentence("the product", actionGesture(seen.carryDetail) ? "" : seen.carryDetail)
-          : images
+        ? images.some((item) => item.kind === "product")
+          ? images
               .map((item, imageIndex) =>
                 item.kind === "product"
                   ? carriedProductSentence(`@Image${imageIndex + 1}`, actionGesture(seen.carryDetail) ? "" : seen.carryDetail)
@@ -2420,6 +2423,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
               )
               .filter(Boolean)
               .join(" ")
+          : prose
+            ? carriedProductSentence("the product", actionGesture(seen.carryDetail) ? "" : seen.carryDetail)
+            : ""
         : "";
     const placement = stayed || productTags.map((tag) => productPlacement(tag, `${visual} ${sceneText}`)).filter(Boolean).join(" ");
     const carriedLook = [
@@ -2439,7 +2445,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       const key = name.toLowerCase();
       if (positions.has(key)) continue;
       const tag = people.get(key) || "";
-      const identity = prose ? `${name} is ${proseSpeaker(project, name, seen.looks, continues)}.` : tag ? identityPhrase(project, name, tag) : `${name}.`;
+      const identity =
+        prose && !/^@Image\d+$/i.test(tag)
+          ? `${name} is ${proseSpeaker(project, name, seen.looks, continues)}.`
+          : tag
+            ? identityPhrase(project, name, tag)
+            : `${name}.`;
       positions.set(key, `- ${identity} ${stanceClause(visible || summary, name, tag, placeNow)}`.replace(/\s{2,}/g, " ").trim());
     }
     const placeKey = placeNow.toLowerCase();
@@ -2495,9 +2506,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     prose && (productKept.size > 0 || scenes.some((scene) => scene && (project.productShownIndexes || []).includes(scene.index)))
       ? proseProductLine(project)
       : "";
-  const productBullets = prose
-    ? [proseProduct].filter(Boolean)
-    : images
+  const taggedProductBullets = images
     .map((item, index) => {
       if (item.kind !== "product") return "";
       const tag = `@Image${index + 1}`;
@@ -2505,6 +2514,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       return `- ${tag} is ${productPromptName(project, item.name, item.notes || "")}.`;
     })
     .filter(Boolean);
+  const productBullets = taggedProductBullets.length ? taggedProductBullets : [proseProduct].filter(Boolean);
   const spokenLanguage = project.dialogueLanguage === "spanish" ? "Spanish" : "English";
   const styleLine =
     project.style === "realistic"

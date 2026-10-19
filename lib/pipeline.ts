@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
-import { concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
+import { clipVideoBuffer, concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
 import { charactersPresent, continuityFlags, projectSeed } from "./continuity";
 import { assignScenePlaces, isJunkPlace, placeLabel, richerPlaceName, samePlace } from "./places";
 import { refineSeedancePrompt } from "./astra-prompt";
@@ -10,8 +10,8 @@ import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
 import { watchRenderedPart } from "./continuity-watch";
-import { parseSeenCard, partKeepsCarriedProduct, seenCardMatters } from "./seen-continuity";
-import { REALISTIC_REFERENCE_SECONDS, realisticProseCast } from "./realistic-prose";
+import { parseSeenCard, partKeepsCarriedProduct, referenceRanges, seenCardMatters } from "./seen-continuity";
+import { REALISTIC_REFERENCE_FALLBACK_SECONDS, realisticProseCast } from "./realistic-prose";
 import { productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
@@ -549,7 +549,7 @@ async function savePartTail(project: Project, batch: Batch) {
   const src = durableVideoSrc(batch);
   if (!src || tailUrl(batch)) return;
   const buffer = await readPublicFile(src);
-  const tail = await tailVideoBuffer(buffer, realisticProseCast(project) ? REALISTIC_REFERENCE_SECONDS : 5);
+  const tail = realisticProseCast(project) ? await proseReferenceClip(buffer, batch.seenContinuity || "") : await tailVideoBuffer(buffer, 5);
   const saved = await storeGeneratedFile({
     project,
     buffer: tail,
@@ -558,6 +558,17 @@ async function savePartTail(project: Project, batch: Batch) {
   });
   batch.tailPublicPath = saved.publicPath;
   batch.tailRemoteUrl = saved.publicPath;
+}
+
+async function proseReferenceClip(buffer: Buffer, card: string) {
+  const ranges = referenceRanges(card);
+  if (!ranges.length) return tailVideoBuffer(buffer, REALISTIC_REFERENCE_FALLBACK_SECONDS);
+  try {
+    return await clipVideoBuffer(buffer, ranges);
+  } catch (error) {
+    console.warn("reference clip failed", error instanceof Error ? error.message : error);
+    return tailVideoBuffer(buffer, REALISTIC_REFERENCE_FALLBACK_SECONDS);
+  }
 }
 
 function directingNotes(project: Project) {
@@ -595,6 +606,7 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
       `PRODUCT:\n${productUnderstandingBrief(project) || "No product was attached."}`,
       `THIS PART, as written:\n${partOutline(project, previous)}`,
       `NEXT PART, as written:\n${partOutline(project, next)}`,
+      realisticProseCast(project) ? `VIDEO LENGTH: ${previous.duration || 30} seconds.` : "",
       realisticProseCast(project)
         ? `PEOPLE TO DESCRIBE:\n${project.characters
             .filter((character) => !character.isExtra && character.name.trim())
@@ -706,16 +718,6 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     if (durableVideoSrc(batch)) continue;
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
-    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
-      previous.tailAttempts = (previous.tailAttempts || 0) + 1;
-      try {
-        await savePartTail(project, previous);
-      } catch (error) {
-        console.warn("tail cut failed", project.id, previous.index, error instanceof Error ? error.message : error);
-      }
-      await saveSoon(project);
-      if (!tailUrl(previous)) return { ready: false };
-    }
     if (previous && durableVideoSrc(previous)) {
       await ensureRenderedContinuity(project, previous, batch);
       if (!previous.seenContinuity?.trim() && (previous.seenAttempts || 0) < 2) return { ready: false };
@@ -730,22 +732,24 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
         batch.promptReady = false;
       }
     }
+    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+      previous.tailAttempts = (previous.tailAttempts || 0) + 1;
+      try {
+        await savePartTail(project, previous);
+      } catch (error) {
+        console.warn("tail cut failed", project.id, previous.index, error instanceof Error ? error.message : error);
+      }
+      await saveSoon(project);
+      if (!tailUrl(previous)) return { ready: false };
+    }
     const handoffReady = realisticProseCast(project)
-      ? /previous part without its first second/i.test(batch.videoPrompt || "")
+      ? /short cut of the previous part/i.test(batch.videoPrompt || "")
       : /last 5 seconds/i.test(batch.videoPrompt || "");
     if (
       previous &&
       !realKieVideoTaskId(batch.kieVideoTaskId) &&
       batch.kieVideoTaskId !== "pending" &&
       (!handoffReady || /@Audio2\b/.test(batch.videoPrompt || ""))
-    ) {
-      batch.promptReady = false;
-    }
-    if (
-      realisticProseCast(project) &&
-      /@Image\d+/.test(batch.videoPrompt || "") &&
-      !realKieVideoTaskId(batch.kieVideoTaskId) &&
-      batch.kieVideoTaskId !== "pending"
     ) {
       batch.promptReady = false;
     }
@@ -1384,13 +1388,48 @@ async function previousTailRef(project: Project, batch: Batch, abortSignal?: Abo
   return url ? { url, kind: "video", name: "Previous ending" } : undefined;
 }
 
+async function proseReferenceImages(project: Project, sceneIndexes: number[], abortSignal?: AbortSignal) {
+  const entries: PromptRef[] = [];
+  const sources = assignCharacterSourcePhotos(project);
+  const scenes = sceneIndexes
+    .map((index) => project.scenes.find((item) => item.index === index))
+    .filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
+  const present = new Set(scenes.flatMap((scene) => charactersPresent(project, scene).map((name) => name.toLowerCase())));
+  for (const character of project.characters) {
+    if (character.isExtra || isUnseenVoice(character) || !present.has(character.name.trim().toLowerCase())) continue;
+    const photo = sources.get(character.id);
+    if (!photo) continue;
+    const url = await resolveUploadUrl(photo.originalRemoteUrl, photo.originalPublicPath, abortSignal);
+    if (url) entries.push({ url, kind: "character", name: character.name, notes: photo.notes });
+  }
+  for (const asset of project.references || []) {
+    if (asset.kind !== "product" && asset.kind !== "logo" && asset.kind !== "location") continue;
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (!url || entries.some((entry) => entry.url === url)) continue;
+    entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });
+  }
+  await ensureCarriedProducts(project, entries, sceneIndexes, abortSignal);
+  dropUnusedPackshots(project, entries, sceneIndexes);
+  const blob = scenes
+    .map((scene) => `${scene.title || ""} ${scene.summary || ""} ${(scene.dialogue || []).map((line) => line.line).join(" ")}`)
+    .join(" ");
+  for (const asset of project.references || []) {
+    if (asset.kind !== "logo" || entries.some((entry) => entry.kind === "logo" && entry.name === asset.label)) continue;
+    if (!partNeedsPackshot(project, "logo", asset.label, blob)) continue;
+    const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
+    if (url) entries.push({ url, kind: "logo", name: asset.label, notes: asset.notes });
+  }
+  return entries;
+}
+
 async function collectRealisticReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
   if (realisticProseCast(project)) {
+    const imageEntries = await proseReferenceImages(project, batch.sceneIndexes, abortSignal);
     if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
-      return { imageEntries: [] as PromptRef[], videoEntries: [] as PromptRef[] };
+      return { imageEntries, videoEntries: [] as PromptRef[] };
     }
     const tail = await previousTailRef(project, batch, abortSignal);
-    return { imageEntries: [] as PromptRef[], videoEntries: tail ? [tail] : [] };
+    return { imageEntries, videoEntries: tail ? [tail] : [] };
   }
   const imageEntries = await stableImageEntries(project, abortSignal, true);
   const seen = new Set(imageEntries.map((item) => item.url));

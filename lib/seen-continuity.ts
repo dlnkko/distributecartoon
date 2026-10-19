@@ -35,6 +35,39 @@ function readLine(raw: string, label: string) {
   return (match?.[1] || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
 }
 
+export function referenceRanges(raw: string) {
+  const match = raw.match(/(?:^|\n)\s*CLIPS\s*:\s*([^\n]+)/i);
+  const line = (match?.[1] || "").trim();
+  if (!line || /^(?:none|n\/a|empty|nothing|not applicable)\b/i.test(line)) return [];
+  const found: { start: number; end: number }[] = [];
+  for (const pair of line.matchAll(/(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/g)) {
+    const start = Number(pair[1]);
+    const end = Number(pair[2]);
+    if (Number.isFinite(start) && Number.isFinite(end) && end - start >= 1.5) found.push({ start, end });
+  }
+  const sorted = found.sort((left, right) => left.start - right.start);
+  const kept: { start: number; end: number }[] = [];
+  let cursor = -1;
+  for (const range of sorted) {
+    if (range.start < cursor - 0.2) continue;
+    const cap = sorted.length === 1 ? 7 : 3.5;
+    const end = Math.min(range.end, range.start + cap);
+    if (end - range.start < 2) continue;
+    kept.push({ start: range.start, end });
+    cursor = end;
+    if (kept.length === 4) break;
+  }
+  const total = kept.reduce((sum, range) => sum + range.end - range.start, 0);
+  if (total <= 9) return kept;
+  const scale = 9 / total;
+  return kept
+    .map((range) => {
+      const duration = Math.max(2, (range.end - range.start) * scale);
+      return { start: range.start, end: range.start + Math.min(duration, range.end - range.start) };
+    })
+    .filter((range) => range.end - range.start >= 2);
+}
+
 function readLooks(raw: string) {
   const match = raw.match(/(?:^|\n)\s*LOOKS\s*:\s*([\s\S]*?)(?=\n\s*[A-Z][A-Z_ ]{2,}\s*:|$)/);
   const value = (match?.[1] || "").replace(/\s+/g, " ").trim();

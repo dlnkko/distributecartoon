@@ -1,11 +1,12 @@
 import type { Project } from "./types";
 
-// Test switch for realistic videos. Set this to false to restore reference images and @Image tags.
+// Realistic videos describe a person in words unless the user uploaded that person's photo.
+// A product, logo, or place photo the user added is still attached. Set this to false to restore generated portraits.
 export const REALISTIC_PROSE_CAST = true;
 
 export function realisticProseCast(project: Pick<Project, "style" | "song">) {
   return REALISTIC_PROSE_CAST && project.style === "realistic" && !project.song;
 }
 
-// Seedance rejects a reference video of 30 seconds or more. Keep the ending and drop the opening second.
-export const REALISTIC_REFERENCE_SECONDS = 29;
+// Used only when Gemini does not return cut points. One room only needs the ending.
+export const REALISTIC_REFERENCE_FALLBACK_SECONDS = 7;
