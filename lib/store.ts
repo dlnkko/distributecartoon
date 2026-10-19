@@ -94,10 +94,35 @@ export function normalizeProject(project: Project): Project {
   }
   ensureReferenceSlots(project);
   if (project.title === "Nuevo corto" || project.title === "New short") project.title = "New video";
+  if (isDurationTitle(project.title || "")) {
+    const previous = project.title;
+    const next = filmTitle(project.title, project.scenes);
+    if (next !== previous) {
+      project.title = next;
+      for (const item of project.archivedVideos) {
+        if (item.title === previous || isDurationTitle(item.title || "")) item.title = next;
+      }
+    }
+  }
   if (project.scriptText || project.scenes.length) {
     syncReferenceInclusion(project);
   }
   return project;
+}
+
+const DURATION_TITLE =
+  /^(?:(?:a|an|the)\s+)?(?:\d+|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|twenty|thirty|forty|forty-five|sixty|seventy|seventy-five|ninety|hundred|one hundred)(?:\s*|-)?seconds?$/i;
+
+export function isDurationTitle(title: string) {
+  return DURATION_TITLE.test(title.replace(/\s+/g, " ").trim());
+}
+
+export function filmTitle(raw: string, scenes: Array<{ title?: string }>) {
+  const title = (raw || "").replace(/\s+/g, " ").trim();
+  if (title && !isDurationTitle(title)) return title.slice(0, 80);
+  const scene = scenes.find((item) => (item.title || "").trim() && !isDurationTitle(item.title || ""));
+  const named = (scene?.title || "").replace(/\s+/g, " ").trim().slice(0, 80);
+  return named || (title && !isDurationTitle(title) ? title : "") || "New video";
 }
 
 export function inferWorkflowStep(project: Project): WorkflowStep {

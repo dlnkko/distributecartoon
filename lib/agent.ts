@@ -8,7 +8,7 @@ import { balancePartSceneSeconds, estimateSceneSeconds, parseDurationFromText, s
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion, dropUnscriptedDialogue } from "./refs";
 import { productLookBrief, productPageBrief, productUnderstandingBrief, productUseBrief } from "./product-facts";
-import { saveProject } from "./store";
+import { filmTitle, saveProject } from "./store";
 import { isAbortError, throwIfAborted } from "./abort";
 import { SONNET_MODEL, sonnetTools, type SonnetMessage } from "./sonnet";
 import { ensureProductScenes, ensureScenePlaces, ensureStoryBrief } from "./story-brief";
@@ -84,7 +84,7 @@ const PLAN_PROMPT = `${SYSTEM_PROMPT}
 
 Current task: PLAN ONLY.
 Before extract_storyboard, understand the story: who wants what, what changes, where each person stands, and how far apart they are. Then write the scenes from that reading, in an order a viewer can follow as one drama. Part 2 starts from the consequence of part 1.
-Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds.
+Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds. The title is a short film name from the story. Never name the film after its length.
 Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location only when the scene shows the travel.
 Each character keeps the same height, build, face, and features in every shot. Dialogue does not set species: a child who says a drawing is a dog stays a human child. An animal species is only when the script says that character is the animal, such as "Biscuit is a dog". Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
 A human woman with no uploaded photo is a new person every film. Pick her name, face, age, hair, and skin tone at random. Do not name her Maya. Do not default to dark skin. Fair, olive, tan, light brown, warm brown, and deep brown are all available, and the choice changes from film to film.
@@ -133,7 +133,11 @@ const tools = [
       type: "object",
       additionalProperties: false,
       properties: {
-        title: { type: "string" },
+        title: {
+          type: "string",
+          description:
+            "A short film title taken from this story, the way a movie is named. Never the running time, and never Ten Seconds or any other duration.",
+        },
         characters: {
           type: "array",
           items: {
@@ -1143,7 +1147,7 @@ async function executeTool(
     case "extract_storyboard": {
       const incoming = parseSceneList(args.scenes);
       if (!incoming.length) throw new Error("extract_storyboard needs every scene. The scenes array was empty.");
-      project.title = String(args.title || project.title);
+      const requestedTitle = String(args.title || "");
       const characters = (args.characters as Array<Record<string, unknown>>) || [];
       const previousCharacters = new Map<string, Character>();
       for (const character of project.characters) {
@@ -1216,6 +1220,7 @@ async function executeTool(
       diversifyInventedCast(project);
       applyScriptLooks(project);
       dropUnscriptedDialogue(project);
+      project.title = filmTitle(requestedTitle, project.scenes);
       project.durationPending = false;
       project.durationAuto = false;
       if (project.song) {
