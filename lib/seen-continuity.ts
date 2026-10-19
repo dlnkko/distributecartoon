@@ -11,6 +11,7 @@ export type SeenCard = {
   carryDetail: string;
   carryClothes: string;
   carryPose: string;
+  looks: string;
   unseen: string;
 };
 
@@ -25,12 +26,20 @@ const EMPTY: SeenCard = {
   carryDetail: "",
   carryClothes: "",
   carryPose: "",
+  looks: "",
   unseen: "",
 };
 
 function readLine(raw: string, label: string) {
   const match = raw.match(new RegExp(`^\\s*(?:[-*]\\s*)?(?:\\*\\*)?${label}(?:\\*\\*)?\\s*:\\s*(.+)$`, "im"));
   return (match?.[1] || "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
+}
+
+function readLooks(raw: string) {
+  const match = raw.match(/(?:^|\n)\s*LOOKS\s*:\s*([\s\S]*?)(?=\n\s*[A-Z][A-Z_ ]{2,}\s*:|$)/);
+  const value = (match?.[1] || "").replace(/\s+/g, " ").trim();
+  if (!value || /^(?:none|n\/a|empty|nothing|not applicable)\b/i.test(value)) return "";
+  return value.slice(0, 700);
 }
 
 export function usableNote(text: string) {
@@ -65,6 +74,7 @@ export function parseSeenCard(raw: string): SeenCard {
       (carryProduct && !/\b(?:not seen|not in this clip|did not see|couldn't see|could not see)\b/i.test(product) ? usableNote(product) : ""),
     carryClothes: usableNote(readLine(text, "CARRY_CLOTHES")),
     carryPose: usableNote(readLine(text, "CARRY_POSE")),
+    looks: readLooks(text),
     unseen,
   };
 }

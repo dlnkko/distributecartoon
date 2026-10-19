@@ -62,7 +62,7 @@ async function videoForWatch(buffer: Buffer) {
   }
 }
 
-export async function watchRenderedPart(video: Buffer, context: string) {
+export async function watchRenderedPart(video: Buffer, context: string, options?: { describeLooks?: boolean }) {
   const key = getSecrets().geminiApiKey;
   if (!key) throw new Error("GEMINI_API_KEY is missing.");
   const clip = await videoForWatch(video);
@@ -89,6 +89,9 @@ export async function watchRenderedPart(video: Buffer, context: string) {
                   "CARRY_POSE is the resting position after that gesture. If the next part is a new scene, leave the finished gesture out of CARRY_POSE. If the next part opens somewhere else, leave CARRY_POSE empty.",
                   "CARRY_PRODUCT is yes only when the product is still on or still in frame after the clip ends. It is no when the clip ends with it off.",
                   "Do not invent a new event, a new line, or a camera direction.",
+                  options?.describeLooks
+                    ? "LOOKS: one sentence per named person who is visible. Start with the name, then 'is the same', then what this video actually shows: age, hair, height, glasses, build, and the clothes at the end. Describe the person in the picture, not a planned description. Example shape only: Sam is the same tall man, about 30, with short hair and glasses, in a gray shirt."
+                    : "",
                   "Return these lines only:",
                   "PEOPLE: who is visible at the end, and what each is doing",
                   "PLACE: the place at the end",
@@ -99,6 +102,7 @@ export async function watchRenderedPart(video: Buffer, context: string) {
                   "CARRY_DETAIL: one sentence of where the product still sits. Use the words \"the product\". Empty if CARRY_PRODUCT is no.",
                   "CARRY_CLOTHES: one sentence of the clothes that must stay. Empty if nothing specific is visible.",
                   "CARRY_POSE: one sentence of the ending position. Empty if the next part opens in a different place.",
+                  options?.describeLooks ? "LOOKS: the sentences described above. Empty if no person is visible." : "",
                   "UNSEEN: what the script still needs that you could not see. Empty if you saw everything that should carry.",
                   "",
                   context.trim(),
@@ -108,7 +112,7 @@ export async function watchRenderedPart(video: Buffer, context: string) {
             ],
           },
         ],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 600 },
+        generationConfig: { temperature: 0.1, maxOutputTokens: options?.describeLooks ? 900 : 600 },
       }),
     },
   );
@@ -124,5 +128,5 @@ export async function watchRenderedPart(video: Buffer, context: string) {
     .replace(/\*\*/g, "")
     .trim();
   if (!/CARRY_PRODUCT\s*:/i.test(text)) throw new Error("Couldn't read the handoff from that part.");
-  return text.slice(0, 1500);
+  return text.slice(0, options?.describeLooks ? 2200 : 1500);
 }

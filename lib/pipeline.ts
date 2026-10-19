@@ -11,6 +11,7 @@ import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoT
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
 import { watchRenderedPart } from "./continuity-watch";
 import { parseSeenCard, partKeepsCarriedProduct, seenCardMatters } from "./seen-continuity";
+import { realisticProseCast } from "./realistic-prose";
 import { productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
@@ -594,10 +595,19 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
       `PRODUCT:\n${productUnderstandingBrief(project) || "No product was attached."}`,
       `THIS PART, as written:\n${partOutline(project, previous)}`,
       `NEXT PART, as written:\n${partOutline(project, next)}`,
+      realisticProseCast(project)
+        ? `PEOPLE TO DESCRIBE:\n${project.characters
+            .filter((character) => !character.isExtra && character.name.trim())
+            .map((character) => `${character.name}: ${(character.description || "").replace(/\s+/g, " ").trim()}`)
+            .join("\n")
+            .slice(0, 1500)}`
+        : "",
     ]
       .filter(Boolean)
       .join("\n\n");
-    previous.seenContinuity = await watchRenderedPart(await readPublicFile(src), context);
+    previous.seenContinuity = await watchRenderedPart(await readPublicFile(src), context, {
+      describeLooks: realisticProseCast(project),
+    });
     previous.seenContinuityKey = key;
     previous.seenAttempts = 0;
     console.info("continuity watch", project.id, previous.index);
@@ -696,7 +706,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     if (durableVideoSrc(batch)) continue;
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
-    if (previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+    if (!realisticProseCast(project) && previous && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
@@ -712,12 +722,28 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       if (seenCardMatters(parseSeenCard(previous.seenContinuity || "")) && !/(?:^|\n)Continuity:\s+\S/.test(batch.videoPrompt || "")) {
         batch.promptReady = false;
       }
+      if (
+        realisticProseCast(project) &&
+        parseSeenCard(previous.seenContinuity || "").looks &&
+        !/\bthe same\b/i.test(batch.videoPrompt || "")
+      ) {
+        batch.promptReady = false;
+      }
     }
+    const handoffReady = realisticProseCast(project) ? /full previous video/i.test(batch.videoPrompt || "") : /last 5 seconds/i.test(batch.videoPrompt || "");
     if (
       previous &&
       !realKieVideoTaskId(batch.kieVideoTaskId) &&
       batch.kieVideoTaskId !== "pending" &&
-      (!/last 5 seconds/i.test(batch.videoPrompt || "") || /@Audio2\b/.test(batch.videoPrompt || ""))
+      (!handoffReady || /@Audio2\b/.test(batch.videoPrompt || ""))
+    ) {
+      batch.promptReady = false;
+    }
+    if (
+      realisticProseCast(project) &&
+      /@Image\d+/.test(batch.videoPrompt || "") &&
+      !realKieVideoTaskId(batch.kieVideoTaskId) &&
+      batch.kieVideoTaskId !== "pending"
     ) {
       batch.promptReady = false;
     }
@@ -1355,6 +1381,18 @@ async function previousTailRef(project: Project, batch: Batch, abortSignal?: Abo
 }
 
 async function collectRealisticReferences(project: Project, batch: Batch, abortSignal?: AbortSignal) {
+  if (realisticProseCast(project)) {
+    if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
+      return { imageEntries: [] as PromptRef[], videoEntries: [] as PromptRef[] };
+    }
+    const previous = previousStoryBatch(project, batch);
+    const src = durableVideoSrc(previous || { videoPublicPath: "", videoRemoteUrl: "" });
+    const url = src ? await resolveUploadUrl(previous?.videoRemoteUrl, previous?.videoPublicPath, abortSignal) : "";
+    return {
+      imageEntries: [] as PromptRef[],
+      videoEntries: url ? [{ url, kind: "video" as const, name: "Previous part" }] : [],
+    };
+  }
   const imageEntries = await stableImageEntries(project, abortSignal, true);
   const seen = new Set(imageEntries.map((item) => item.url));
   for (const asset of project.references) {

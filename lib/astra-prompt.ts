@@ -74,16 +74,26 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     console.info("seedance prompt model", SONNET_MODEL);
     const instructions = [
       "Revise this Seedance prompt. Return only the prompt. Keep it in this shape: the dialogue-language line, then [GLOBAL SETUP], then [CONTINUITY RULE], then [CHARACTER ROLES & POSITIONS], then [SCENE BREAKDOWN].",
-      "Each scene stays `SCENE N | Duration: Xs | Shot: ...`, then `- CAMERA:`, then `- ENVIRONMENT:` or `- CONTINUITY:`, then `- ACTION:`, then `- DIALOGUE:`. Dialogue lines sit under DIALOGUE, each as `  - @Image: \"line\"`. Do not put a spoken line on the ACTION line.",
-      "In CHARACTER ROLES & POSITIONS, keep one bullet per character, place, and product already listed. Each bullet is the tag, who it is, and the position already written. Do not invent a person, a vehicle, or a place.",
+      /@Image\d+/.test(trimmed)
+        ? "Each scene stays `SCENE N | Duration: Xs | Shot: ...`, then `- CAMERA:`, then `- ENVIRONMENT:` or `- CONTINUITY:`, then `- ACTION:`, then `- DIALOGUE:`. Dialogue lines sit under DIALOGUE, each as `  - @Image: \"line\"`. Do not put a spoken line on the ACTION line."
+        : "Each scene stays `SCENE N | Duration: Xs | Shot: ...`, then `- CAMERA:`, then `- ENVIRONMENT:` or `- CONTINUITY:`, then `- ACTION:`, then `- DIALOGUE:`. Dialogue lines sit under DIALOGUE, each naming the person in words and then the quoted line. Do not put a spoken line on the ACTION line. Do not add an @Image tag.",
+      /@Image\d+/.test(trimmed)
+        ? "In CHARACTER ROLES & POSITIONS, keep one bullet per character, place, and product already listed. Each bullet is the tag, who it is, and the position already written. Do not invent a person, a vehicle, or a place."
+        : "In CHARACTER ROLES & POSITIONS, keep one bullet per character, place, and product already listed. Each bullet keeps the written description and the position. Do not invent a person, a vehicle, or a place. Do not add an @Image tag.",
       "Write visible action. A vague finish becomes the last sip or the last bite, then the hand lowers. A vehicle that pulls away accelerates and drives out of the frame. Name the place already in the draft instead of saying room. Keep positions until the action moves someone.",
       "When these scenes change feeling, add one Tone line under GLOBAL SETUP, using the feeling, the light, and the people this draft already shows.",
-      "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene.",
-      "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag.",
+      /@Image\d+/.test(trimmed)
+        ? "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene."
+        : "When the draft describes a product in words, keep that description. Leave the product out of a scene that does not already use it.",
+      /@Image\d+/.test(trimmed)
+        ? "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag."
+        : "Keep every SCENE duration, every @Video tag already inside that scene, and every quoted line. Leave the language line first. This draft names people in words and has no @Image tag. Do not add one. Keep each person's description as written, including the words 'the same' when they are there.",
       "Each scene is one forward action, then the spoken line. Continue a beat only when the draft says that beat is still going. When the draft says the previous scene already finished, start the next action and do not replay the last gesture.",
       "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. A mouth that sings along matches @Audio1.",
       prior
-        ? "A previous part prompt is included. This clip is the next slice. The last 5 seconds carry clothes and where people ended up. Replay a gesture only when this draft says that same beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
+        ? /full previous video/i.test(trimmed)
+          ? "A previous part prompt is included. The attached video is the whole previous part. Match the same people already described. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
+          : "A previous part prompt is included. This clip is the next slice. The last 5 seconds carry clothes and where people ended up. Replay a gesture only when this draft says that same beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
         : "",
       sight
         ? "A sighting of the finished previous video is included. The user's script decides the events. Keep each Continuity sentence word for word in its scene. Those sentences are the clothes, the pose, and the product that are still true. Do not move them. Do not add a tag that is not already in the draft."
@@ -116,6 +126,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const revisedFlat = revised.replace(/\s+/g, " ");
     if (carried.some((line) => !revisedFlat.includes(line))) return tightenPrompt(trimmed);
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
+    if (/full previous video/i.test(trimmed) && !/full previous video/i.test(revised)) return trimmed;
+    if (!/@Image\d+/.test(trimmed) && /@Image\d+/.test(revised)) return trimmed;
     if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     if (/@Audio2\b/.test(revised)) return trimmed;
