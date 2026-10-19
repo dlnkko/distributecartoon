@@ -662,10 +662,16 @@ export async function ensureProductUnderstanding(project: Project) {
         console.warn("product page", project.id, error instanceof Error ? error.message : error);
       }
     }
-    const key = createHash("sha256").update(`${src}\n${asset.pageContext || ""}\nwhen-it-is-used`).digest("hex").slice(0, 20);
+    const key = createHash("sha256").update(`${src}\n${asset.pageContext || ""}\n${asset.useNotes || ""}\nwhen-it-is-used`).digest("hex").slice(0, 20);
     if (asset.productRead?.trim() && asset.productReadKey === key) continue;
     try {
-      const read = await readAttachedProduct(await readPublicFile(src), productImageMime(src), asset.pageContext || "", asset.pageUrl || "");
+      const read = await readAttachedProduct(
+        await readPublicFile(src),
+        productImageMime(src),
+        asset.pageContext || "",
+        asset.pageUrl || "",
+        asset.useNotes || "",
+      );
       if (!read) continue;
       asset.productRead = read;
       asset.productReadKey = key;

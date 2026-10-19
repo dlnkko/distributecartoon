@@ -81,19 +81,27 @@ export async function describeProductUse(buffer: Buffer, mime: string) {
   return text.slice(0, 700);
 }
 
-export async function readAttachedProduct(buffer: Buffer, mime: string, page = "", url = "") {
+export async function readAttachedProduct(buffer: Buffer, mime: string, page = "", url = "", notes = "") {
   const key = getSecrets().geminiApiKey;
   if (!key) throw new Error("GEMINI_API_KEY is missing.");
   const pageText = page.replace(/\s+/g, " ").trim().slice(0, 6000);
-  const source = [url ? `PRODUCT PAGE URL: ${url}` : "", pageText ? `PRODUCT PAGE TEXT:\n${pageText}` : "No product page was attached."].filter(Boolean).join("\n\n");
+  const owner = notes.replace(/\s+/g, " ").trim().slice(0, 2000);
+  const source = [
+    url ? `PRODUCT PAGE URL: ${url}` : "",
+    pageText ? `PRODUCT PAGE TEXT:\n${pageText}` : "No product page was attached.",
+    owner ? `OWNER NOTES:\n${owner}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
   const text = await geminiText(
     key,
     [
       {
         text: [
-          "Read this product for a film. You have its photo and, when present, the text of its page.",
+          "Read this product for a film. You have its photo and, when present, the text of its page and the owner's notes.",
           "Stay with this object. Do not invent a different product, a health claim, a cure, or a scene.",
-          "WHEN IT IS USED comes only from the page. It is the situation, not a result and not a benefit. Example shape only: before sleep. If the page does not say, write not stated. Do not copy the example.",
+          "OWNER NOTES, when present, decide how and when this person uses it. Prefer those notes for HOW IT IS USED and WHEN IT IS USED.",
+          "WHEN IT IS USED is the situation, not a result and not a benefit. Example shape only: before sleep. If neither the notes nor the page say, write not stated. Do not copy the example.",
           "Return these lines only, in English, under 220 words:",
           "NAME: the product name from the page, or what the photo shows if there is no page",
           "WHAT IT IS: the object in plain words",

@@ -14,6 +14,7 @@ import { draftKind, draftStepLabel, isDraftProject } from "@/lib/drafts";
 import { CreditsShop } from "@/components/library/CreditsShop";
 import { CreditsWidget } from "@/components/library/CreditsWidget";
 import { LibraryShell } from "@/components/library/LibraryShell";
+import { SavedProductPicker } from "@/components/library/ProductsPanel";
 import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
@@ -148,8 +149,8 @@ function viewUrl(view: {
   if (view.pane === "studio" && view.projectId) {
     params.set("p", view.projectId);
     if (view.step) params.set("step", view.step);
-  } else if (view.zone === "drafts") {
-    params.set("zone", "drafts");
+  } else if (view.zone === "drafts" || view.zone === "products") {
+    params.set("zone", view.zone);
   }
   if (view.panel) params.set("panel", view.panel);
   const query = params.toString();
@@ -1455,7 +1456,7 @@ export function StudioApp() {
         syncing = true;
       }
       if (!params.get("p")) {
-        const zone = params.get("zone") === "drafts" ? "drafts" : "videos";
+        const zone = params.get("zone") === "drafts" ? "drafts" : params.get("zone") === "products" ? "products" : "videos";
         if (zone !== libraryZone) {
           setLibraryZone(zone);
           syncing = true;
@@ -1482,7 +1483,7 @@ export function StudioApp() {
         poppingRef.current = false;
       }, 2000);
       setPanel(open === "account" || open === "membership" || open === "credits" ? open : null);
-      setLibraryZone(params.get("zone") === "drafts" ? "drafts" : "videos");
+      setLibraryZone(params.get("zone") === "drafts" ? "drafts" : params.get("zone") === "products" ? "products" : "videos");
       const found = id ? projectsRef.current.find((item) => item.id === id) : undefined;
       if (!found) {
         setPane("library");
@@ -1626,6 +1627,14 @@ export function StudioApp() {
             <DraftNavIcon />
             Drafts
           </button>
+          <button
+            type="button"
+            onClick={() => leaveStudio("products")}
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+          >
+            <ProductNavIcon />
+            Products
+          </button>
         </nav>
 
         <div className="px-3 pb-2">
@@ -1747,39 +1756,15 @@ export function StudioApp() {
               songAttached={Boolean(project.song)}
               durationSeconds={project.song?.durationSeconds}
               brief={project.song?.productBrief || ""}
-              productPreview={
-                products[0]?.originalPublicPath ? assetSrc(products[0].originalPublicPath) : ""
-              }
+              hasProduct={hasProductPhoto(project)}
+              projectId={project.id}
+              selectedProductIds={products.map((slot) => slot.savedProductId || "").filter(Boolean)}
               busy={working}
               uploadingName={songUploadName}
               onPickSong={() => songRef.current?.click()}
               onClearSong={() => void patchProject({ clearSong: true })}
-              onPickProduct={() => {
-                const slot = products[0];
-                if (slot) pickRef(slot);
-              }}
-              onClearProduct={() => {
-                const slot = products[0];
-                if (slot) void onClearRef(slot);
-              }}
-              productUploading={Boolean(products[0] && uploadingSlotId === products[0].id)}
-              productPageUrl={products[0]?.pageUrl || ""}
-              productPageReady={Boolean(products[0]?.pageContext)}
-              productPageReading={Boolean(products[0] && readingPageId === products[0].id)}
-              useVideoReady={Boolean(products[0]?.useVideoNote)}
-              useVideoReading={Boolean(products[0] && useVideoSlotId === products[0].id)}
-              onPickUseVideo={() => {
-                const slot = products[0];
-                if (slot) pickUseVideo(slot);
-              }}
-              onClearUseVideo={() => {
-                const slot = products[0];
-                if (slot) void onClearUseVideo(slot);
-              }}
-              onProductPage={(url) => {
-                const slot = products[0];
-                if (slot) void onProductPage(slot, url);
-              }}
+              onProductsChanged={(next) => remember(next)}
+              onOpenProducts={() => leaveStudio("products")}
               onUseScript={() => void (project.song ? clearScriptFile() : patchProject({ workflowStep: "script" }))}
               onContinue={(brief) => void continueFromSong(brief)}
             />
@@ -1804,11 +1789,8 @@ export function StudioApp() {
               castOptions={project.song ? [] : project.scriptCast || []}
               onLabelSlot={(slot, label) => void onLabelRef(slot, label)}
               onLookSlot={(slot, look) => void onLookRef(slot, look)}
-              readingPageId={readingPageId}
-              useVideoSlotId={useVideoSlotId}
-              onPickUseVideo={(slot) => pickUseVideo(slot)}
-              onClearUseVideo={(slot) => void onClearUseVideo(slot)}
-              onProductPage={(slot, url) => void onProductPage(slot, url)}
+              onProductsChanged={(next) => remember(next)}
+              onOpenProducts={() => leaveStudio("products")}
               onContinue={() => void continueFromSetup()}
             />
           ) : null}
@@ -2202,22 +2184,15 @@ function SongStep({
   songAttached,
   durationSeconds,
   brief,
-  productPreview,
+  hasProduct,
+  projectId,
+  selectedProductIds,
   busy,
   uploadingName,
   onPickSong,
   onClearSong,
-  onPickProduct,
-  onClearProduct,
-  productUploading,
-  productPageUrl,
-  productPageReady,
-  productPageReading,
-  useVideoReady,
-  useVideoReading,
-  onPickUseVideo,
-  onClearUseVideo,
-  onProductPage,
+  onProductsChanged,
+  onOpenProducts,
   onUseScript,
   onContinue,
 }: {
@@ -2225,27 +2200,20 @@ function SongStep({
   songAttached: boolean;
   durationSeconds?: number;
   brief: string;
-  productPreview: string;
+  hasProduct: boolean;
+  projectId: string;
+  selectedProductIds: string[];
   busy: boolean;
   uploadingName: string;
   onPickSong: () => void;
   onClearSong: () => void;
-  onPickProduct: () => void;
-  onClearProduct: () => void;
-  productUploading: boolean;
-  productPageUrl: string;
-  productPageReady: boolean;
-  productPageReading: boolean;
-  useVideoReady: boolean;
-  useVideoReading: boolean;
-  onPickUseVideo: () => void;
-  onClearUseVideo: () => void;
-  onProductPage: (url: string) => void;
+  onProductsChanged: (project: Project) => void;
+  onOpenProducts: () => void;
   onUseScript: () => void;
   onContinue: (brief: string) => void;
 }) {
   const [text, setText] = useState(brief);
-  const ready = songAttached && Boolean(productPreview) && text.trim().length >= 8;
+  const ready = songAttached && hasProduct && text.trim().length >= 8;
 
   return (
     <div className="rise-in flex flex-1 flex-col">
@@ -2277,31 +2245,13 @@ function SongStep({
       ) : null}
 
       <p className="mb-2 mt-4 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product</p>
-      <div className="max-w-xs">
-        <UploadTile
-          label="Product photo"
-          preview={productPreview}
-          hint={productPreview ? "Replace" : "Required · at least 300×300"}
-          disabled={busy && !productUploading}
-          uploading={productUploading}
-          onClick={onPickProduct}
-          onRemove={productPreview ? onClearProduct : undefined}
-        />
-        <ProductPageField
-          url={productPageUrl}
-          ready={productPageReady}
-          reading={productPageReading}
-          disabled={busy && !productPageReading}
-          onSave={onProductPage}
-        />
-        <ProductUseVideo
-          ready={useVideoReady}
-          reading={useVideoReading}
-          disabled={busy && !useVideoReading}
-          onPick={onPickUseVideo}
-          onRemove={onClearUseVideo}
-        />
-      </div>
+      <SavedProductPicker
+        projectId={projectId}
+        selectedIds={selectedProductIds}
+        disabled={busy}
+        onChanged={onProductsChanged}
+        onOpenProducts={onOpenProducts}
+      />
 
       <label className="mt-4 text-xs font-medium text-[var(--muted)]">What is this product about?</label>
       <textarea
@@ -2347,11 +2297,8 @@ function SetupStep({
   castOptions,
   onLabelSlot,
   onLookSlot,
-  readingPageId,
-  useVideoSlotId,
-  onPickUseVideo,
-  onClearUseVideo,
-  onProductPage,
+  onProductsChanged,
+  onOpenProducts,
   onContinue,
 }: {
   project: Project;
@@ -2371,11 +2318,8 @@ function SetupStep({
   castOptions: ScriptCastMember[];
   onLabelSlot: (slot: ReferenceAsset, label: string) => void;
   onLookSlot: (slot: ReferenceAsset, look: string) => void;
-  readingPageId: string;
-  useVideoSlotId: string;
-  onPickUseVideo: (slot: ReferenceAsset) => void;
-  onClearUseVideo: (slot: ReferenceAsset) => void;
-  onProductPage: (slot: ReferenceAsset, url: string) => void;
+  onProductsChanged: (project: Project) => void;
+  onOpenProducts: () => void;
   onContinue: () => void;
 }) {
   return (
@@ -2465,36 +2409,15 @@ function SetupStep({
 
       {project.song ? null : (
         <section className="setup-card">
-          <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product · up to 3</p>
-          <p className="mt-1 mb-3 text-xs text-[var(--muted)]">Add a product page so the story knows how it is used and how it should look.</p>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            {products.map((slot) => (
-              <div key={slot.id} className="min-w-0">
-                <UploadTile
-                  label={slot.label}
-                  preview={slot.originalPublicPath ? assetSrc(slot.originalPublicPath) : ""}
-                  disabled={busy && uploadingSlotId !== slot.id}
-                  uploading={uploadingSlotId === slot.id}
-                  onClick={() => onPickSlot(slot)}
-                  onRemove={() => onClearSlot(slot)}
-                />
-                <ProductPageField
-                  url={slot.pageUrl || ""}
-                  ready={Boolean(slot.pageContext)}
-                  reading={readingPageId === slot.id}
-                  disabled={busy && readingPageId !== slot.id}
-                  onSave={(url) => onProductPage(slot, url)}
-                />
-                <ProductUseVideo
-                  ready={Boolean(slot.useVideoNote)}
-                  reading={useVideoSlotId === slot.id}
-                  disabled={busy && useVideoSlotId !== slot.id}
-                  onPick={() => onPickUseVideo(slot)}
-                  onRemove={() => onClearUseVideo(slot)}
-                />
-              </div>
-            ))}
-          </div>
+          <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Product</p>
+          <p className="mt-1 mb-3 text-xs text-[var(--muted)]">Choose a product you already saved. Up to 3.</p>
+          <SavedProductPicker
+            projectId={project.id}
+            selectedIds={products.map((slot) => slot.savedProductId || "").filter(Boolean)}
+            disabled={busy}
+            onChanged={onProductsChanged}
+            onOpenProducts={onOpenProducts}
+          />
         </section>
       )}
 
@@ -3275,6 +3198,15 @@ function DraftNavIcon() {
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M4 2.5h5.2L12.5 5.8V13a.5.5 0 0 1-.5.5H4a.5.5 0 0 1-.5-.5v-10A.5.5 0 0 1 4 2.5Z" stroke="currentColor" strokeWidth="1.4" />
       <path d="M9 2.8V6h3.2" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function ProductNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 5.5 8 3l5 2.5v6L8 14.5 3 11.5v-6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M8 8.2V14" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }

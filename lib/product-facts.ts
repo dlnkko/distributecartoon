@@ -34,9 +34,18 @@ function productMatch(project: Project, label: string) {
 }
 
 export function productUnderstandingBrief(project: Project) {
-  const reads = (project.references || []).filter((item) => item.kind === "product" && item.productRead?.trim());
-  if (!reads.length) return "";
-  return reads.map((item) => `PRODUCT UNDERSTANDING:\n${item.productRead?.trim()}`).join("\n\n");
+  const products = (project.references || []).filter((item) => item.kind === "product");
+  const chunks = products.flatMap((item) => {
+    const name = productFacts(project, item.label).name || item.label || "The product";
+    const parts = [
+      item.productRead?.trim() ? `PRODUCT UNDERSTANDING:\n${item.productRead.trim()}` : "",
+      item.useNotes?.trim()
+        ? `HOW THE OWNER USES ${name}:\n${item.useNotes.trim()}\nUse this for when and how the product is used. Do not turn it into a slogan or a health claim.`
+        : "",
+    ];
+    return parts.filter(Boolean);
+  });
+  return chunks.join("\n\n");
 }
 
 export function productCalledPhrases(project: Project, label: string) {
@@ -64,10 +73,11 @@ export function productFacts(project: Project, label: string) {
   const plain = label.trim();
   const name = (fromRead.length >= 2 && fromRead.length <= 80 ? fromRead : "") || fromPage || (plain && !/^product\s*\d+$/i.test(plain) ? plain : "");
   const video = (match?.useVideoNote || "").replace(/\s+/g, " ").trim();
+  const owner = (match?.useNotes || "").replace(/\s+/g, " ").trim();
   const seen = (match?.imageNote || "").replace(/\s+/g, " ").trim();
   const readUse = readLine(match?.productRead || "", "HOW IT IS USED");
   const pageUse = useFromBlurb(blurb);
-  const use = [readUse || pageUse, video].filter(Boolean).join(" ");
+  const use = [owner, readUse || pageUse, video].filter(Boolean).join(" ");
   const whenRaw = readLine(match?.productRead || "", "WHEN IT IS USED");
   const when = /^(?:not stated|unknown|n\/a|none|empty|unspecified)\b/i.test(whenRaw) ? "" : whenRaw;
   return { name, use, seen, when };

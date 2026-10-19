@@ -4,14 +4,16 @@ export function MobileNav({
   zone,
   onVideos,
   onDrafts,
+  onProducts,
   onCreate,
   onSong,
   onAccount,
   createLocked = false,
 }: {
-  zone: "videos" | "drafts";
+  zone: "videos" | "drafts" | "products";
   onVideos: () => void;
   onDrafts: () => void;
+  onProducts: () => void;
   onCreate: () => void;
   onSong: () => void;
   onAccount: () => void;
@@ -21,6 +23,7 @@ export function MobileNav({
     { label: "Create", onClick: onCreate, icon: PlusGlyph, active: false, locked: createLocked },
     { label: "Suno", onClick: onSong, icon: SongGlyph, active: false, locked: createLocked },
     { label: "Videos", onClick: onVideos, icon: VideosGlyph, active: zone === "videos", locked: false },
+    { label: "Products", onClick: onProducts, icon: ProductGlyph, active: zone === "products", locked: false },
     { label: "Drafts", onClick: onDrafts, icon: DraftGlyph, active: zone === "drafts", locked: false },
     { label: "Account", onClick: onAccount, icon: AccountGlyph, active: false, locked: false },
   ];
@@ -30,7 +33,7 @@ export function MobileNav({
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Primary"
     >
-      <ul className="grid grid-cols-5">
+      <ul className="grid grid-cols-6">
         {items.map((item) => (
           <li key={item.label}>
             <button
@@ -46,6 +49,15 @@ export function MobileNav({
         ))}
       </ul>
     </nav>
+  );
+}
+
+function ProductGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 5.5 8 3l5 2.5v6L8 14.5 3 11.5v-6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+      <path d="M8 8.2V14" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
   );
 }
 

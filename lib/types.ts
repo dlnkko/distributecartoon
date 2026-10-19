@@ -110,6 +110,7 @@ export type ReferenceAsset = {
   lookNotes?: string;
   pageUrl?: string;
   pageContext?: string;
+  useNotes?: string;
   productRead?: string;
   productReadKey?: string;
   useVideoFileName?: string;
@@ -117,6 +118,7 @@ export type ReferenceAsset = {
   useVideoRemoteUrl?: string;
   useVideoNote?: string;
   imageNote?: string;
+  savedProductId?: string;
   includeInVideo: boolean;
   originalFileName?: string;
   originalPublicPath?: string;
