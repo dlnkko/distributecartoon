@@ -4,6 +4,7 @@ import { isJunkPlace } from "./places";
 import { productUnderstandingBrief } from "./product-facts";
 import { SONNET_MODEL, sonnetText } from "./sonnet";
 import { saveProject } from "./store";
+import { storyArc } from "./timing";
 import type { Project } from "./types";
 
 export const STORY_MODEL = SONNET_MODEL;
@@ -50,6 +51,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       system: [
         "You are the story editor for a short film. Read the script once and return a directing note in English, under 450 words.",
         "Write the through-line in order: who wants what, and what changes by the end.",
+        "Shape that through-line to the target length. The opening presents the people and the problem. The knot makes the conflict harder and does not repeat the same argument. The close is the solution and then an ending that shows the result. Use the time map in the request for how many seconds each movement gets. Do not solve the story in the opening. Do not spend the close restating the problem.",
         "For each beat, name the place the camera is actually in, who is in frame, how far apart they are, what the body does, and the spoken line when the script has one. A distance the script states stays that distance. If they leave a room, the next beat is the new room. Reuse one place name every time the story returns there, including after a time jump.",
         "If the script has spoken lines, copy those lines only. Do not write a new line, a voice-over, or a closing speech. Product marketing is not dialogue.",
         "Each later part starts from the consequence of the previous beat.",
@@ -59,7 +61,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       messages: [
         {
           role: "user",
-          content: `Style: ${project.style}. Target: ${project.targetDurationSeconds || 15} seconds.\n\n${productBlock(project)}SCRIPT:\n${script}`,
+          content: `Style: ${project.style}. Target: ${project.targetDurationSeconds || 15} seconds.\n${storyArc(project.targetDurationSeconds || 15)}\n\n${productBlock(project)}SCRIPT:\n${script}`,
         },
       ],
     }),

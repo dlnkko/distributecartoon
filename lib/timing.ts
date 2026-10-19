@@ -558,6 +558,43 @@ export function seedancePartDurations(totalSeconds: number): number[] {
   return packScenesIntoParts([], totalSeconds).map((part) => part.duration);
 }
 
+function shareSeconds(total: number, weights: number[]) {
+  const sum = weights.reduce((left, right) => left + right, 0);
+  const raw = weights.map((weight) => (total * weight) / sum);
+  const next = raw.map((value) => Math.floor(value));
+  let left = total - next.reduce((acc, value) => acc + value, 0);
+  const order = raw
+    .map((value, index) => ({ index, frac: value - next[index] }))
+    .sort((a, b) => b.frac - a.frac);
+  for (const item of order) {
+    if (left <= 0) break;
+    next[item.index] += 1;
+    left -= 1;
+  }
+  return next;
+}
+
+export function storyArc(totalSeconds: number) {
+  const total = Math.max(15, Math.round(totalSeconds || 15));
+  const parts = seedancePartDurations(total);
+  const listed = parts.map((duration, index) => `part ${index + 1} (${duration}s)`).join(", ");
+  const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
+  const moves =
+    "The opening presents the people and then the problem. The knot is the conflict, and it gets harder instead of repeating the same argument. The close is the solution and then an ending that shows the result of that choice. Do not solve the story in the opening. Do not spend the close restating the problem.";
+  let where = "";
+  if (parts.length <= 1) {
+    const [opening, knot, close] = shareSeconds(total, [35, 30, 35]);
+    where = `Use about ${opening}s for the opening, ${knot}s for the knot, and ${close}s for the close.`;
+  } else if (parts.length === 2) {
+    where = `Part 1 is the opening and the start of the knot. Part 2 finishes the knot, then gives the solution and the ending enough time to land. The story is not solved in part 1.`;
+  } else if (parts.length === 3) {
+    where = "Part 1 is the opening. Part 2 is the knot. Part 3 is the close: the solution, then the ending.";
+  } else {
+    where = `Part 1 is the opening. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution, then the ending.`;
+  }
+  return `${head} ${moves} ${where}`;
+}
+
 export function scaleEstimatedSeconds(values: number[], target: number): number[] {
   if (!values.length) return [];
   const total = Math.max(4, Math.round(target));
