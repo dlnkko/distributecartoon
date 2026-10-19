@@ -242,7 +242,14 @@ export function textShowsPackage(text: string) {
 const SPOKEN_QUOTES = /"[^"]*"|“[^”]*”/g;
 
 const SHOWN_PACK =
-  /\b(?:attached product|the product|the package|the pack|the pouch|the sachet|the box|the logo|brand mark|wordmark)\b/i;
+  /\b(?:attached product|the product|the package|the pack|the pouch|the sachet|the box|the tape|the strip|a strip|brand mark|wordmark)\b/i;
+
+function logoIsItsOwnGraphic(action: string) {
+  if (/\b(?:its|his|her|their|printed|package|pack(?:age)?'s|product's|tape's)\s+logo\b|\blogo visible\b|\bwith (?:its |the |a )?logo\b/i.test(action)) {
+    return false;
+  }
+  return /\b(?:logo|brand mark|wordmark)\b/i.test(action);
+}
 
 export function actionWithoutSpeech(text: string) {
   return text.replace(SPOKEN_QUOTES, " ");
@@ -252,7 +259,7 @@ export function sceneRequiresAsset(kind: string, text: string) {
   const action = actionWithoutSpeech(text);
   if (kind !== "product" && kind !== "logo") return false;
   if (productKeptOut(action)) return false;
-  if (kind === "logo") return /\b(?:logo|brand mark|wordmark)\b/i.test(action);
+  if (kind === "logo") return logoIsItsOwnGraphic(action);
   return SHOWN_PACK.test(action);
 }
 
@@ -287,7 +294,8 @@ export function partNeedsPackshot(project: Project, kind: string, name: string, 
   if (kind !== "product" && kind !== "logo") return false;
   if (!text.trim() || (productKeptOut(text) && !sceneRequiresAsset(kind, text))) return false;
   if (sceneRequiresAsset(kind, text)) return true;
-  const asset = packshotAsset(project, kind === "logo" ? "product" : kind, name);
+  if (kind === "logo") return false;
+  const asset = packshotAsset(project, kind, name);
   if (!asset) return false;
   const phrases = [
     ...namePhrases(productFacts(project, asset.label).name),

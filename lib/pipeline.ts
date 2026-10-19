@@ -16,7 +16,7 @@ import { ownerProductContext, productUnderstandingBrief } from "./product-facts"
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, promptReadyReferences, refineStoryLeads } from "./refs";
+import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, promptReadyReferences, refineStoryLeads, sceneRequiresAsset } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
@@ -1454,7 +1454,7 @@ async function proseReferenceImages(project: Project, sceneIndexes: number[], ab
     .join(" ");
   for (const asset of project.references || []) {
     if (asset.kind !== "logo" || entries.some((entry) => entry.kind === "logo" && entry.name === asset.label)) continue;
-    if (!partNeedsPackshot(project, "logo", asset.label, blob)) continue;
+    if (!sceneRequiresAsset("logo", blob)) continue;
     const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
     if (url) entries.push({ url, kind: "logo", name: asset.label, notes: asset.notes });
   }
@@ -1516,6 +1516,12 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
     .map((index) => project.scenes.find((item) => item.index === index))
     .filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
   const present = new Set(scenes.flatMap((scene) => charactersPresent(project, scene).map((name) => name.toLowerCase())));
+  const texts = scenes.map((scene) => {
+    const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
+    const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
+    return `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`;
+  });
+  const shown = new Set(project.productShownIndexes || []);
   for (let index = entries.length - 1; index >= 0; index -= 1) {
     const entry = entries[index];
     if (entry.kind === "character") {
@@ -1528,13 +1534,12 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
       continue;
     }
     if (entry.kind !== "product" && entry.kind !== "logo") continue;
-    if (entry.kind === "product" && partKeepsCarriedProduct(project, sceneIndexes)) continue;
-    const texts = scenes.map((scene) => {
-      const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
-      const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
-      return `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`;
-    });
-    const shown = new Set(project.productShownIndexes || []);
+    if (entry.kind === "logo") {
+      const logoNeeded = texts.some((text) => sceneRequiresAsset("logo", text));
+      if (!logoNeeded) entries.splice(index, 1);
+      continue;
+    }
+    if (partKeepsCarriedProduct(project, sceneIndexes)) continue;
     const needed =
       scenes.some((scene) => shown.has(scene.index)) ||
       texts.some((text) => partNeedsPackshot(project, "product", entry.kind === "product" ? entry.name : "", text));

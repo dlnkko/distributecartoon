@@ -589,17 +589,17 @@ export function storyArc(totalSeconds: number) {
   const listed = parts.map((duration, index) => `part ${index + 1} (${duration}s)`).join(", ");
   const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
   const moves =
-    "Open on the hook already in motion. If the story starts in the middle of the complaint, start there. Do not add a calm introduction before it. A part may visit more than one place and change movement and picture when that serves the story. The knot makes that conflict harder instead of repeating it. The close is the longest movement: the solution is used, then one later scene shows the change in how the people look and act. That later scene is short. It is not a tour of the new life. Do not solve the story in the opening. Do not add a slogan or a health claim.";
+    "Open on the hook already in motion. If the story starts in the middle of the complaint, start there. Do not add a calm introduction before it. A part may visit more than one place and change movement and picture when that serves the story. The knot makes that conflict harder instead of repeating it. The close is the longest movement: the solution is used where someone would really use it, then each result of that use is its own later scene, in the place and situation where that result would actually be seen. Time can pass between those scenes. Do not act a later result out inside the opening place. It is still this story's ending, not a tour of unrelated days. Do not solve the story in the opening. Do not add a slogan or a health claim.";
   let where = "";
   if (parts.length <= 1) {
     const [opening, knot, close] = shareSeconds(total, [25, 30, 45]);
-    where = `Use about ${opening}s for the hook, ${knot}s for the knot, and ${close}s for the close. The last part of that close is the later scene where the change is visible.`;
+    where = `Use about ${opening}s for the hook, ${knot}s for the knot, and ${close}s for the close. The close ends on the later results, each in the place that result would be seen.`;
   } else if (parts.length === 2) {
-    where = "Part 1 is the hook and the knot. Part 2 is the close: the solution is used, then one later scene shows the change. Do not solve the story in part 1. Do not spend part 2 repeating the argument.";
+    where = "Part 1 is the hook and the knot. Part 2 is the close: the solution is used, then the results show up in the places they would really be seen. Do not solve the story in part 1. Do not spend part 2 repeating the argument in the opening place.";
   } else if (parts.length === 3) {
-    where = "Part 1 opens on the hook. Part 2 is the knot. Part 3 is the close: the solution is used, then one later scene shows the change. Do not fill part 3 with a montage of the new life.";
+    where = "Part 1 opens on the hook. Part 2 is the knot. Part 3 is the close: the solution is used, then the results show up in the places they would really be seen. Do not fill part 3 with a montage of the new life.";
   } else {
-    where = `Part 1 opens on the hook. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution is used, then one later scene shows the change.`;
+    where = `Part 1 opens on the hook. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution is used, then the results show up in the places they would really be seen.`;
   }
   return `${head} ${moves} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
 }

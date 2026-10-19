@@ -1246,7 +1246,9 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
         ? [name, called, item.notes || "", "the attached product", "the product"]
         : item.kind === "location"
           ? placeAliases(project, name)
-          : [name];
+          : item.kind === "logo"
+            ? []
+            : [name];
     swaps.push({
       tag,
       names: aliases
