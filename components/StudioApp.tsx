@@ -18,6 +18,7 @@ import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
+import { realisticProseCast } from "@/lib/realistic-prose";
 import { CONTACT_EMAIL } from "@/lib/site";
 import { castChipLabel } from "@/lib/cast-label";
 
@@ -326,6 +327,7 @@ function lookFallbackSrc(character: Pick<Character, "portraitPublicPath" | "port
 }
 
 function missingCastLooks(project: Project) {
+  if (realisticProseCast(project)) return [];
   return project.characters.filter(
     (character) =>
       !character.isExtra &&
@@ -865,7 +867,7 @@ export function StudioApp() {
           const latest = refreshed || projectRef.current;
           markGenerating(started.id, false);
           setPane("studio");
-          if (!latest.song && latest.scenes.length) {
+          if (!latest.song && latest.scenes.length && !realisticProseCast(latest)) {
             note("Casting the characters…");
             const cast = await requestCastLooks(started.id, controller?.signal || new AbortController().signal);
             if (projectRef.current?.id !== started.id) return;
@@ -1825,6 +1827,7 @@ export function StudioApp() {
               busy={working}
               creditCost={generationCreditCost(project)}
               credits={credits}
+              wordsOnly={realisticProseCast(project)}
               onBack={() => void patchProject({ workflowStep: "setup" })}
               onRevise={(characterId, notes) => void reviseCastLook(characterId, notes)}
               onCreateLooks={() => startCastLooks(true)}
@@ -2640,6 +2643,7 @@ function CastStep({
   busy,
   creditCost,
   credits,
+  wordsOnly,
   onBack,
   onRevise,
   onCreateLooks,
@@ -2649,13 +2653,14 @@ function CastStep({
   busy: boolean;
   creditCost: number;
   credits: number;
+  wordsOnly: boolean;
   onBack: () => void;
   onRevise: (characterId: string, notes: string) => void;
   onCreateLooks: () => void;
   onContinue: () => void;
 }) {
   const [notes, setNotes] = useState<Record<string, string>>({});
-  const ready = characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
+  const ready = wordsOnly || characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
   const affordable = credits >= creditCost;
 
   return (
@@ -2663,9 +2668,11 @@ function CastStep({
       <div>
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
-          {characters.length
-            ? "Main characters only. One pose each. Change a look once if needed."
-            : "No on-screen characters in this script. Continue when you are ready to generate."}
+          {wordsOnly
+            ? "No portraits for this test. The video describes each person in words."
+            : characters.length
+              ? "Main characters only. One pose each. Change a look once if needed."
+              : "No on-screen characters in this script. Continue when you are ready to generate."}
         </p>
       </div>
 
@@ -2683,7 +2690,11 @@ function CastStep({
           return (
             <article key={character.id} className="rounded-2xl border border-[var(--line)] bg-white p-3">
               <div className="aspect-square overflow-hidden rounded-xl bg-stone-100">
-                {src ? (
+                {wordsOnly ? (
+                  <div className="grid h-full place-items-center px-4 text-center text-sm text-[var(--muted)]">
+                    <span>{character.description || character.name}</span>
+                  </div>
+                ) : src ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
                     src={src}
@@ -2705,7 +2716,7 @@ function CastStep({
                 )}
               </div>
               <p className="mt-2 text-sm font-medium">{character.name}</p>
-              {character.lookRevisionUsed ? (
+              {wordsOnly ? null : character.lookRevisionUsed ? (
                 <p className="mt-2 text-[11px] text-[var(--muted)]">This look can only be changed once.</p>
               ) : (
                 <div className="mt-2 space-y-1.5">

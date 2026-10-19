@@ -3,6 +3,7 @@ import { isAbortError } from "@/lib/abort";
 import { runAgent } from "@/lib/agent";
 import { loadOwnedProject } from "@/lib/auth";
 import { ensureCharacterLooks, leadCharacters, resetInFlightBatches, startProduce } from "@/lib/pipeline";
+import { realisticProseCast } from "@/lib/realistic-prose";
 import { driveProduce } from "@/lib/produce";
 import { getProject, listProjects, saveProject } from "@/lib/store";
 import { activeTask } from "@/lib/tasks";
@@ -212,6 +213,7 @@ async function runPlan(project: Project, send: (event: StudioEvent) => void) {
       },
     });
     const needsLooks =
+      !realisticProseCast(project) &&
       !project.song &&
       leadCharacters(project).some((character) => !(character.portraitRemoteUrl || character.portraitPublicPath));
     if (needsLooks) {

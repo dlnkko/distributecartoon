@@ -943,6 +943,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
 
 async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   await ensureScenePlaces(project, abortSignal);
+  if (realisticProseCast(project)) return;
   project.locationPlates = (Array.isArray(project.locationPlates) ? project.locationPlates : []).filter(
     (plate) => !isJunkPlace(plate.name),
   );
@@ -1095,6 +1096,7 @@ async function requestLooks(
 export async function ensureCharacterLooks(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   refineStoryLeads(project);
   applyScriptLooks(project);
+  if (realisticProseCast(project)) return project.characters;
   const leads = leadCharacters(project);
   const sources = assignCharacterSourcePhotos(project);
   const pending = leads.filter((character) => characterNeedsLook(character, sources.get(character.id)));
