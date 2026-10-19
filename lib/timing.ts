@@ -407,11 +407,13 @@ function sliceProse(text: string, start: number, end: number, role: "head" | "ta
   if (!sentences.length) {
     return role === "head"
       ? `The opening ${seconds}s of this beat play in real time.`
-      : `Action continues in real time. The next ${seconds}s.`;
+      : `That action already finished in the previous part. Hold the result for ${seconds}s and do not repeat the gesture.`;
   }
   if (sentences.length === 1) {
     const line = sentences[0];
-    return role === "head" ? `The opening ${seconds}s play in real time. ${line}` : `Action continues in real time. ${line}`;
+    return role === "head"
+      ? `The opening ${seconds}s play in real time. ${line}`
+      : `That action already finished in the previous part. Stay in the same place for ${seconds}s and do not repeat the gesture.`;
   }
   const weights = sentences.map((sentence) => Math.max(1, sentence.split(/\s+/).filter(Boolean).length));
   const total = weights.reduce((sum, value) => sum + value, 0);
@@ -427,7 +429,7 @@ function sliceProse(text: string, start: number, end: number, role: "head" | "ta
   const body = (kept.length ? kept : role === "head" ? sentences.slice(0, 1) : sentences.slice(-1)).join(" ");
   return role === "head"
     ? `${body} The rest of this beat continues in the next generation.`
-    : `Action continues in real time. ${body}`;
+    : `The earlier part of this beat already happened. Now: ${body}`;
 }
 
 function sliceDialogue(lines: DialogueLine[], start: number, end: number, role: "head" | "tail") {

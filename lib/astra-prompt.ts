@@ -80,10 +80,10 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       "When these scenes change feeling, add one Tone line under GLOBAL SETUP, using the feeling, the light, and the people this draft already shows.",
       "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene.",
       "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag.",
-      "Each scene is one forward action, then the spoken line. The first scene continues the previous ending unless this draft moves them.",
+      "Each scene is one forward action, then the spoken line. Continue a beat only when the draft says that beat is still going. When the draft says the previous scene already finished, start the next action and do not replay the last gesture.",
       "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. A mouth that sings along matches @Audio1.",
       prior
-        ? "A previous part prompt is included. This clip is the next slice. The attached video of the last 5 seconds carries clothes, hands, and body position. Characters carry on silently from that frame. The new lines are the only words. This part may open in a new place."
+        ? "A previous part prompt is included. This clip is the next slice. The last 5 seconds carry clothes and where people ended up. Replay a gesture only when this draft says that same beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
         : "",
       sight
         ? "A sighting of the finished previous video is included. The user's script decides the events. Keep each Continuity sentence word for word in its scene. Those sentences are the clothes, the pose, and the product that are still true. Do not move them. Do not add a tag that is not already in the draft."

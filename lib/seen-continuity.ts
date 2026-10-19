@@ -139,10 +139,12 @@ export function previousSeenCard(project: Project, sceneIndexes: number[]) {
 export function productCarryIndexes(project: Project, sceneIndexes: number[], card: SeenCard) {
   const keep = new Set<number>();
   if (!card.carryProduct) return keep;
+  const takingOff = removalGesture(`${card.carryDetail} ${card.pose} ${card.product}`);
   for (const index of sceneIndexes) {
     const scene = project.scenes.find((item) => item.index === index);
     const text = sceneBlob(scene);
     if (sceneReleasesProduct(text)) break;
+    if (takingOff && !removalGesture(text)) continue;
     if (graphicScene(scene) || !sceneHasSomeone(project, scene)) continue;
     keep.add(index);
   }
@@ -162,12 +164,22 @@ export function clothesCarryIndexes(project: Project, sceneIndexes: number[], ca
   return keep;
 }
 
+export function actionGesture(text: string) {
+  return /\b(?:peel\w*|tak(?:e|es|ing)\s+off|pull(?:s|ing)?\s+off|remov\w*|stick\w*|put(?:s|ting)\s+on|appl(?:y|ies|ying))\b/i.test(text);
+}
+
+export function removalGesture(text: string) {
+  return /\b(?:peel\w*|tak(?:e|es|ing)\s+off|pull(?:s|ing)?\s+off|remov\w*)\b/i.test(text);
+}
+
 export function poseCarryIndex(project: Project, sceneIndexes: number[], card: SeenCard) {
   if (!card.carryPose) return undefined;
   const index = sceneIndexes[0];
   const scene = project.scenes.find((item) => item.index === index);
   if (!scene || graphicScene(scene)) return undefined;
   if (!placeAllowsPose(card.place, scene.location || "")) return undefined;
+  const sceneText = `${scene.title || ""} ${scene.summary || ""}`;
+  if (actionGesture(card.carryPose) && !actionGesture(sceneText)) return undefined;
   return index;
 }
 

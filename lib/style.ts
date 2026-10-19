@@ -6,7 +6,7 @@ import { productFacts, productUseHint, productUsePhysics } from "./product-facts
 import { actionWithoutSpeech, isUnseenVoice, partNeedsPackshot, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { sameCameraPerspective } from "./shots";
-import { carriedProductSentence, clothesCarryIndexes, continuityLine, poseCarryIndex, previousSeenCard, productCarryIndexes } from "./seen-continuity";
+import { actionGesture, carriedProductSentence, clothesCarryIndexes, continuityLine, poseCarryIndex, previousSeenCard, productCarryIndexes } from "./seen-continuity";
 
 export type PromptRef = {
   url: string;
@@ -1220,7 +1220,7 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       refs.push(
         project.song
           ? `${tag} is the last 5 seconds, picture and music. The picture continues from that frame.`
-          : `${tag} is the last 5 seconds, picture only. Characters carry on silently from the previous frame. The new lines are the only words.`,
+          : `${tag} is the last 5 seconds, picture only. Match clothes, faces, and where everyone is after that moment. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
   });
@@ -1275,7 +1275,7 @@ function realismRules(project: Project, sceneIndexes: number[], narrated: boolea
     "RULES —",
     "Real-world physics: gravity pulls down, weight rests on what supports it, and bodies and objects stay solid, never passing through each other or the set.",
     "Each character is one body, once per frame, with the same face, outfit and scale in every shot.",
-    continues ? "This clip picks up straight from the previous part: same wardrobe, props, light and time of day." : "",
+    continues ? "This clip keeps the wardrobe, light, and time of day from the previous part. A gesture that already finished is not replayed." : "",
     "Continuity: each shot starts where the last one ended, with the same positions, screen sides, props and light.",
     "Objects are picked up on camera before use and stay in the same hand until put down.",
     "People and props enter and leave on camera; nothing appears, vanishes or teleports.",
@@ -2368,7 +2368,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const stayed =
       carriedProduct && !freshHandle
         ? images
-            .map((item, imageIndex) => (item.kind === "product" ? carriedProductSentence(`@Image${imageIndex + 1}`, seen.carryDetail) : ""))
+            .map((item, imageIndex) =>
+              item.kind === "product"
+                ? carriedProductSentence(`@Image${imageIndex + 1}`, actionGesture(seen.carryDetail) ? "" : seen.carryDetail)
+                : "",
+            )
             .filter(Boolean)
             .join(" ")
         : "";
@@ -2470,7 +2474,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     song ? "Each scene shows its quoted lyric. The sung lyric is the only voice. The product is on screen in the scene that uses it." : "",
     previousLine,
     tailLine,
-    continues && !tailLine ? "This part starts where the last one ended." : "",
+    continues ? "The previous scene already finished. This part starts on its own action. Do not replay the last gesture." : "",
     characterVideos ? "Speaking faces are @Video, with that voice." : "",
     narrated ? "Narrator lines are voice-over. The picture shows what they describe." : "",
     "[CONTINUITY RULE]",
