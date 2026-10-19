@@ -16,10 +16,10 @@ import { productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
 import { applyScriptLooks } from "./cast-roster";
-import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, promptReadyReferences, refineStoryLeads } from "./refs";
+import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, partNeedsPackshot, partShowsCloseProduct, promptReadyReferences, refineStoryLeads } from "./refs";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
-import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
+import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, sceneOutfitMoment, type PromptRef } from "./style";
 import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, fitPartsToBudget, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
@@ -759,13 +759,18 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     const handoffReady = realisticProseCast(project)
       ? /short cut of the previous part/i.test(batch.videoPrompt || "")
       : /last 5 seconds/i.test(batch.videoPrompt || "");
-    if (
-      previous &&
-      !realKieVideoTaskId(batch.kieVideoTaskId) &&
-      batch.kieVideoTaskId !== "pending" &&
-      (!handoffReady || /@Audio2\b/.test(batch.videoPrompt || ""))
-    ) {
-      batch.promptReady = false;
+    if (previous && !realKieVideoTaskId(batch.kieVideoTaskId) && batch.kieVideoTaskId !== "pending") {
+      const prompt = batch.videoPrompt || "";
+      const momentText = batch.sceneIndexes
+        .map((index) => project.scenes.find((scene) => scene.index === index))
+        .filter((scene) => Boolean(scene))
+        .map((scene) => `${scene?.title || ""} ${scene?.location || ""} ${scene?.summary || ""}`)
+        .join(" ");
+      if (!handoffReady || /@Audio2\b/.test(prompt)) batch.promptReady = false;
+      if (sceneOutfitMoment(momentText) && !/Clothes have changed/i.test(prompt)) batch.promptReady = false;
+      if (partShowsCloseProduct(project, batch.sceneIndexes) && !/still visible after it was used/i.test(prompt)) {
+        batch.promptReady = false;
+      }
     }
     if (batch.videoRemoteUrl || batch.videoPublicPath) {
       if (heavy) return { ready: false };
@@ -1458,7 +1463,7 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
   }
   await ensureCarriedProducts(project, imageEntries, batch.sceneIndexes, abortSignal);
   dropUnusedPackshots(project, imageEntries, batch.sceneIndexes);
-  if (imageEntries.length > 30 && partKeepsCarriedProduct(project, batch.sceneIndexes)) {
+  if (imageEntries.length > 30 && (partKeepsCarriedProduct(project, batch.sceneIndexes) || partShowsCloseProduct(project, batch.sceneIndexes))) {
     const products = imageEntries.filter((entry) => entry.kind === "product");
     const rest = imageEntries.filter((entry) => entry.kind !== "product");
     imageEntries.length = 0;
@@ -1499,7 +1504,7 @@ function dropUnusedPackshots(project: Project, entries: PromptRef[], sceneIndexe
       continue;
     }
     if (entry.kind !== "product" && entry.kind !== "logo") continue;
-    if (entry.kind === "product" && partKeepsCarriedProduct(project, sceneIndexes)) continue;
+    if (entry.kind === "product" && (partKeepsCarriedProduct(project, sceneIndexes) || partShowsCloseProduct(project, sceneIndexes))) continue;
     const texts = scenes.map((scene) => {
       const lines = (scene.dialogue || []).map((line) => line.line).join(" ");
       const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
@@ -1518,6 +1523,7 @@ async function appendNeededPackshots(project: Project, entries: PromptRef[], sce
     .map((index) => project.scenes.find((item) => item.index === index))
     .filter((scene): scene is NonNullable<typeof scene> => Boolean(scene));
   const shown = new Set(project.productShownIndexes || []);
+  const closeProduct = partShowsCloseProduct(project, sceneIndexes);
   const needed =
     scenes.some((scene) => shown.has(scene.index)) ||
     scenes.some((scene) => {
@@ -1525,9 +1531,11 @@ async function appendNeededPackshots(project: Project, entries: PromptRef[], sce
       const shots = (scene.shots || []).map((shot) => shot.action).join(" ");
       return partNeedsPackshot(project, "product", "", `${scene.title || ""} ${scene.summary || ""} ${lines} ${shots}`);
     });
-  if (!needed) return;
+  if (!needed && !closeProduct) return;
   for (const asset of project.references || []) {
+    if (asset.kind === "logo" && !needed) continue;
     if (asset.kind !== "product" && asset.kind !== "logo") continue;
+    if (asset.kind === "product" && !needed && !closeProduct) continue;
     const url = await resolveUploadUrl(asset.originalRemoteUrl, asset.originalPublicPath, abortSignal);
     if (!url || entries.some((entry) => entry.url === url)) continue;
     entries.push({ url, kind: asset.kind, name: asset.label, notes: asset.notes });

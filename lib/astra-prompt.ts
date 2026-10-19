@@ -83,8 +83,11 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       "Write visible action. A vague finish becomes the last sip or the last bite, then the hand lowers. A vehicle that pulls away accelerates and drives out of the frame. Name the place already in the draft instead of saying room. Keep positions until the action moves someone.",
       "When these scenes change feeling, add one Tone line under GLOBAL SETUP, using the feeling, the light, and the people this draft already shows.",
       /@Image\d+/.test(trimmed)
-        ? "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene."
-        : "When the draft describes a product in words, keep that description. Leave the product out of a scene that does not already use it.",
+        ? "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene. When a scene says the product is still visible after it was used, keep that sentence and its tag."
+        : "When the draft describes a product in words, keep that description. Leave the product out of a scene that does not already use it. When a scene says the product is still visible after it was used, keep that sentence.",
+      /Clothes have changed/i.test(trimmed)
+        ? "Keep the sentence that clothes have changed. Do not put a coat, a bag, or street shoes back on someone who is in bed. Face and hair stay."
+        : "",
       /@Image\d+/.test(trimmed)
         ? "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag."
         : "Keep every SCENE duration, every @Video tag already inside that scene, and every quoted line. Leave the language line first. This draft names people in words and has no @Image tag. Do not add one. Keep each person's description as written, including the words 'the same' when they are there.",
@@ -128,6 +131,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     if (/short cut of the previous part/i.test(trimmed) && !/short cut of the previous part/i.test(revised)) return trimmed;
     if (/seen in @Video\d+/i.test(trimmed) && !/seen in @Video\d+/i.test(revised)) return trimmed;
+    if (/Clothes have changed/i.test(trimmed) && !/Clothes have changed/i.test(revised)) return trimmed;
+    if (/still visible after it was used/i.test(trimmed) && !/still visible after it was used/i.test(revised)) return trimmed;
     if (!/@Image\d+/.test(trimmed) && /@Image\d+/.test(revised)) return trimmed;
     if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;

@@ -3,7 +3,7 @@ import { characterRole, charactersPresent, continuityPass } from "./continuity";
 import { slugify } from "./ids";
 import { samePlace } from "./places";
 import { productFacts, productUseHint, productUsePhysics } from "./product-facts";
-import { actionWithoutSpeech, isUnseenVoice, partNeedsPackshot, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference } from "./refs";
+import { actionWithoutSpeech, isUnseenVoice, partNeedsPackshot, partShowsCloseProduct, productKeptOut, promptReadyReferences, sceneRequiresAsset, scriptCallsForReference } from "./refs";
 import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, VisualStyle } from "./types";
 import { sameCameraPerspective } from "./shots";
 import { actionGesture, carriedProductSentence, clothesCarryIndexes, continuityLine, poseCarryIndex, previousSeenCard, productCarryIndexes } from "./seen-continuity";
@@ -2136,6 +2136,49 @@ function visibleLook(project: Project, name: string) {
     .replace(/[.]+$/, "");
 }
 
+export function sceneOutfitMoment(text: string): "bed" | "time" | "" {
+  if (/\b(?:in bed|on the pillows?|under the covers|l(?:ie|ies|ying)\s+(?:on|in|down)|asleep|sleeping)\b/i.test(text)) return "bed";
+  if (/\b(?:next morning|the next day|later that|time change|hours later|that night|the following morning)\b/i.test(text)) return "time";
+  return "";
+}
+
+function dressForMoment(look: string, moment: "bed" | "time" | "") {
+  if (moment !== "bed") return look;
+  return look
+    .replace(/\b(?:[\w-]+\s+){0,3}purse\s+on\s+(?:her|his|their)\s+shoulder\b/gi, "")
+    .replace(
+      /\b(?:(?:beige|tan|navy|black|gray|grey|brown|white|blue|red|green|leather|dark|light|olive|cream)\s+){0,2}(?:trench\s+coats?|overcoats?|coats?|jackets?|blazers?|purses?|handbags?|jeans|sneakers?|shoes?|boots?|heels?|sandals?)\b/gi,
+      "",
+    )
+    .replace(/\s+\band\b(?=\s*[,.]|$)/gi, "")
+    .replace(/,\s*over a\b/gi, ", in a")
+    .replace(/\bover a\s*(?=,|$)/gi, "")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*,/g, ",")
+    .replace(/\s{2,}/g, " ")
+    .replace(/^[,\s]+|[,\s]+$/g, "")
+    .trim();
+}
+
+function lookForMoment(project: Project, name: string, looks: string, continued: boolean, moment: "bed" | "time" | "") {
+  const spoken = proseSpeaker(project, name, looks, continued);
+  const dressed = dressForMoment(spoken, moment);
+  if (moment !== "bed" || dressed.split(/\s+/).filter(Boolean).length >= 6) return dressed;
+  const fallback = dressForMoment(visibleLook(project, name), "bed");
+  if (fallback.split(/\s+/).filter(Boolean).length <= dressed.split(/\s+/).filter(Boolean).length) return dressed;
+  return continued ? `the same ${fallback.replace(/^(?:the same|a|an)\s+/i, "")}` : fallback;
+}
+
+function outfitChangeLine(moment: "bed" | "time" | "") {
+  if (moment === "bed") return "Clothes have changed for this moment. No coat, no bag, and no street shoes. Face and hair stay the same.";
+  if (moment === "time") return "Clothes have changed for this moment. Face and hair stay the same.";
+  return "";
+}
+
+function closeProductLine(tag: string) {
+  return `${tag} is still visible after it was used, matching the photo.`;
+}
+
 function proseSpeaker(project: Project, name: string, looks: string, continued: boolean) {
   const matched = looks
     .split(/\n|(?<=[.!?])\s+/)
@@ -2333,6 +2376,9 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   }
   const blocks = flat.map((item, i) => {
     const { scene, shot, shotIndex, index } = item;
+    const moment = sceneOutfitMoment(
+      `${scene?.title || ""} ${scene?.location || ""} ${scene?.summary || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`,
+    );
     let camera = safeCinematicCamera(
       scene ? { ...scene, camera: shot.camera || scene.camera } : scene,
       CAMERA_VARIETY[i % CAMERA_VARIETY.length],
@@ -2344,7 +2390,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       for (const name of peopleHere) {
         const key = name.toLowerCase();
         if (/^@Image\d+$/i.test(people.get(key) || "")) continue;
-        people.set(key, proseSpeaker(project, name, seen.looks, continues));
+        people.set(key, name);
       }
     }
     const placeNow = cleanPlace(scene?.location || "");
@@ -2387,7 +2433,13 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const sceneTextForProduct = `${scene?.summary || ""} ${scene?.title || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
     const handlesProduct = productInteraction(sceneTextForProduct);
     const carriedProduct = productKept.has(index);
-    const sceneTags = sceneAssetTags(project, scene, images).filter((tag) => imageKind(images, tag) !== "product" || handlesProduct || carriedProduct);
+    const laterClose = partShowsCloseProduct(project, sceneIndexes) && !productKeptOut(sceneTextForProduct);
+    const sceneTags = sceneAssetTags(project, scene, images).filter((tag) => imageKind(images, tag) !== "product" || handlesProduct || carriedProduct || laterClose);
+    for (const [imageIndex, item] of images.entries()) {
+      if (item.kind !== "product" || !laterClose) continue;
+      const tag = `@Image${imageIndex + 1}`;
+      if (!sceneTags.includes(tag)) sceneTags.push(tag);
+    }
     const localSwaps = swaps.filter((swap) => swap.person || sceneTags.includes(swap.tag));
     const tagged = dropPlaceOnlySentences(
       scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, localSwaps), project)),
@@ -2397,7 +2449,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const freshHandle =
       /\b(?:holds?|holding|presses?|pressed|peels?|peeled|applies?|applied|opens?|opened)\b/i.test(sceneText) ||
       /\b(?:on|onto)\s+(?:the\s+|her\s+|his\s+|their\s+)?(?:wooden\s+|bedside\s+)?(?:nightstand|table|counter|desk|shelf|dresser|tray)\b/i.test(sceneText);
-    const productHere = carriedProduct || (handlesProduct && ((project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText)));
+    const productHere =
+      carriedProduct ||
+      laterClose ||
+      (handlesProduct && ((project.productShownIndexes || []).includes(index) || sceneRequiresAsset("product", sceneText)));
     const slice = linesByShot[i] || [];
     const visual = actionOnly(
       omitUnneededProduct(
@@ -2429,9 +2484,13 @@ function simpleScenePrompt(options: CompactPromptOptions) {
             ? carriedProductSentence("the product", actionGesture(seen.carryDetail) ? "" : seen.carryDetail)
             : ""
         : "";
-    const placement = stayed || productTags.map((tag) => productPlacement(tag, `${visual} ${sceneText}`)).filter(Boolean).join(" ");
+    const placement =
+      stayed ||
+      (laterClose && !freshHandle
+        ? productTags.map((tag) => closeProductLine(tag)).join(" ") || closeProductLine("The product")
+        : productTags.map((tag) => productPlacement(tag, `${visual} ${sceneText}`)).filter(Boolean).join(" "));
     const carriedLook = [
-      clothesKept.has(index) ? continuityLine(seen.carryClothes) : "",
+      moment ? "" : clothesKept.has(index) ? continuityLine(seen.carryClothes) : "",
       poseAt === index ? continuityLine(seen.carryPose) : "",
     ]
       .filter(Boolean)
@@ -2447,7 +2506,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       const key = name.toLowerCase();
       if (positions.has(key)) continue;
       const tag = people.get(key) || "";
-      const look = proseSpeaker(project, name, seen.looks, continues).replace(/[.]+$/, "");
+      const look = lookForMoment(project, name, seen.looks, continues, moment).replace(/[.]+$/, "");
       const identity =
         prose && !/^@Image\d+$/i.test(tag)
           ? `${name} is ${continues && seenTag ? `${look}, seen in ${seenTag}` : look}.`
@@ -2475,9 +2534,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       ...cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')),
     ];
     const shotName = cameraTitle(camera).replace(/[.]+$/, "");
+    const outfit = /Clothes have changed/i.test(`${visible} ${placement}`) ? "" : outfitChangeLine(moment);
     const actionLine = [
       graphicScene(scene) ? "The frame holds the card." : visible,
       stayed ? "" : placement,
+      outfit,
       ...logoTags,
       song && singsAlong ? "Mouth matches @Audio1." : "",
     ]
@@ -2506,7 +2567,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     })
     .filter(Boolean);
   const proseProduct =
-    prose && (productKept.size > 0 || scenes.some((scene) => scene && (project.productShownIndexes || []).includes(scene.index)))
+    prose &&
+    (productKept.size > 0 ||
+      partShowsCloseProduct(project, sceneIndexes) ||
+      scenes.some((scene) => scene && (project.productShownIndexes || []).includes(scene.index)))
       ? proseProductLine(project)
       : "";
   const taggedProductBullets = images
