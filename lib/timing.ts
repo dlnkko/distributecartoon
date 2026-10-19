@@ -580,17 +580,17 @@ export function storyArc(totalSeconds: number) {
   const listed = parts.map((duration, index) => `part ${index + 1} (${duration}s)`).join(", ");
   const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
   const moves =
-    "The opening presents the people and then the problem. The knot is the conflict, and it gets harder instead of repeating the same argument. The close is the solution and then an ending that shows the result of that choice. Do not solve the story in the opening. Do not spend the close restating the problem.";
+    "Open on the hook already in motion. If the story starts in the middle of the complaint, start there. Do not add a calm introduction before it. The knot makes that conflict harder instead of repeating it. The close is the longest movement: the solution is used, then one later scene shows the change in how the people look and act. That later scene is short. It is not a tour of the new life. Do not solve the story in the opening. Do not add a slogan or a health claim.";
   let where = "";
   if (parts.length <= 1) {
-    const [opening, knot, close] = shareSeconds(total, [35, 30, 35]);
-    where = `Use about ${opening}s for the opening, ${knot}s for the knot, and ${close}s for the close.`;
+    const [opening, knot, close] = shareSeconds(total, [25, 30, 45]);
+    where = `Use about ${opening}s for the hook, ${knot}s for the knot, and ${close}s for the close. The last part of that close is the later scene where the change is visible.`;
   } else if (parts.length === 2) {
-    where = `Part 1 is the opening and the start of the knot. Part 2 finishes the knot, then gives the solution and the ending enough time to land. The story is not solved in part 1.`;
+    where = "Part 1 is the hook and the knot. Part 2 is the close: the solution is used, then one later scene shows the change. Do not solve the story in part 1. Do not spend part 2 repeating the argument.";
   } else if (parts.length === 3) {
-    where = "Part 1 is the opening. Part 2 is the knot. Part 3 is the close: the solution, then the ending.";
+    where = "Part 1 opens on the hook. Part 2 is the knot. Part 3 is the close: the solution is used, then one later scene shows the change. Do not fill part 3 with a montage of the new life.";
   } else {
-    where = `Part 1 is the opening. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution, then the ending.`;
+    where = `Part 1 opens on the hook. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution is used, then one later scene shows the change.`;
   }
   return `${head} ${moves} ${where}`;
 }
