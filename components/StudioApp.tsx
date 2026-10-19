@@ -2670,7 +2670,7 @@ function CastStep({
         <h3 className="display text-2xl md:text-3xl">Approve the cast</h3>
         <p className="mt-1 text-sm text-[var(--muted)]">
           {wordsOnly
-            ? "Edit a description if something should change. The video uses these words."
+            ? "Edit the description in the box. The video uses these words."
             : characters.length
               ? "Main characters only. One pose each. Change a look once if needed."
               : "No on-screen characters in this script. Continue when you are ready to generate."}
@@ -2693,14 +2693,18 @@ function CastStep({
             <article key={character.id} className="rounded-2xl border border-[var(--line)] bg-white p-3">
               <div className="relative aspect-square overflow-hidden rounded-xl bg-stone-100">
                 {wordsOnly ? (
-                  <textarea
-                    value={description}
-                    disabled={busy}
-                    aria-label={`Description of ${character.name}`}
-                    maxLength={500}
-                    onChange={(event) => setDrafts((current) => ({ ...current, [character.id]: event.target.value }))}
-                    className="absolute inset-0 resize-none bg-transparent px-4 py-4 text-left text-sm leading-relaxed text-[var(--ink)] outline-none"
-                  />
+                  <label className="absolute inset-0 flex flex-col p-3">
+                    <span className="text-[11px] font-medium text-[var(--muted)]">Description</span>
+                    <textarea
+                      value={description}
+                      disabled={busy}
+                      aria-label={`Description of ${character.name}`}
+                      maxLength={500}
+                      placeholder="Change this description"
+                      onChange={(event) => setDrafts((current) => ({ ...current, [character.id]: event.target.value }))}
+                      className="mt-1.5 min-h-0 w-full flex-1 resize-none rounded-lg border border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 py-2 text-left text-sm leading-relaxed text-[var(--ink)] outline-none placeholder:text-[var(--cf-muted)]"
+                    />
+                  </label>
                 ) : src ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img
