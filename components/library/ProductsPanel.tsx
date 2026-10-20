@@ -400,7 +400,7 @@ export function SavedProductPicker({
 
   return (
     <div>
-      {chosen.length ? (
+      {chosen.length && !open ? (
         <ul className="mb-2 flex flex-col gap-2">
           {chosen.map((product) => (
             <li key={product.id}>
