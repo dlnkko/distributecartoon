@@ -59,28 +59,45 @@ export async function probeAudioDuration(buffer: Buffer, ext: string) {
   }
 }
 
+async function fileDuration(file: string) {
+  const text = await runFfmpeg(["-hide_banner", "-i", file], true);
+  const match = text.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/);
+  if (!match) throw new Error("Couldn't read the song length.");
+  return Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+}
+
+// MP3 frames land a little past the requested length. Shorten the cut until the
+// file duration is the requested length and not past it.
 export async function sliceAudioMp3(buffer: Buffer, ext: string, start: number, duration: number) {
   const dir = await mkdtemp(path.join(os.tmpdir(), "song-cut-"));
   const input = path.join(dir, `in${ext || ".mp3"}`);
-  const out = path.join(dir, "out.mp3");
   await writeFile(input, buffer);
   try {
-    await runFfmpeg([
-      "-y",
-      "-i",
-      input,
-      "-ss",
-      String(Math.max(0, start)),
-      "-t",
-      String(duration),
-      "-vn",
-      "-c:a",
-      "libmp3lame",
-      "-q:a",
-      "4",
-      out,
-    ]);
-    return await readFile(out);
+    let cut = duration;
+    let produced: Buffer | null = null;
+    const from = Math.max(0, start);
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const out = path.join(dir, `out-${attempt}.mp3`);
+      await runFfmpeg([
+        "-y",
+        "-i",
+        input,
+        "-vn",
+        "-af",
+        `atrim=start=${from}:end=${from + cut},asetpts=PTS-STARTPTS`,
+        "-c:a",
+        "libmp3lame",
+        "-q:a",
+        "4",
+        out,
+      ]);
+      produced = await readFile(out);
+      const probed = await fileDuration(out);
+      if (probed <= duration + 0.001) return produced;
+      cut = Math.max(0.05, Number((cut - Math.max(0.02, probed - duration)).toFixed(3)));
+    }
+    if (!produced) throw new Error("Couldn't cut the song.");
+    return produced;
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
