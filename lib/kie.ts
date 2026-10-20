@@ -6,7 +6,6 @@ import { generateGptImage25Flare as generateFalGptImage25Flare, uploadLocalPubli
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const KIE_BASE = "https://api.kie.ai";
 const KIE_TASK_PREFIX = "kie:";
-const SEEDANCE_MODEL = "bytedance/seedance-2.5";
 const SEEDANCE_FAST_MODEL = "bytedance/seedance-2.0-fast";
 const KIE_SEEDANCE_MODEL = "bytedance/seedance-2-5";
 const KIE_SEEDANCE_FAST_MODEL = "bytedance/seedance-2-fast";
@@ -255,58 +254,9 @@ type SeedanceRequest = {
 };
 
 export async function submitSeedance25ReferenceVideo(options: SeedanceRequest) {
-  if (options.provider === "kie") return submitKieSeedance(options);
   const existing = options.existingTaskId?.trim() || "";
-  if (existing && existing !== "pending") return existing;
-  throwIfAborted(options.abortSignal);
-    const model = options.model || SEEDANCE_MODEL;
-    const durationCap = model === SEEDANCE_FAST_MODEL ? 15 : 30;
-    const duration = Math.min(durationCap, Math.max(4, Math.round(options.duration || 8)));
-    const aspectRatio = options.aspectRatio === "9:16" ? "9:16" : options.aspectRatio === "1:1" ? "1:1" : "16:9";
-    const input_references: Array<Record<string, unknown>> = [];
-    for (const url of (options.referenceImageUrls || []).slice(0, 30)) {
-      input_references.push({ type: "image_url", image_url: { url } });
-    }
-    for (const url of (options.referenceVideoUrls || []).slice(0, 7)) {
-      input_references.push({ type: "video_url", video_url: { url } });
-    }
-    for (const url of (options.referenceAudioUrls || []).slice(0, 3)) {
-      input_references.push({ type: "audio_url", audio_url: { url } });
-    }
-    const timeout = AbortSignal.timeout(SUBMIT_TIMEOUT_MS);
-    const signal = options.abortSignal ? AbortSignal.any([options.abortSignal, timeout]) : timeout;
-    const response = await fetch(`${OPENROUTER_BASE}/videos`, {
-      method: "POST",
-      headers: openrouterHeaders(),
-      signal,
-      body: JSON.stringify({
-        model,
-        prompt: options.prompt,
-        duration,
-        aspect_ratio: aspectRatio,
-        resolution: "480p",
-        generate_audio: options.generateAudio !== false,
-        ...(Number.isInteger(options.seed) ? { seed: options.seed } : {}),
-        ...(input_references.length ? { input_references } : {}),
-        provider: {
-          options: {
-            seed: {
-              parameters: {
-                watermark: false,
-                output_format: "mp4",
-              },
-            },
-          },
-        },
-      }),
-    });
-    const json = (await response.json().catch(() => ({}))) as OpenRouterJob & { error?: { message?: string } | string };
-    if (!response.ok || !json.id) {
-      throw new Error(jobError(json, `OpenRouter Seedance create failed (${response.status})`));
-    }
-    const taskId = json.id;
-    await options.onTaskCreated?.(taskId);
-    return taskId;
+  if (existing && existing !== "pending" && !isKieTask(existing)) return existing;
+  return submitKieSeedance(options);
 }
 
 async function submitKieSeedance(options: SeedanceRequest) {

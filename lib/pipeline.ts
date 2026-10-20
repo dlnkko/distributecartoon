@@ -437,9 +437,8 @@ async function stepCharacterIntros(project: Project): Promise<StepResult> {
         referenceImageUrls: [portrait],
         generateAudio: true,
         resolution: "480p",
-        ...(project.style === "realistic"
-          ? { model: "bytedance/seedance-2.0-fast" as const, provider: "kie" as const }
-          : { model: "bytedance/seedance-2.0-fast" as const, provider: "openrouter" as const }),
+        model: "bytedance/seedance-2.0-fast",
+        provider: "kie",
         seed: projectSeed(project),
         onTaskCreated: async (id) => {
           character.anchorVideoTaskId = id;
@@ -1806,7 +1805,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
     generateAudio: true,
     resolution: "480p",
-    provider: project.style === "realistic" ? "kie" : "openrouter",
+    provider: "kie",
     seed: projectSeed(project),
     onTaskCreated: async (id) => {
       batch.kieVideoTaskId = id;
@@ -1985,7 +1984,7 @@ async function runGenerateBatchVideo(
       referenceVideoUrls: videoEntries.map((item) => item.url),
       referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
       generateAudio: true,
-      provider: project.style === "realistic" ? "kie" : "openrouter",
+      provider: "kie",
       resolution: "480p",
       seed: projectSeed(project),
       existingTaskId: batch.kieVideoTaskId !== "pending" ? batch.kieVideoTaskId : undefined,
