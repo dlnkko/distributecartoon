@@ -2507,8 +2507,6 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       ? `- ENVIRONMENT: ${placeBit}. ${here.join(" ")}`.replace(/[ \t]{2,}/g, " ").trim()
       : `- CONTINUITY: ${moving ? "This action is the move. Everyone else keeps the declared position." : "Positions stay as declared unless this action moves someone."}`;
     const facts = [stayed, carriedLook].filter(Boolean).join("\n");
-    const singsAlong =
-      song && /\b(sings along|singing along|mouths the lyric|mouthing the lyric)\b/i.test(`${scene?.summary || ""} ${action}`);
     const spokenLines = [
       ...(graphicScene(scene) ? [] : sceneSays(project, scene, people, narratorTag, slice)),
       ...cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')),
@@ -2520,7 +2518,6 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       stayed ? "" : placement,
       outfit,
       ...logoTags,
-      song && singsAlong ? "Mouth matches @Audio1." : "",
     ]
       .filter(Boolean)
       .join(" ")
@@ -2577,7 +2574,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         : "Audio: @Audio1 plays from the first frame. The song is already playing."
       : `Audio: Sync the spoken lines in ${spokenLanguage}. Room tone and those lines are the soundtrack.`,
     toneShift(scenes),
-    song ? "Each scene shows its quoted lyric. The sung lyric is the only voice. The product is on screen in the scene that uses it." : "",
+    song ? "Each scene shows the event in its quoted lyric. Nobody sings and nobody mouths the words. Mouths stay closed. The song is the only voice. The product is on screen only in the scene that uses it." : "",
     previousLine,
     tailLine,
     continues ? "The previous scene already finished. This part starts on its own action. Do not replay the last gesture." : "",

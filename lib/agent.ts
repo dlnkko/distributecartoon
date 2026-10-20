@@ -1184,7 +1184,7 @@ async function executeTool(
               speaker: englishSpeakerName(line.speaker),
               line: line.line,
             }));
-        const summary = String(item.summary || "");
+        const summary = project.song ? songPicture(String(item.summary || "")) : String(item.summary || "");
         const computed = estimateSceneSeconds({ summary, dialogue });
         const raw = Number(item.estimated_seconds || 0);
         const shots = ((item.shots as Array<Record<string, unknown>>) || [])
@@ -1395,6 +1395,23 @@ function asRecordArray(value: string) {
 
 const NARRATOR_NAME = /^(the\s+)?(narrator|narradora|voice[- ]?over|voiceover|vo|off[- ]?screen|voz en off)$/i;
 
+function songPicture(summary: string) {
+  const cleaned = summary
+    .split(/("(?:[^"\\]|\\.)*")/g)
+    .map((part, index) =>
+      index % 2 === 1
+        ? part
+        : part
+            .replace(/\b(?:sings|singing) along\b[^.]*\.?/gi, "")
+            .replace(/\b(?:mouths|mouthing) the (?:lyric|words|line)\b[^.]*\.?/gi, "")
+            .replace(/\b(?:into|at) a mic\b[^.]*\.?/gi, "")
+            .replace(/\blip-?sync(?:h|ed|ing)?\b[^.]*\.?/gi, "")
+            .replace(/\b(?:performs|performing) the (?:hook|chorus|song|line)\b[^.]*\.?/gi, ""),
+    )
+    .join("");
+  return cleaned.replace(/\s{2,}/g, " ").replace(/\s+([,.])/g, "$1").trim();
+}
+
 function planTask(project: Project) {
   const styleLine = `Style: ${project.style}. Pixar, claymation, and realistic use this same story. The style only changes how the picture looks. Aspect: ${project.aspectRatio}. Call extract_storyboard once, then stop.`;
   if (project.song) {
@@ -1407,9 +1424,9 @@ function planTask(project: Project) {
     const about = project.song.productBrief?.trim()
       ? `The user is selling this product and brand: ${project.song.productBrief.trim()}. `
       : "The user is selling the product in the attached product photo. ";
-  const songTask = `SONG VIDEO. This is a promo film for the attached product, cut to a ${Math.round(project.song.durationSeconds)} second song. ${about}The lyrics are the soundtrack, in the order they are sung. Read them as one commercial with a problem and then a solution. The attached product is always the solution, even when the lyric never names a brand. Open on the problem the words point at: the lack, the stress, the old habit, the want. Those scenes have no product in frame. Do not write "the attached product", the brand, or the pack into a problem scene. The product appears only when the story turns to the fix: the change, the relief, the after. That scene is the first time it is visible. Write "the attached product" in that summary and show them using it the way this product is used, in the situation the page describes. Match the photo exactly: the product itself and its package, same shape, color, print, and material. Do not show only the box. Later scenes may keep it only while the result of using it is on screen. Do not paste it onto every line. In mentioned_refs, list the product only with the scene indexes where that solution is on screen.
-A calm lyric is still a dramatic shot. Do not leave the character in one room on one close-up. Change the place, the action, and the camera on every scene. Use wide, full, medium, close-up, insert, low angle, high angle, tracking, dolly, handheld, and dutch, and do not repeat the same size twice in a row. Give the problem weather, movement, and stakes. Give the solution a different place and a clear action with the product.
-Each scene is one lyric line, or two short lines that are the same picture. Do not skip a line that shows a new action, and do not put a whole verse into one scene. Early lines belong to the earlier parts, later lines to the later parts. Never repeat a line in a later part. Every summary starts with the exact sung words, in quotes, then the action: While the song plays "exact lyric", then one physical action. Copy the lyric from the script. Do not paraphrase it and do not invent a line. Every dialogue array stays empty. There is no narrator and no generated voice. The attached song is the only audio and it is already playing on frame one: do not open with a title card, a logo sting, or a silent intro. Ignore the spoken-line and [NO BGM] rules. Mouths stay closed, except once or twice on a hook or a brand line: write sings along in that summary and have the lead mouth that exact quoted line, where they already are, or into a mic only if that line is a performance. Do not do it on every line. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds, longer only when that lyric line itself is longer. Write enough scenes that the seconds inside each part add up to that part. ${styleLine}`;
+  const songTask = `SONG VIDEO. This is a promo film cut to a ${Math.round(project.song.durationSeconds)} second song. ${about}The lyrics are the story, in the order they are sung. Read them as one film with a problem and then a solution, the same shape as every other film. The style only changes how the picture looks. The attached product is the solution, even when a line never names a brand. Open on the problem the words point at, already happening. Those scenes have no product in frame. Do not write the brand, the pack, or "the attached product" into a problem scene. The product appears only when the story turns to the fix. That scene is the first time it is visible. Write "the attached product" there and show them using it the way this product is used, in the place that use would really happen. Match the photo exactly: the product itself and its package, same shape, color, print, and material. A mark printed on it is that photo, not the logo upload. Do not show only the box. Later scenes may keep it only while the result of using it is still on screen, including the next morning, until a scene takes it off. Do not paste it onto every line. In mentioned_refs, list the product only with the scene indexes where that solution is on screen.
+The picture shows the event the line is about. It is not a performance. Nobody sings, nobody mouths the words, and nobody stands at a mic. Do not write sings along, singing, or lip-sync. Mouths stay closed. A line that is still the same moment stays in the same place, with the same clothes, the same face, and the same hair. A line that needs another place or another time is its own scene, with its own action, in the place where that event would really happen. That can be the opening, the middle, or the ending. Do not leave that beat in the previous place. Do not invent a trip just to connect two times. When the moment changes, the clothes change to fit it. Face and hair stay. The close shows the product being used, then what follows, each where it would actually be seen.
+Each scene is one lyric line, or two short lines that are the same picture. Do not skip a line that shows a new action, and do not put a whole verse into one scene. Early lines belong to the earlier parts, later lines to the later parts. Never repeat a line in a later part. Every summary starts with the exact sung words, in quotes, then the action those words are showing: While the song plays "exact lyric", then one physical action in that place. Copy the lyric from the script. Do not paraphrase it and do not invent a line. Every dialogue array stays empty. There is no narrator and no generated voice. The attached song is the only audio and it is already playing on frame one: do not open with a title card, a logo sting, or a silent intro. Ignore the spoken-line and [NO BGM] rules. Change the camera when the action changes. Use wide, full, medium, close-up, insert, low angle, high angle, tracking, dolly, handheld, and dutch, and do not repeat the same size twice in a row. ${parts}. One scene is one action and one camera. Most scenes are 2 or 3 seconds, longer only when that lyric line itself is longer. Write enough scenes that the seconds inside each part add up to that part. ${styleLine}`;
     const understood = productUnderstandingBrief(project);
     const songContext = understood
       ? `${understood} HOW IT IS USED is the physical action. WHEN IT IS USED is the situation from the page. Show the product used in that situation. Never read this aloud. Never turn the page into a slogan or a health claim.`

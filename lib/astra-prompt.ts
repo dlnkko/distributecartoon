@@ -92,7 +92,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
         ? "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag."
         : "Keep every SCENE duration, every @Video tag already inside that scene, and every quoted line. Leave the language line first. This draft names people in words and has no @Image tag. Do not add one. Keep each person's description as written, including the words 'the same' when they are there.",
       "Each scene is one forward action, then the spoken line. Continue a beat only when the draft says that beat is still going. When the draft says the previous scene already finished, start the next action and do not replay the last gesture.",
-      "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. A mouth that sings along matches @Audio1.",
+      "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. Nobody sings and nobody mouths the words. Do not add a singing mouth.",
       prior
         ? /short cut of the previous part/i.test(trimmed)
           ? "A previous part prompt is included. The attached video is a short cut of the previous part. It includes every person who speaks, even when they are not in the final seconds. Match each of them. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
@@ -138,7 +138,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     if (/@Audio2\b/.test(revised)) return trimmed;
     if (/While @Audio1 plays/i.test(trimmed) && !/While @Audio1 plays/i.test(revised)) return trimmed;
-    if (/\bsings along\b/i.test(trimmed) && !/\bsings along\b/i.test(revised)) return tightenPrompt(trimmed);
+    if (!/\b(?:sings along|singing along|mouths the lyric)\b/i.test(trimmed) && /\b(?:sings along|singing along|mouths the lyric)\b/i.test(revised)) return trimmed;
     return keepDialogueLanguage(trimmed, tightenPrompt(revised));
   } catch (error) {
     console.warn("astra prompt revise failed", error instanceof Error ? error.message : error);
