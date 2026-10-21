@@ -398,71 +398,75 @@ export function SavedProductPicker({
 
   const chosen = products.filter((product) => selectedIds.includes(product.id));
 
+  function row(product: SavedProduct, selected: boolean) {
+    return (
+      <button
+        key={product.id}
+        type="button"
+        disabled={disabled || Boolean(busyId)}
+        onClick={() => void toggle(product.id)}
+        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left disabled:opacity-50 ${selected ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"}`}
+      >
+        {product.imagePath ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={mediaSrc(product.imagePath)} alt="" className="size-11 shrink-0 rounded-xl object-cover" />
+        ) : (
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/10 text-sm font-medium text-[var(--muted)]">
+            {product.name.slice(0, 1).toUpperCase()}
+          </span>
+        )}
+        <span className="min-w-0 flex-1">
+          <span className="block truncate text-sm font-medium">{product.name}</span>
+          <span className="block text-[11px] text-[var(--muted)]">{selected ? "Selected" : "Use this product"}</span>
+        </span>
+        <span
+          className={`grid size-5 shrink-0 place-items-center rounded-full ${selected ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white" : "border border-white/15"}`}
+          aria-hidden
+        >
+          {selected ? (
+            <svg viewBox="0 0 16 16" className="size-3" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M3.5 8.2 6.4 11l6.1-6.2" />
+            </svg>
+          ) : null}
+        </span>
+      </button>
+    );
+  }
+
   return (
     <div>
-      {chosen.length && !open ? (
-        <ul className="mb-2 flex flex-col gap-2">
-          {chosen.map((product) => (
-            <li key={product.id}>
-              <button
-                type="button"
-                disabled={disabled || Boolean(busyId)}
-                onClick={() => void toggle(product.id)}
-                className="flex w-full items-center gap-2 rounded-2xl border border-[#5B8CFF] bg-[#5B8CFF]/10 p-3 text-left disabled:opacity-50"
-              >
-                {product.imagePath ? (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img src={mediaSrc(product.imagePath)} alt="" className="h-10 w-10 rounded-lg object-cover" />
-                ) : null}
-                <span className="min-w-0">
-                  <span className="block truncate text-sm font-medium">{product.name}</span>
-                  <span className="block text-[11px] text-[var(--muted)]">Selected</span>
-                </span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : null}
-      <button
-        type="button"
-        disabled={disabled}
-        onClick={() => setOpen((value) => !value)}
-        className="btn-secondary h-11 w-full rounded-xl text-sm font-medium"
-      >
-        Choose product
-      </button>
-      {open ? (
-        <div className="mt-2 flex flex-col gap-2">
-          {products.length ? (
-            products.map((product) => {
-              const selected = selectedIds.includes(product.id);
-              return (
-                <button
-                  key={product.id}
-                  type="button"
-                  disabled={disabled || Boolean(busyId)}
-                  onClick={() => void toggle(product.id)}
-                  className={`flex w-full items-center gap-2 rounded-2xl border p-3 text-left disabled:opacity-50 ${selected ? "border-[#5B8CFF] bg-[#5B8CFF]/10" : "border-[var(--line)] bg-white"}`}
-                >
-                  {product.imagePath ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={mediaSrc(product.imagePath)} alt="" className="h-10 w-10 rounded-lg object-cover" />
-                  ) : null}
-                  <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium">{product.name}</span>
-                    <span className="block text-[11px] text-[var(--muted)]">{selected ? "Selected" : "Use this product"}</span>
-                  </span>
-                </button>
-              );
-            })
-          ) : (
-            <p className="text-sm text-[var(--muted)]">No saved products yet.</p>
-          )}
-          <button type="button" onClick={onOpenProducts} className="btn-secondary h-11 w-full rounded-xl text-sm font-medium">
-            Add new product
-          </button>
-        </div>
-      ) : null}
+      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141417]">
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => setOpen((value) => !value)}
+          className="flex h-12 w-full items-center justify-between px-4 text-sm font-medium disabled:opacity-50"
+          aria-expanded={open}
+        >
+          Choose product
+          <svg viewBox="0 0 16 16" className={`size-4 text-[var(--muted)] transition ${open ? "rotate-180" : ""}`} fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden>
+            <path d="M4 6.5 8 10.5 12 6.5" />
+          </svg>
+        </button>
+        {chosen.length && !open ? <div className="border-t border-white/10">{chosen.map((product) => row(product, true))}</div> : null}
+        {open ? (
+          <div className="border-t border-white/10">
+            {products.length ? (
+              products.map((product) => row(product, selectedIds.includes(product.id)))
+            ) : (
+              <p className="px-4 py-3 text-sm text-[var(--muted)]">No saved products yet.</p>
+            )}
+            <button
+              type="button"
+              onClick={onOpenProducts}
+              className="flex w-full items-center gap-3 border-t border-white/10 px-3 py-2.5 text-left text-sm text-[var(--muted)] hover:bg-white/[0.04] hover:text-[var(--ink)]"
+            >
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-dashed border-white/15 text-lg leading-none">+</span>
+              Add new product
+            </button>
+          </div>
+        ) : null}
+      </div>
       {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
     </div>
   );
