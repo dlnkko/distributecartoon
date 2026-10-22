@@ -6,8 +6,8 @@ import ffmpegPath from "ffmpeg-static";
 import OpenAI, { toFile } from "openai";
 import { getSecrets } from "./config";
 
-export const SONG_MIN_SECONDS = 30;
-export const SONG_MAX_SECONDS = 90;
+export const SONG_MIN_SECONDS = 4;
+export const SONG_MAX_SECONDS = 10 * 60;
 
 export function songPartDurations(totalSeconds: number): number[] {
   const total = Math.round(totalSeconds);

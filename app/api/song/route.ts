@@ -14,7 +14,7 @@ import {
 import { resetStoryboard, saveProject } from "@/lib/store";
 
 export const runtime = "nodejs";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 const AUDIO_EXT = new Set([".mp3", ".wav", ".m4a", ".aac", ".ogg", ".flac", ".webm", ".mpeg", ".mpga"]);
 
@@ -29,8 +29,8 @@ export async function POST(request: Request) {
   if (!AUDIO_EXT.has(ext) && !file.type.startsWith("audio/")) {
     return NextResponse.json({ error: "Upload an audio file, such as an mp3 from Suno." }, { status: 415 });
   }
-  if (file.size > 20 * 1024 * 1024) {
-    return NextResponse.json({ error: "That song is too large. Use an mp3 under 20 MB." }, { status: 413 });
+  if (file.size > 25 * 1024 * 1024) {
+    return NextResponse.json({ error: "That song is too large. Use an mp3 under 25 MB." }, { status: 413 });
   }
   const loaded = await loadOwnedProject(projectId);
   if ("response" in loaded) return loaded.response;
@@ -43,9 +43,13 @@ export async function POST(request: Request) {
   } catch {
     return NextResponse.json({ error: "Couldn't read that audio file." }, { status: 422 });
   }
-  if (duration < SONG_MIN_SECONDS - 0.5 || duration > SONG_MAX_SECONDS + 0.5) {
+  if (duration < SONG_MIN_SECONDS - 0.5) {
+    return NextResponse.json({ error: "That song is too short." }, { status: 422 });
+  }
+  if (duration > SONG_MAX_SECONDS + 0.5) {
+    const minutes = Math.max(1, Math.round(duration / 60));
     return NextResponse.json(
-      { error: `Songs must be between 30 and 90 seconds. This one is ${Math.round(duration)}s.` },
+      { error: `Songs can be up to 10 minutes. This one is ${minutes} min.` },
       { status: 422 },
     );
   }

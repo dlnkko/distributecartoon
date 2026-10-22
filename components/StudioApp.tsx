@@ -2179,6 +2179,15 @@ function ScriptStep({
   );
 }
 
+function formatSongLength(seconds: number) {
+  const total = Math.max(0, Math.round(seconds));
+  const minutes = Math.floor(total / 60);
+  const rest = total % 60;
+  if (minutes <= 0) return `${total} seconds`;
+  if (rest === 0) return minutes === 1 ? "1 minute" : `${minutes} minutes`;
+  return `${minutes} min ${rest} sec`;
+}
+
 function SongStep({
   songName,
   songAttached,
@@ -2235,7 +2244,7 @@ function SongStep({
         )}
         <span className="max-w-full truncate px-4 text-sm font-medium">{uploadingName ? `Uploading ${uploadingName}` : songAttached ? songName : "Upload a Suno song"}</span>
         <span className="text-xs text-[var(--muted)]">
-          {uploadingName ? "Reading the song. This can take a moment." : songAttached && durationSeconds ? `${Math.round(durationSeconds)} seconds` : "30 to 90 seconds · mp3, wav, m4a"}
+          {uploadingName ? "Reading the song. This can take a moment." : songAttached && durationSeconds ? formatSongLength(durationSeconds) : "Up to 10 minutes · mp3, wav, m4a"}
         </span>
       </button>
       {songAttached ? (
