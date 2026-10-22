@@ -11,6 +11,18 @@ function mediaSrc(publicPath?: string) {
   return `/api/media/${relative}`;
 }
 
+function LocalPhoto({ file }: { file: File }) {
+  const [src, setSrc] = useState("");
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setSrc(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+  if (!src) return <span className="h-12 w-12 shrink-0 rounded-lg bg-white/5" />;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />;
+}
+
 export function ProductsPanel() {
   const [products, setProducts] = useState<SavedProduct[]>([]);
   const [open, setOpen] = useState(false);
@@ -290,18 +302,23 @@ export function ProductsPanel() {
           />
         </label>
         <p className="mt-1 text-[11px] text-[var(--cf-muted)]">{photoCount} of 5 photos</p>
-        <ul className="mt-1 flex flex-wrap gap-1.5">
+        <ul className="mt-2 flex flex-col gap-1.5">
           {keptPhotos.map((item) => (
-            <li key={item.path}>
-              <button type="button" onClick={() => setKeptPhotos((current) => current.filter((photo) => photo.path !== item.path))} className="rounded-lg bg-white/5 px-2 py-1 text-[11px]">
-                {item.path.split("/").pop()} ×
+            <li key={item.path} className="flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={mediaSrc(item.path)} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+              <span className="min-w-0 flex-1 truncate text-xs">{item.path.split("/").pop()}</span>
+              <button type="button" onClick={() => setKeptPhotos((current) => current.filter((photo) => photo.path !== item.path))} className="px-1 text-sm text-[var(--cf-muted)]" aria-label="Remove photo">
+                ×
               </button>
             </li>
           ))}
           {photoFiles.map((file, index) => (
-            <li key={`${file.name}-${index}`}>
-              <button type="button" onClick={() => setPhotoFiles((current) => current.filter((_, item) => item !== index))} className="rounded-lg bg-white/5 px-2 py-1 text-[11px]">
-                {file.name} ×
+            <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
+              <LocalPhoto file={file} />
+              <span className="min-w-0 flex-1 truncate text-xs">{file.name}</span>
+              <button type="button" onClick={() => setPhotoFiles((current) => current.filter((_, item) => item !== index))} className="px-1 text-sm text-[var(--cf-muted)]" aria-label="Remove photo">
+                ×
               </button>
             </li>
           ))}
