@@ -131,7 +131,7 @@ export async function POST(request: Request) {
       );
     }
     const cost = generationCreditCost(project);
-    const spent = await spendCredits(cost);
+    const spent = await spendCredits(cost, project.id);
     if (!spent.ok) {
       return new Response(JSON.stringify({ error: spent.error }), { status: 402 });
     }
@@ -147,7 +147,15 @@ export async function POST(request: Request) {
         });
         return streamEvents(work, bus);
       }
-      await startProduce(project);
+      try {
+        await startProduce(project);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "";
+        if (/not enough credits/i.test(message)) {
+          return new Response(JSON.stringify({ error: "You need credits to generate this video." }), { status: 402 });
+        }
+        throw error;
+      }
     }
 
     const existing = produceLocks.get(project.id);

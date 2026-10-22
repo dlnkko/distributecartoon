@@ -18,7 +18,7 @@ export async function GET() {
     email: data?.email || user.email,
     displayName: data?.display_name || user.email.split("@")[0] || "Account",
     avatarUrl: data?.avatar_url || "",
-    credits: data?.credits ?? 120,
-    plan: data?.plan || "free",
+    credits: data?.credits ?? 0,
+    plan: data?.plan && data.plan !== "free" ? data.plan : "",
   });
 }

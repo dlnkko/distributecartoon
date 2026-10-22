@@ -1404,7 +1404,7 @@ export function StudioApp() {
         })),
     [projects, generatingIds],
   );
-  const credits = profile?.credits ?? 120;
+  const credits = profile?.credits ?? 0;
 
   useEffect(() => {
     const current = projectRef.current;
