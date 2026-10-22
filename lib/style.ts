@@ -2238,7 +2238,7 @@ function sceneSays(
     if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
       const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
       const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-      parts.push(`${who}, voice-over: "${text}"`);
+      parts.push(`${who}, voice-over, heard as their thought, mouth closed, no lipsync: "${text}"`);
       continue;
     }
     if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
