@@ -11,7 +11,7 @@ import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoT
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
 import { watchRenderedPart } from "./continuity-watch";
 import { clothesShouldChange, parseSeenCard, partKeepsCarriedProduct, previousSeenCard, referenceRanges, seenCardMatters } from "./seen-continuity";
-import { REALISTIC_REFERENCE_FALLBACK_SECONDS, realisticProseCast } from "./realistic-prose";
+import { REALISTIC_REFERENCE_FALLBACK_SECONDS, realisticProseCast, storyClipCast } from "./realistic-prose";
 import { ownerProductContext, productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
 import { ensureProductScenes, ensureScenePlaces } from "./story-brief";
@@ -582,10 +582,10 @@ function voiceWatchKey(src: string) {
 
 async function savePartTail(project: Project, batch: Batch) {
   const src = durableVideoSrc(batch);
-  const cutKey = realisticProseCast(project) ? "voices" : "tail";
+  const cutKey = storyClipCast(project) ? "voices" : "tail";
   if (!src || (tailUrl(batch) && batch.tailCutKey === cutKey)) return;
   const buffer = await readPublicFile(src);
-  const tail = realisticProseCast(project) ? await proseReferenceClip(buffer, batch.seenContinuity || "") : await tailVideoBuffer(buffer, 5);
+  const tail = storyClipCast(project) ? await proseReferenceClip(buffer, batch.seenContinuity || "") : await tailVideoBuffer(buffer, 5);
   const saved = await storeGeneratedFile({
     project,
     buffer: tail,
@@ -643,8 +643,8 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
       `PRODUCT:\n${productUnderstandingBrief(project) || "No product was attached."}`,
       `THIS PART, as written:\n${partOutline(project, previous)}`,
       `NEXT PART, as written:\n${partOutline(project, next)}`,
-      realisticProseCast(project) ? `VIDEO LENGTH: ${previous.duration || 30} seconds.` : "",
-      realisticProseCast(project)
+      storyClipCast(project) ? `VIDEO LENGTH: ${previous.duration || 30} seconds.` : "",
+      storyClipCast(project)
         ? `PEOPLE IN THIS FILM: ${project.characters
             .filter((character) => !character.isExtra && character.name.trim())
             .map((character) => character.name.trim())
@@ -654,7 +654,7 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
       .filter(Boolean)
       .join("\n\n");
     previous.seenContinuity = await watchRenderedPart(await readPublicFile(src), context, {
-      describeLooks: realisticProseCast(project),
+      describeLooks: storyClipCast(project),
     });
     previous.seenContinuityKey = key;
     previous.seenAttempts = 0;
@@ -778,7 +778,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     const voicesReady = Boolean(previous && previousSrc && previous.seenContinuityKey === voiceWatchKey(previousSrc));
     const staleCut = Boolean(
       previous &&
-      realisticProseCast(project) &&
+      storyClipCast(project) &&
       tailUrl(previous) &&
       previous.tailCutKey !== "voices" &&
       voicesReady &&
@@ -794,7 +794,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       await saveSoon(project);
       if (!tailUrl(previous)) return { ready: false };
     }
-    const handoffReady = realisticProseCast(project)
+    const handoffReady = storyClipCast(project)
       ? /short cut of the previous part/i.test(batch.videoPrompt || "")
       : /last 5 seconds/i.test(batch.videoPrompt || "");
     if (previous && !realKieVideoTaskId(batch.kieVideoTaskId) && batch.kieVideoTaskId !== "pending") {
@@ -966,20 +966,8 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
   );
   const oneShot = shouldGenerateOneShot(project.targetDurationSeconds, project.scenes);
   const realistic = project.style === "realistic";
-  const narrator = storyStarted || oneShot || realistic ? { ready: true } : await stepNarratorVoice(project);
-  if (!realistic && !oneShot) {
-    const intros: StepResult = await stepCharacterIntros(project);
-    if (intros.failed && !storyStarted) {
-      failProduce(project, intros.failed);
-      return "failed";
-    }
-    if (!project.platesTried) {
-      await ensureLocationPlates(project, onStatus);
-      project.platesTried = true;
-      await saveSoon(project);
-    }
-    if (!intros.ready && !storyStarted) return "waiting";
-  } else if (!project.platesTried) {
+  const narrator = storyStarted || oneShot || realistic || project.song ? { ready: true } : await stepNarratorVoice(project);
+  if (!project.platesTried) {
     await ensureLocationPlates(project, onStatus);
     project.platesTried = true;
     await saveSoon(project);
@@ -1007,7 +995,7 @@ export async function advanceProduce(project: Project, onStatus: StatusFn): Prom
 
 async function ensureLocationPlates(project: Project, onStatus: StatusFn, abortSignal?: AbortSignal) {
   await ensureScenePlaces(project, abortSignal);
-  if (realisticProseCast(project)) return;
+  if (realisticProseCast(project) || project.style === "pixar" || project.style === "claymation") return;
   project.locationPlates = (Array.isArray(project.locationPlates) ? project.locationPlates : []).filter(
     (plate) => !isJunkPlace(plate.name),
   );
@@ -1412,6 +1400,7 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal, k
     if (place && !places.some((item) => samePlace(item, place))) places.push(place);
   }
   for (const place of places) {
+    if (project.style === "pixar" || project.style === "claymation") break;
     const plate = (project.locationPlates || []).find((item) => samePlace(item.name, place));
     if (!plate) continue;
     const url = await resolveUploadUrl(plate.remoteUrl, plate.publicPath, abortSignal);
@@ -1428,6 +1417,7 @@ async function stableImageEntries(project: Project, abortSignal?: AbortSignal, k
 }
 
 async function stableCharacterVideos(project: Project, abortSignal?: AbortSignal) {
+  if (project.style === "pixar" || project.style === "claymation") return [];
   const videos: PromptRef[] = [];
   for (const name of appearanceOrder(project)) {
     const character = findCharacter(project, name);

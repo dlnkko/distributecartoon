@@ -1221,8 +1221,8 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
       refs.push(
         project.song
           ? `${tag} is the last 5 seconds, picture and music. The picture continues from that frame.`
-          : realisticProseCast(project)
-            ? `${tag} is a short cut of the previous part. It keeps every person who speaks, their voice, their clothes, and where they stand. Match each of them. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
+          : realisticProseCast(project) || project.style === "pixar" || project.style === "claymation"
+            ? `${tag} is a short cut of the previous part. It keeps every person who speaks, their voice, their clothes, the place, and where they stand. Match each of them. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`
             : `${tag} is the last 5 seconds, picture only. Match clothes, faces, and where everyone is after that moment. Do not replay a gesture that already finished. Play the action written in this part. The new lines are the only words.`,
       );
     else refs.push(`${tag} is the previous clip; match its voices and look`);
