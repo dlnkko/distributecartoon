@@ -1179,6 +1179,7 @@ export function StudioApp() {
         setBusy(false);
         return;
       }
+      remember(json.project);
       writeDraft(json.project.id, "");
     }
     const roster = await fetch("/api/cast-roster", {

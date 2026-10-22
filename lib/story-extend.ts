@@ -78,9 +78,14 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
         `Target: ${target} seconds (${parts}). The scenes below cover ${written} seconds. Add ${gap} seconds, about ${linesNeeded} short lines, and no more.`,
         `Dialogue language: ${language}. Use only these people: ${names.join(", ") || fallback}.`,
         `The last scene is in ${last?.location || "the same place"}. If these seconds are still that situation, continue there, on the same ground. Start a new place only when they go somewhere else.`,
+        project.storyBrief?.trim()
+          ? `STORY READING. New scenes continue this same film. They finish SOLUTION. They do not start another story.\n${project.storyBrief.trim()}`
+          : "",
         boardText(project),
         'Each scene has title, summary, location, character_names, camera, estimated_seconds, and dialogue as [{speaker, line}]. estimated_seconds is about 3 per spoken line. The new estimated_seconds add up to the missing seconds.',
-      ].join("\n\n"),
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
       { maxTokens: 8000, signal },
     );
   } catch (error) {

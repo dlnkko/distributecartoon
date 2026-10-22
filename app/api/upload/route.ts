@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { loadOwnedProject } from "@/lib/auth";
 import { extractScriptText } from "@/lib/script";
 import { resetStoryboard, saveProject } from "@/lib/store";
+import { scriptAskedDuration } from "@/lib/timing";
 
 export const runtime = "nodejs";
 
@@ -25,6 +26,8 @@ export async function POST(request: Request) {
   delete project.song;
   project.scriptName = file.name;
   project.scriptText = text;
+  const asked = scriptAskedDuration(text);
+  if (asked) project.targetDurationSeconds = asked;
   project.workflowStep = "script";
   await saveProject(project);
   return NextResponse.json({ project, preview: text.slice(0, 1200) });

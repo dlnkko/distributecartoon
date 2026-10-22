@@ -20,6 +20,82 @@ export function parseDurationFromText(text: string): number | undefined {
   return undefined;
 }
 
+function clockToSeconds(token: string) {
+  const match = token.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!match) return undefined;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function statedSeconds(amount: string, unit: string) {
+  const value = Number(amount);
+  if (!Number.isFinite(value) || value <= 0) return undefined;
+  const seconds = /^(?:m|min|mins|minutes?|minutos?)$/i.test(unit) ? value * 60 : value;
+  if (seconds < 8 || seconds > 240) return undefined;
+  return clampTotalDuration(seconds);
+}
+
+/** The length the script itself asks for. A time inside the story, such as an 8 minute run, does not count. */
+export function scriptAskedDuration(text: string): number | undefined {
+  if (!text?.trim()) return undefined;
+  const ranges = [...text.matchAll(/(\d{1,2}:\d{2})\s*(?:to|–|—|-)\s*(\d{1,2}:\d{2})/gi)];
+  if (ranges.length >= 2) {
+    let end = 0;
+    let counted = 0;
+    for (const match of ranges) {
+      const start = clockToSeconds(match[1]);
+      const stop = clockToSeconds(match[2]);
+      if (start == null || stop == null || stop <= start || stop - start > 180) continue;
+      counted += 1;
+      if (stop > end) end = stop;
+    }
+    if (counted >= 2 && end >= 8 && end <= 240) return clampTotalDuration(end);
+  }
+
+  const labeled = text.match(
+    /(?:^|[\n.])\s*(?:duration|duraci[oó]n|runtime|length|total(?:\s+time)?)\s*[:\-–]?\s*(\d+(?:\.\d+)?)\s*(seconds?|secs?|segundos?|s|minutes?|mins?|minutos?|min)\b/i,
+  );
+  if (labeled) {
+    const seconds = statedSeconds(labeled[1], labeled[2]);
+    if (seconds) return seconds;
+  }
+
+  const shortAd = text.match(/\b(\d+(?:\.\d+)?)\s*s\s+(?:ad|spot|commercial|video|film|short|anuncio|pieza)\b/i);
+  if (shortAd) {
+    const seconds = statedSeconds(shortAd[1], "s");
+    if (seconds) return seconds;
+  }
+
+  const named = text.match(
+    /\b(\d+(?:\.\d+)?)\s*[- ]?(?:second|sec|segundo)s?\s+(?:ad|spot|commercial|video|film|short|anuncio|pieza)\b|\b(\d+(?:\.\d+)?)\s*[- ]?(?:minute|minuto)s?\s+(?:ad|spot|commercial|video|film|short|anuncio|pieza)\b|\b(?:make (?:it|this)|que dure|video de|spot de|anuncio de|pieza de)\s+(\d+(?:\.\d+)?)\s*[- ]?(seconds?|secs?|segundos?|s|minutes?|mins?|minutos?|min)\b|\b(?:about|around|approx(?:imately)?|roughly|m[aá]s o menos|unos|cerca de|~)\s+(\d+(?:\.\d+)?)\s*(seconds?|secs?|segundos?|minutes?|mins?|minutos?)\b/i,
+  );
+  if (named) {
+    const amount = named[1] || named[2] || named[3] || named[5];
+    const unit = named[1] ? "seconds" : named[2] ? "minutes" : named[3] ? named[4] || "seconds" : named[6] || "seconds";
+    const seconds = amount ? statedSeconds(amount, unit) : undefined;
+    if (seconds) return seconds;
+  }
+
+  if (/\b(?:about|around|m[aá]s o menos|que dure|duraci[oó]n|video de|anuncio de|spot de)\s+(?:a|an|un|una|one\s+)?minute and a half\b|\bminuto y medio\b/i.test(text)) {
+    return clampTotalDuration(90);
+  }
+  if (/\b(?:about|around|m[aá]s o menos|que dure|duraci[oó]n|video de|anuncio de|spot de)\s+(?:a|an|un|una|one)\s+minutes?\b/i.test(text)) {
+    return clampTotalDuration(60);
+  }
+
+  const alone = text.match(/^\s*(\d+(?:\.\d+)?)\s*(seconds?|secs?|segundos?|s|minutes?|mins?|minutos?|min)\s*$/im);
+  if (alone) {
+    const seconds = statedSeconds(alone[1], alone[2]);
+    if (seconds) return seconds;
+  }
+
+  const headings = [...text.matchAll(/^\s*(?:scene|escena)\s*\d+[^\n]{0,48}?\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds)\b/gim)];
+  if (headings.length >= 2) {
+    const sum = headings.reduce((total, match) => total + Math.round(Number(match[1])), 0);
+    if (sum >= 8 && sum <= 240) return clampTotalDuration(sum);
+  }
+  return undefined;
+}
+
 export function estimateDialogueSeconds(line: string): number {
   const words = (line || "").trim().split(/\s+/).filter(Boolean).length;
   if (!words) return 0;
