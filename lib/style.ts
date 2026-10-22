@@ -2493,14 +2493,22 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           : tag
             ? identityPhrase(project, name, tag)
             : `${name}.`;
-      positions.set(key, `- ${identity} ${stanceClause(visible || summary, name, tag, placeNow)}`.replace(/\s{2,}/g, " ").trim());
+      const stance = song ? "" : stanceClause(visible || summary, name, tag, placeNow);
+      positions.set(key, `- ${identity} ${stance}`.replace(/\s{2,}/g, " ").trim());
     }
     const placeKey = placeNow.toLowerCase();
     const openingPlace = placeKey ? !openedPlaces.has(placeKey) : i === 0;
     if (placeKey) openedPlaces.add(placeKey);
     const placeBit = placeTag ? `${placeNow} (${placeTag})` : placeNow || "the place";
     const here = peopleHere
-      .map((name) => positions.get(name.toLowerCase())?.replace(/^- /, "") || "")
+      .map((name) => {
+        const key = name.toLowerCase();
+        const base = positions.get(key)?.replace(/^- /, "") || "";
+        if (!song || !openingPlace) return base;
+        const tag = people.get(key) || "";
+        const stance = stanceClause(visible || summary, name, tag, placeNow);
+        return `${base} ${stance}`.replace(/\s{2,}/g, " ").trim();
+      })
       .filter(Boolean);
     const moving = statesMovement(`${visible} ${summary}`);
     const stateLine = openingPlace

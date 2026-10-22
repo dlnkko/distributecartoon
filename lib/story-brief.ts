@@ -40,6 +40,7 @@ function anthropicHeaders(apiKey: string) {
 
 async function requestBrief(apiKey: string, project: Project, signal: AbortSignal | undefined, effort: boolean) {
   const script = project.scriptText.slice(0, 40000);
+  const songTake = project.song ? 1000 + Math.floor(Math.random() * 9000) : 0;
   const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     signal,
@@ -55,7 +56,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
         "This story shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the hook, the knot, the close, or the places.",
         "Any part may move through more than one place, with a different action and a different kind of picture, whenever the story needs it. That is true in the opening, the middle, and the ending. For each beat, name the place, who is in frame, how far apart they are, and what the body does. When the time or the place changes, say so. Reuse one place name every time the story returns there.",
         project.song
-          ? "This script is a transcribed song. The lyrics are the picture, in the order they are sung. Do not turn a line into someone singing, mouthing words, or performing. Each beat is the event those words describe, in the place that event would happen. A line that is still the same moment stays in that place. A line that needs another place or another time moves there. When the moment changes, the clothes change. Face and hair stay. Mouths stay closed. The song is the only audio. Do not add spoken lines."
+          ? `This script is a transcribed song. Take ${songTake}. The lyrics are one story, in the order they are sung. Nobody sings, mouths the words, or performs. A verse, a chorus, a bridge, and an outro each open as a new visual: a new place or a new time, in the clothes that moment needs. Face and hair stay. Do not open that section in the room where the previous section ended. Inside a section, a line that names a different time or a different action is its own shot. A line that names an object, a place, or a physical action keeps that. A line that only names a feeling or a relationship gets one concrete everyday cause. Take ${songTake} must not use the first obvious cause for those lines, and it must not repeat the cause, the room, or the prop a previous take would pick. Another upload of this same lyric has to be able to show a different cause and still be this story. Mouths stay closed. The song is the only audio. Do not add spoken lines.`
           : "If the script has spoken lines, copy those lines only. Do not write a new line, a voice-over, or a closing speech. Product marketing is not dialogue.",
         "Each later part starts from the consequence of the previous beat.",
         "If the product brief has WHEN IT IS USED, that situation is where the use belongs. Put that action there. Do not move it into a conversation that happens at another time. Do not add a health claim.",
@@ -64,7 +65,7 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       messages: [
         {
           role: "user",
-          content: `Style: ${project.style}. Target: ${project.targetDurationSeconds || 15} seconds.\n${storyArc(project.targetDurationSeconds || 15)}\n\n${productBlock(project)}SCRIPT:\n${script}`,
+          content: `Style: ${project.style}. Target: ${project.targetDurationSeconds || 15} seconds.\n${storyArc(project.targetDurationSeconds || 15)}\n${project.song ? `Song take: ${songTake}. Stage each vague line for this take.\n` : ""}\n${productBlock(project)}SCRIPT:\n${script}`,
         },
       ],
     }),
