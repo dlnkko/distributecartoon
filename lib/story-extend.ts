@@ -54,7 +54,11 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
   const parts = seedancePartDurations(target)
     .map((duration, index) => `part ${index + 1} ${duration}s`)
     .join(", ");
-  const linesNeeded = Math.max(1, Math.round(gap / 3));
+  const wroteLines = /["“][^"”]{2,}["”]/.test(project.scriptText || "");
+  const linesNeeded = wroteLines ? Math.max(1, Math.round(gap / 3)) : Math.max(0, Math.min(2, Math.round(gap / 15)));
+  const speechRule = wroteLines
+    ? "Every new scene has one or two short spoken lines. A short line is about 3 seconds. No silent scene. No slogan. No health claim. No new character."
+    : "Most new scenes stay silent. Add a spoken line only when that beat needs a voice, such as opening or using something, breaking, or winning. A short line is about 3 seconds. Do not give every scene a line. No slogan. No health claim. No new character.";
   const language = project.dialogueLanguage === "spanish" ? "Spanish" : "English";
   let text = "";
   try {
@@ -67,7 +71,7 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
         "Write that out. A later minute of the same situation stays in the last place, on the same ground. A new place is only when they go somewhere else. Time can pass there. Do not invent a second environment. It is still this story, not a tour of unrelated days.",
         "Do not repeat an action that already happened. If the product was already used, do not show that use again. If it was left on someone, including while they slept, it is still on them until a scene takes it off.",
         "Clothes stay with the place. They change when the place changes. Face and hair stay.",
-        "Every new scene has one or two short spoken lines. A short line is about 3 seconds. No silent scene. No slogan. No health claim. No new character.",
+        speechRule,
         "The style does not change the story.",
       ].join(" "),
       [
