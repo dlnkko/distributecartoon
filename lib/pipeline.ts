@@ -126,15 +126,20 @@ export async function resetInFlightBatches(project: Project) {
   return project;
 }
 
+function songFileAttached(batch: Batch) {
+  const name = `${batch.videoFileName || ""} ${batch.videoPublicPath || ""}`;
+  return name.includes("-song.mp4");
+}
+
 async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: string) {
   if (remoteUrl) {
     batch.videoRemoteUrl = remoteUrl;
     project.lastVideoRemoteUrl = remoteUrl;
   }
-  batch.status = "done";
+  if (!project.song) batch.status = "done";
   project.workflowStep = "produce";
   const stored = Boolean(durableVideoSrc(batch));
-  if (!stored && (batch.videoRemoteUrl || batch.videoPublicPath)) {
+  if ((!stored && (batch.videoRemoteUrl || batch.videoPublicPath)) || (project.song && stored && !songFileAttached(batch))) {
     try {
       const source = batch.videoRemoteUrl || batch.videoPublicPath || remoteUrl;
       const people = uniqueNames(batch.characterNames).map((name) => slugify(name)).join("_") || "scene";
@@ -149,24 +154,41 @@ async function attachGeneratedVideo(project: Project, batch: Batch, remoteUrl: s
       project.lastVideoFileName = saved.fileName;
       project.lastVideoPublicPath = saved.publicPath;
       await muxSongOntoPart(project, batch);
+      if (project.song && !songFileAttached(batch)) throw new Error("The song could not be attached to this part.");
+      batch.status = "done";
       delete batch.kieVideoTaskId;
       delete batch.error;
     } catch (error) {
       const message = error instanceof Error ? error.message : "Couldn't store this part.";
       console.warn("part store failed", project.id, batch.index, message);
-      const providerFile = isOpenRouterContent(batch.videoRemoteUrl) || isOpenRouterContent(batch.videoPublicPath);
-      if (providerFile && storeFailureShouldRegenerate(batch.attempts || 0, message)) {
+      if (project.song && !songFileAttached(batch)) {
+        const failedPath = batch.videoPublicPath;
+        delete batch.videoFileName;
+        delete batch.videoPublicPath;
         delete batch.videoRemoteUrl;
-        if (isOpenRouterContent(batch.videoPublicPath)) delete batch.videoPublicPath;
+        if (failedPath && (project.lastVideoPublicPath === failedPath || project.lastVideoRemoteUrl === failedPath)) {
+          delete project.lastVideoFileName;
+          delete project.lastVideoPublicPath;
+          delete project.lastVideoRemoteUrl;
+        }
         schedulePartRetry(project, batch, message);
         delete batch.kieVideoTaskId;
       } else {
-        notePartFailure(project, batch, message);
-        batch.error = message;
-        batch.attempts = (batch.attempts || 0) + 1;
+        const providerFile = isOpenRouterContent(batch.videoRemoteUrl) || isOpenRouterContent(batch.videoPublicPath);
+        if (providerFile && storeFailureShouldRegenerate(batch.attempts || 0, message)) {
+          delete batch.videoRemoteUrl;
+          if (isOpenRouterContent(batch.videoPublicPath)) delete batch.videoPublicPath;
+          schedulePartRetry(project, batch, message);
+          delete batch.kieVideoTaskId;
+        } else {
+          notePartFailure(project, batch, message);
+          batch.error = message;
+          batch.attempts = (batch.attempts || 0) + 1;
+        }
       }
     }
   } else if (stored) {
+    batch.status = "done";
     delete batch.kieVideoTaskId;
   }
   if (durableVideoSrc(batch)) {
@@ -1761,9 +1783,10 @@ async function songAudioUrls(project: Project, batch: Batch, abortSignal?: Abort
 }
 
 async function muxSongOntoPart(project: Project, batch: Batch) {
-  const clip = project.song?.clips.find((item) => item.index === batch.index);
+  if (!project.song) return;
+  const clip = project.song.clips.find((item) => item.index === batch.index);
   const videoSrc = durableVideoSrc(batch);
-  if (!clip?.publicPath || !videoSrc) return;
+  if (!clip?.publicPath || !videoSrc) throw new Error("The song could not be attached to this part.");
   const muxed = await replaceVideoAudio(await readPublicFile(videoSrc), await readPublicFile(clip.publicPath));
   const saved = await storeGeneratedFile({
     project,
@@ -1796,6 +1819,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
   delete batch.nextRetryAt;
   await saveSoon(project);
   const audioUrls = await songAudioUrls(project, batch, abortSignal);
+  if (project.song && !audioUrls.length) throw new Error("The song could not be attached to this part.");
   const taskId = await submitSeedance25ReferenceVideo({
     prompt: batch.videoPrompt,
     duration: batch.duration,
@@ -1803,7 +1827,7 @@ async function submitStoryBatch(project: Project, batch: Batch, onStatus: Status
     referenceImageUrls: imageEntries.map((item) => item.url),
     referenceVideoUrls: videoEntries.map((item) => item.url),
     referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
-    generateAudio: true,
+    generateAudio: !project.song,
     resolution: "480p",
     provider: "kie",
     seed: projectSeed(project),
@@ -1976,6 +2000,7 @@ async function runGenerateBatchVideo(
     const revised = await refineSeedancePrompt(labeled, previous?.videoPrompt || "", directingNotes(project), previous?.seenContinuity || "");
     batch.videoPrompt = revised;
     const audioUrls = await songAudioUrls(project, batch);
+    if (project.song && !audioUrls.length) throw new Error("The song could not be attached to this part.");
     const remoteUrl = await generateSeedance25ReferenceVideo({
       prompt: revised,
       duration: batch.duration,
@@ -1983,7 +2008,7 @@ async function runGenerateBatchVideo(
       referenceImageUrls: imageEntries.map((item) => item.url),
       referenceVideoUrls: videoEntries.map((item) => item.url),
       referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
-      generateAudio: true,
+      generateAudio: project.song ? false : true,
       provider: "kie",
       resolution: "480p",
       seed: projectSeed(project),

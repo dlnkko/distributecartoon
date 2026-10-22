@@ -273,7 +273,7 @@ async function submitKieSeedance(options: SeedanceRequest) {
   const resolution = fast && options.resolution === "1080p" ? "720p" : options.resolution || "480p";
   const input: Record<string, unknown> = {
     prompt: options.prompt,
-    generate_audio: options.generateAudio !== false,
+    generate_audio: audios.length ? false : options.generateAudio !== false,
     resolution,
     aspect_ratio: aspectRatio,
     duration,
@@ -281,7 +281,11 @@ async function submitKieSeedance(options: SeedanceRequest) {
   if (!fast) input.output_format = "mp4";
   if (images.length) input.reference_image_urls = images;
   if (videos.length) input.reference_video_urls = videos;
-  if (audios.length) input.reference_audio_urls = audios;
+  if (audios.length) {
+    input.reference_audio_urls = audios;
+    // Seedance treats this file as a hint and, with generate_audio on, composes a different soundtrack.
+    input.generate_audio = false;
+  }
   const timeout = AbortSignal.timeout(SUBMIT_TIMEOUT_MS);
   const signal = options.abortSignal ? AbortSignal.any([options.abortSignal, timeout]) : timeout;
   const response = await fetch(`${KIE_BASE}/api/v1/jobs/createTask`, {
