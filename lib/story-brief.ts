@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { getSecrets } from "./config";
-import { isJunkPlace } from "./places";
+import { isJunkPlace, keepsPreviousPlace } from "./places";
 import { productUnderstandingBrief } from "./product-facts";
 import { SONNET_MODEL, sonnetText } from "./sonnet";
 import { saveProject } from "./store";
@@ -52,11 +52,11 @@ async function requestBrief(apiKey: string, project: Project, signal: AbortSigna
       system: [
         "You are the story editor for a short film. Read the script once and return a directing note in English, under 450 words.",
         "Write the through-line in order: who wants what, and what changes by the end.",
-        "Shape that through-line to the target length. Open on the hook already in motion. Do not add a calm introduction before it. The knot makes the conflict harder. The close is the longest movement: the solution is used where someone would really use it, then what follows is shown where it would actually be seen. Any situation that needs another place or another time, in the hook, the knot, or the close, gets its own scene and its own action there. Time can pass. Only a beat that is still the same moment stays in the same place. If the product was already on someone, it stays where it was left, including the next morning, until a scene takes it off. When the moment changes, the clothes change to fit it. Face and hair stay. If the beats are shorter than the target, the missing seconds are the scenes the story still needs: more shots and short lines, until the length is filled. It is still this story, not a tour of unrelated days. Use the time map in the request. Do not solve the story in the opening. Do not add a slogan or a health claim.",
+        "Shape that through-line to the target length. Open on the hook already in motion. Do not add a calm introduction before it. The knot makes the conflict harder. The close is the longest movement: the solution is used where someone would really use it, then what follows is shown where it would actually be seen. A later minute of the same situation stays in the same place, on the same ground, in the hook, the knot, and the close. Time can pass there. A new place is only when they go somewhere else. Do not invent a second environment to mark that time, and do not rename the ground they are already standing on. If the product was already on someone, it stays where it was left, including the next morning, until a scene takes it off. Clothes stay with the place. They change when the place changes. Face and hair stay. If the beats are shorter than the target, the missing seconds are the scenes the story still needs: more shots and short lines, until the length is filled. It is still this story, not a tour of unrelated days. Use the time map in the request. Do not solve the story in the opening. Do not add a slogan or a health claim.",
         "This story shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the hook, the knot, the close, or the places.",
-        "Any part may move through more than one place, with a different action and a different kind of picture, whenever the story needs it. That is true in the opening, the middle, and the ending. For each beat, name the place, who is in frame, how far apart they are, and what the body does. When the time or the place changes, say so. Reuse one place name every time the story returns there.",
+        "A part may move to another place when the story takes them somewhere else, in the opening, the middle, or the ending. A later minute of the same situation stays in the place already named, on the same ground. For each beat, name the place, who is in frame, how far apart they are, and what the body does. Reuse that exact place name while they are still there, and again when the story returns.",
         project.song
-          ? `This script is a transcribed song. Take ${songTake}. The lyrics are one story, in the order they are sung. Nobody sings, mouths the words, or performs. Each verse, chorus, bridge, and outro gets its own shots, so the picture keeps moving. The place and the clothes stay until the lyric itself moves to another time or another situation. Do not change the room or the clothes just because a new section starts. When the story does need another place, that is when the clothes change to fit it. Do not invent a trip just to connect two times. Face and hair stay. Inside a section, a line that names a different action is its own shot. A line that names an object, a place, or a physical action keeps that. A line that only names a feeling or a relationship gets one concrete everyday cause. Take ${songTake} must not use the first obvious cause for those lines, and it must not repeat the cause or the prop a previous take would pick. The place can stay. Another upload of this same lyric has to be able to show a different cause and still be this story. Mouths stay closed. The song is the only audio. Do not add spoken lines.`
+          ? `This script is a transcribed song. Take ${songTake}. The lyrics are one story, in the order they are sung. Nobody sings, mouths the words, or performs. Each verse, chorus, bridge, and outro gets its own shots, so the picture keeps moving. The place and the clothes stay until the lyric itself takes them somewhere else. A later minute of the same situation stays in that place, on the same ground. Do not change the room, the ground, or the clothes just because a new section starts. When the story does need another place, that is when the clothes change to fit it. Do not invent a trip just to connect two times. Face and hair stay. Inside a section, a line that names a different action is its own shot. A line that names an object, a place, or a physical action keeps that. A line that only names a feeling or a relationship gets one concrete everyday cause. Take ${songTake} must not use the first obvious cause for those lines, and it must not repeat the cause or the prop a previous take would pick. The place can stay. Another upload of this same lyric has to be able to show a different cause and still be this story. Mouths stay closed. The song is the only audio. Do not add spoken lines.`
           : "If the script has spoken lines, copy those lines only. Do not write a new line, a voice-over, or a closing speech. Product marketing is not dialogue.",
         "Each later part starts from the consequence of the previous beat.",
         "If the product brief has WHEN IT IS USED, that situation is where the use belongs. Put that action there. Do not move it into a conversation that happens at another time. Do not add a health claim.",
@@ -259,6 +259,8 @@ export async function ensureScenePlaces(project: Project, signal?: AbortSignal) 
         "Name the physical set the camera is in for every scene.",
         "Read the action. A label left over from an earlier room is wrong once they have left it.",
         "When someone leaves a room, the next scene is the place the action is in now. Name it from what that action shows, not from the room they left.",
+        "A few minutes later, a closer shot, or a different word for the same ground is still that set. Copy the earlier place name. Do not invent a second name for one stretch of ground, and do not turn a ridge and the flat beside it into two environments.",
+        "A new name is only when the action goes somewhere else, such as indoors, into a vehicle, or into another building.",
         "Reuse one short place name, two or three words, and copy that exact name every time the story is in that same set, including after a time jump.",
         "Do not use a clock, a scene number, or a beat name as the place.",
         "An end card with no room gets an empty place.",
@@ -284,6 +286,15 @@ export async function ensureScenePlaces(project: Project, signal?: AbortSignal) 
       continue;
     }
     scene.location = name;
+  }
+  let carried = "";
+  for (const scene of project.scenes) {
+    const blob = [scene.title, scene.summary, ...(scene.shots || []).map((shot) => shot.action || "")].join(" ");
+    if (carried && scene.location && keepsPreviousPlace(blob)) {
+      scene.location = carried;
+      continue;
+    }
+    carried = scene.location || "";
   }
   project.placeReadKey = key;
   await saveProject(project);

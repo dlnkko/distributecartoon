@@ -93,6 +93,16 @@ export function timeJump(text: string) {
   );
 }
 
+const SHORT_LATER =
+  /\b(?:a few minutes later|minutes later|moments later|seconds later|a moment later|same spot)\b/i;
+const LEFT_FOR_SOMEWHERE =
+  /\b(?:arrives?|arrived|enters?|entered|reaches?|reached|walks? into|steps? into|gets? (?:in|into) the|leaves?|left the|now inside|back home|back at the|crosses? into)\b/i;
+
+/** Minutes later on the same ground is not a new set. A real departure is. */
+export function keepsPreviousPlace(text: string) {
+  return SHORT_LATER.test(text) && !LEFT_FOR_SOMEWHERE.test(text);
+}
+
 export function placesInText(text: string) {
   const found: Array<{ name: string; at: number }> = [];
   for (const room of ROOMS) {
@@ -181,6 +191,10 @@ export function assignScenePlaces<T extends { title?: string; summary?: string; 
   let previous = "";
   for (const scene of scenes) {
     const blob = textOf(scene);
+    if (previous && keepsPreviousPlace(blob)) {
+      scene.location = previous;
+      continue;
+    }
     if (/\bend\s*card\b/i.test(blob)) {
       scene.location = "";
       previous = "";
