@@ -106,7 +106,10 @@ export async function PATCH(request: Request) {
     const brief = body.songBrief.trim();
     if (brief !== (project.song.productBrief || "")) {
       project.song.productBrief = brief;
-      const text = songScriptText(project.song);
+      const selling = project.references.some(
+        (item) => item.kind === "product" && (item.originalPublicPath || item.originalRemoteUrl),
+      );
+      const text = songScriptText(project.song, selling);
       if (text !== project.scriptText) {
         resetStoryboard(project);
         project.scriptText = text;

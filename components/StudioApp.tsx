@@ -123,15 +123,11 @@ function stepIndex(project: Project, step?: string) {
   return stepsFor(project).findIndex((item) => item.id === (step || (songMode(project) ? "song" : "script")));
 }
 
-function hasProductPhoto(project: Project) {
-  return project.references.some((item) => item.kind === "product" && (item.originalPublicPath || item.originalRemoteUrl));
-}
-
 function stepReachable(project: Project, step: WorkflowStep) {
   if (step === "song") return songMode(project);
   if (step === "script") return !project.song;
   if (step === "setup") {
-    if (project.song) return Boolean(project.song.productBrief?.trim()) && hasProductPhoto(project);
+    if (project.song) return Boolean(project.song);
     return Boolean(project.scriptText.trim());
   }
   if (step === "cast") return project.scenes.length > 0;
@@ -1156,14 +1152,6 @@ export function StudioApp() {
       setStatus("Upload a song first.");
       return;
     }
-    if (!hasProductPhoto(project)) {
-      setStatus("Add a photo of the product.");
-      return;
-    }
-    if (brief.trim().length < 8) {
-      setStatus("Describe what the product is about.");
-      return;
-    }
     setBusy(true);
     await patchProject({ songBrief: brief.trim(), workflowStep: "setup" });
     setBusy(false);
@@ -1756,7 +1744,6 @@ export function StudioApp() {
               songAttached={Boolean(project.song)}
               durationSeconds={project.song?.durationSeconds}
               brief={project.song?.productBrief || ""}
-              hasProduct={hasProductPhoto(project)}
               projectId={project.id}
               selectedProductIds={products.map((slot) => slot.savedProductId || "").filter(Boolean)}
               busy={working}
@@ -2193,7 +2180,6 @@ function SongStep({
   songAttached,
   durationSeconds,
   brief,
-  hasProduct,
   projectId,
   selectedProductIds,
   busy,
@@ -2209,7 +2195,6 @@ function SongStep({
   songAttached: boolean;
   durationSeconds?: number;
   brief: string;
-  hasProduct: boolean;
   projectId: string;
   selectedProductIds: string[];
   busy: boolean;
@@ -2222,12 +2207,12 @@ function SongStep({
   onContinue: (brief: string) => void;
 }) {
   const [text, setText] = useState(brief);
-  const ready = songAttached && hasProduct && text.trim().length >= 8;
+  const ready = songAttached;
 
   return (
     <div className="rise-in flex flex-1 flex-col">
       <h3 className="display text-3xl md:text-4xl">Song video</h3>
-      <p className="mt-1 text-sm text-[var(--muted)]">Upload a Suno song, the product, and what it is about. Characters are chosen after the scenes.</p>
+      <p className="mt-1 text-sm text-[var(--muted)]">Upload a Suno song. A product is optional. Characters are chosen after the scenes.</p>
 
       <button
         type="button"

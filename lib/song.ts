@@ -103,11 +103,12 @@ export async function sliceAudioMp3(buffer: Buffer, ext: string, start: number, 
   }
 }
 
-export function songScriptText(song: { lyrics: string; productBrief?: string }) {
+export function songScriptText(song: { lyrics: string; productBrief?: string }, selling = true) {
   const lyrics = song.lyrics.trim();
   const brief = song.productBrief?.trim();
   if (!brief) return lyrics;
-  return `This song is about this product and brand: ${brief}\n\nLyrics, in the order they are sung:\n${lyrics}`;
+  const lead = selling ? `This song is about this product and brand: ${brief}` : `Notes:\n${brief}`;
+  return `${lead}\n\nLyrics, in the order they are sung:\n${lyrics}`;
 }
 
 export async function transcribeLyrics(buffer: Buffer, filename: string) {
