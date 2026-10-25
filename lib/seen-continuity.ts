@@ -192,7 +192,7 @@ export function clothesShouldChange(card: SeenCard, sceneText: string) {
   if (!card.raw && !card.outfit && !card.place && !card.clothes) return false;
   if (card.outfit) return true;
   const inBed = /\b(?:in bed|on the pillows?|under the covers|l(?:ie|ies|ying)\s+(?:on|in|down)|asleep|sleeping)\b/i.test(sceneText);
-  const timeShift = /\b(?:next morning|the next day|later that|time change|hours later|that night|the following morning)\b/i.test(sceneText);
+  const timeShift = /\b(?:next morning|the next day|later that|time change|hours later|that night|the following (?:morning|day|night|week)|days later|weeks later|a week later|months later|the next week|days after|weeks after)\b/i.test(sceneText);
   if (!inBed && !timeShift) return false;
   const seen = `${card.place} ${card.clothes} ${card.carryClothes} ${card.pose}`;
   return !/\b(?:bed|pillow|asleep|sleeping|lying|bedroom)\b/i.test(seen);
