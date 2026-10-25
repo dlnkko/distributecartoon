@@ -8,6 +8,8 @@ import { MobileNav } from "@/components/library/MobileNav";
 import type { LibraryDraft, LibraryFilter, LibraryGenerating, LibraryProfile, LibrarySort, LibraryVideo, LibraryView, LibraryZone } from "@/components/library/types";
 import { VideoGrid } from "@/components/library/VideoGrid";
 import { ProductsPanel } from "@/components/library/ProductsPanel";
+import { StoriesPanel } from "@/components/library/StoriesPanel";
+import type { Project } from "@/lib/types";
 
 function matchesDuration(duration: number, filter: LibraryFilter) {
   if (filter === "60") return duration >= 50 && duration < 90;
@@ -29,6 +31,7 @@ export function LibraryShell({
   onOpenDraft,
   onCreate,
   onCreateSong,
+  onOpenStory,
   createLocked = false,
   createNotice = "",
   onAccount,
@@ -51,6 +54,7 @@ export function LibraryShell({
   onOpenDraft: (projectId: string) => void;
   onCreate: () => void;
   onCreateSong: () => void;
+  onOpenStory: (project: Project) => void;
   createLocked?: boolean;
   createNotice?: string;
   onAccount: () => void;
@@ -106,9 +110,11 @@ export function LibraryShell({
 
   const total = videos.length + generating.length;
   const shown = finished.length + pending.length;
-  const empty = zone === "drafts" ? drafts.length === 0 : zone === "products" ? false : total === 0;
+  const empty = zone === "drafts" ? drafts.length === 0 : zone === "products" || zone === "stories" ? false : total === 0;
   const summary =
-    zone === "products"
+    zone === "stories"
+      ? "A drama from a product. You pick the look after."
+      : zone === "products"
       ? "Saved once. Pick them in any video."
       : zone === "drafts"
       ? drafts.length
@@ -167,6 +173,10 @@ export function LibraryShell({
             <ProductIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Products"}
           </button>
+          <button type="button" aria-label="Stories" aria-current={zone === "stories" ? "page" : undefined} onClick={() => onZone("stories")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "stories" ? "bg-[linear-gradient(135deg,rgba(91,140,255,0.2),rgba(122,108,255,0.12))] text-white shadow-[0_0_24px_rgba(91,140,255,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
+            <StoryIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
+            {narrow ? null : "Stories"}
+          </button>
           <button type="button" aria-label="Drafts" aria-current={zone === "drafts" ? "page" : undefined} onClick={() => onZone("drafts")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "drafts" ? "bg-[linear-gradient(135deg,rgba(91,140,255,0.2),rgba(122,108,255,0.12))] text-white shadow-[0_0_24px_rgba(91,140,255,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
             <DraftIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Drafts"}
@@ -224,7 +234,7 @@ export function LibraryShell({
           <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(91,140,255,0.22),transparent_68%)] blur-3xl" />
           <div className="relative flex items-end gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="display text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-5xl">{zone === "drafts" ? "Drafts" : zone === "products" ? "Products" : "Your videos"}</h2>
+              <h2 className="display text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-5xl">{zone === "drafts" ? "Drafts" : zone === "products" ? "Products" : zone === "stories" ? "Stories" : "Your videos"}</h2>
               <p className="mt-2 text-sm text-[var(--cf-muted)]">{summary}</p>
             </div>
             <div className="flex items-center gap-2 lg:hidden">
@@ -235,7 +245,7 @@ export function LibraryShell({
             </div>
           </div>
 
-          <div className={`relative mt-4 flex flex-wrap items-center gap-2 ${zone === "products" ? "hidden" : ""}`}>
+          <div className={`relative mt-4 flex flex-wrap items-center gap-2 ${zone === "products" || zone === "stories" ? "hidden" : ""}`}>
             <label className={`relative min-w-0 flex-1 ${searchOpen ? "flex" : "hidden lg:block"}`}>
               <span className="sr-only">Search videos</span>
               <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--cf-muted)]">
@@ -282,6 +292,8 @@ export function LibraryShell({
           ) : null}
           {zone === "products" ? (
             <ProductsPanel />
+          ) : zone === "stories" ? (
+            <StoriesPanel onOpen={onOpenStory} onProducts={() => onZone("products")} />
           ) : zone === "drafts" ? (
             shownDrafts.length === 0 ? (
               <div className="mx-auto mt-10 flex max-w-lg flex-col items-center rounded-[20px] border border-[var(--cf-line)] bg-[radial-gradient(circle_at_50%_0%,rgba(91,140,255,0.22),transparent_55%),var(--cf-surface)] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
@@ -340,7 +352,7 @@ export function LibraryShell({
         </div>
       </div>
 
-      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onProducts={() => onZone("products")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} createLocked={createLocked} />
+      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onProducts={() => onZone("products")} onStories={() => onZone("stories")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} createLocked={createLocked} />
 
       {creditsOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -397,6 +409,15 @@ function ProductIcon({ className = "h-4 w-4" }: { className?: string }) {
     <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3 5.5 8 3l5 2.5v6L8 14.5 3 11.5v-6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       <path d="M3.2 5.7 8 8.2l4.8-2.5M8 8.2V14" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function StoryIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 3.2h6.2L12.5 6.5V13a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V3.7a.5.5 0 0 1 .5-.5Z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 8h5M5 10.5h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
     </svg>
   );
 }

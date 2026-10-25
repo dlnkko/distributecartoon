@@ -145,12 +145,18 @@ function viewUrl(view: {
   if (view.pane === "studio" && view.projectId) {
     params.set("p", view.projectId);
     if (view.step) params.set("step", view.step);
-  } else if (view.zone === "drafts" || view.zone === "products") {
+  } else if (view.zone && view.zone !== "videos") {
     params.set("zone", view.zone);
   }
   if (view.panel) params.set("panel", view.panel);
   const query = params.toString();
   return `${window.location.pathname}${query ? `?${query}` : ""}`;
+}
+
+function zoneFromSearch(params: URLSearchParams): LibraryZone {
+  const zone = params.get("zone");
+  if (zone === "drafts" || zone === "products" || zone === "stories") return zone;
+  return "videos";
 }
 
 function draftKey(projectId: string) {
@@ -1445,7 +1451,7 @@ export function StudioApp() {
         syncing = true;
       }
       if (!params.get("p")) {
-        const zone = params.get("zone") === "drafts" ? "drafts" : params.get("zone") === "products" ? "products" : "videos";
+        const zone = zoneFromSearch(params);
         if (zone !== libraryZone) {
           setLibraryZone(zone);
           syncing = true;
@@ -1472,7 +1478,7 @@ export function StudioApp() {
         poppingRef.current = false;
       }, 2000);
       setPanel(open === "account" || open === "membership" || open === "credits" ? open : null);
-      setLibraryZone(params.get("zone") === "drafts" ? "drafts" : params.get("zone") === "products" ? "products" : "videos");
+      setLibraryZone(zoneFromSearch(params));
       const found = id ? projectsRef.current.find((item) => item.id === id) : undefined;
       if (!found) {
         setPane("library");
@@ -1537,6 +1543,13 @@ export function StudioApp() {
           }}
           onCreate={() => void createNew()}
           onCreateSong={() => void createSong()}
+          onOpenStory={(next) => {
+            remember(next);
+            setScriptDraft(next.scriptText || "");
+            setStatus("");
+            setPane("studio");
+            setSidebarOpen(false);
+          }}
           createLocked={generating.length >= MAX_CONCURRENT_RENDERS}
           createNotice={RENDER_WAIT_MESSAGE}
           onAccount={() => setPanel("account")}

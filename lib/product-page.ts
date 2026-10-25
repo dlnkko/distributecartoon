@@ -17,17 +17,17 @@ export function productPageUrl(raw: string) {
   return url.toString();
 }
 
-export function condenseProductPage(text: string) {
+export function condenseProductPage(text: string, limit = 4500) {
   const clean = text
     .replace(/!\[[^\]]*]\([^)]*\)/g, " ")
     .replace(/\[([^\]]+)]\([^)]*\)/g, "$1")
     .replace(/\n{3,}/g, "\n\n")
     .replace(/[ \t]{2,}/g, " ")
     .trim();
-  return clean.slice(0, 4500);
+  return clean.slice(0, limit);
 }
 
-export async function scrapeProductPage(url: string) {
+export async function scrapeProductPage(url: string, limit = 4500) {
   const key = getSecrets().firecrawlApiKey;
   if (!key) throw new Error("FIRECRAWL_API_KEY is missing.");
   const response = await fetch("https://api.firecrawl.dev/v2/scrape", {
@@ -55,7 +55,7 @@ export async function scrapeProductPage(url: string) {
   const title = String(json.data?.metadata?.title || "").trim();
   const description = String(json.data?.metadata?.description || "").trim();
   const markdown = String(json.data?.markdown || "").trim();
-  const page = condenseProductPage([title, description, markdown].filter(Boolean).join("\n\n"));
+  const page = condenseProductPage([title, description, markdown].filter(Boolean).join("\n\n"), limit);
   if (!page) throw new Error("That page had no readable text.");
   return page;
 }

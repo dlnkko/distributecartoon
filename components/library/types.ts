@@ -19,7 +19,7 @@ export type LibraryGenerating = {
 export type LibraryFilter = "all" | "60" | "120" | "processing";
 export type LibrarySort = "newest" | "oldest" | "longest";
 export type LibraryView = "grid" | "list";
-export type LibraryZone = "videos" | "drafts" | "products";
+export type LibraryZone = "videos" | "drafts" | "products" | "stories";
 
 export type LibraryDraft = {
   id: string;

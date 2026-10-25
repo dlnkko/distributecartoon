@@ -1,19 +1,23 @@
 "use client";
 
+import type { LibraryZone } from "@/components/library/types";
+
 export function MobileNav({
   zone,
   onVideos,
   onDrafts,
   onProducts,
+  onStories,
   onCreate,
   onSong,
   onAccount,
   createLocked = false,
 }: {
-  zone: "videos" | "drafts" | "products";
+  zone: LibraryZone;
   onVideos: () => void;
   onDrafts: () => void;
   onProducts: () => void;
+  onStories: () => void;
   onCreate: () => void;
   onSong: () => void;
   onAccount: () => void;
@@ -23,6 +27,7 @@ export function MobileNav({
     { label: "Create", onClick: onCreate, icon: PlusGlyph, active: false, locked: createLocked },
     { label: "Suno", onClick: onSong, icon: SongGlyph, active: false, locked: createLocked },
     { label: "Videos", onClick: onVideos, icon: VideosGlyph, active: zone === "videos", locked: false },
+    { label: "Stories", onClick: onStories, icon: StoryGlyph, active: zone === "stories", locked: false },
     { label: "Products", onClick: onProducts, icon: ProductGlyph, active: zone === "products", locked: false },
     { label: "Drafts", onClick: onDrafts, icon: DraftGlyph, active: zone === "drafts", locked: false },
     { label: "Account", onClick: onAccount, icon: AccountGlyph, active: false, locked: false },
@@ -33,7 +38,7 @@ export function MobileNav({
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
       aria-label="Primary"
     >
-      <ul className="grid grid-cols-6">
+      <ul className="grid grid-cols-7">
         {items.map((item) => (
           <li key={item.label}>
             <button
@@ -49,6 +54,15 @@ export function MobileNav({
         ))}
       </ul>
     </nav>
+  );
+}
+
+function StoryGlyph() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 3.2h6.2L12.5 6.5V13a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V3.7a.5.5 0 0 1 .5-.5Z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 8h5M5 10.5h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
   );
 }
 
