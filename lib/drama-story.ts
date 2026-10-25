@@ -102,16 +102,19 @@ export async function varyDramaField(input: {
     `Write the new field in ${language}.`,
     ask,
     "Stay inside what the page actually says. No slogan and no claim the page does not make.",
-    "Reply as JSON with one key, value. Nothing else.",
-    `Field: ${input.field}`,
+    `Reply as JSON with one key, value, holding the new ${input.field}. Nothing else.`,
     `Current ${input.field}, which you must not repeat: ${current || "(empty)"}`,
     `Other fields, for context only: pain: ${input.current.pain || "(empty)"} | audience: ${input.current.audience || "(empty)"} | person: ${input.current.person || "(empty)"}`,
-    briefContext(input),
+    briefContext({ ...input, page: input.page.slice(0, 6000) }),
   ].join("\n\n");
   const limit = FIELD_LIMIT[input.field];
-  let value = parseValue(await geminiText(prompt, 0.9), limit);
+  let value = parseValue(await geminiText(prompt, 0.9, 25_000), limit, input.field);
   if (!value || sameText(value, current)) {
-    value = parseValue(await geminiText(`${prompt}\n\nThe last attempt repeated the current text. Pick a genuinely different angle.`, 1), limit);
+    value = parseValue(
+      await geminiText(`${prompt}\n\nThat repeated the current text. Write a different ${input.field}. JSON only: {"value":"..."}`, 1, 20_000),
+      limit,
+      input.field,
+    );
   }
   if (!value || sameText(value, current)) throw new Error("That came back the same. Try the variation again.");
   return value;
@@ -133,18 +136,13 @@ function sameText(left: string, right: string) {
   return left.replace(/\s+/g, " ").trim().toLowerCase() === right.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function parseValue(text: string, max: number) {
-  const fenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const start = fenced.indexOf("{");
-  const end = fenced.lastIndexOf("}");
-  const slice = start >= 0 && end > start ? fenced.slice(start, end + 1) : fenced;
-  let raw: { value?: unknown } = {};
-  try {
-    raw = JSON.parse(slice) as { value?: unknown };
-  } catch {
-    raw = {};
-  }
-  return clip(raw.value, max);
+function parseValue(text: string, max: number, field: string) {
+  const raw = jsonObject(text);
+  const picked = clip(raw.value ?? raw[field] ?? raw.person ?? raw.who ?? raw.pain ?? raw.audience, max);
+  if (picked) return picked;
+  const plain = text.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim();
+  if (!plain || plain.includes("{") || plain.length > max) return "";
+  return plain;
 }
 
 function parseBrief(text: string): DramaBrief {
@@ -177,7 +175,7 @@ function clip(value: unknown, max: number) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-async function geminiText(prompt: string, temperature: number) {
+async function geminiText(prompt: string, temperature: number, timeoutMs = 55_000) {
   const key = getSecrets().geminiApiKey;
   if (!key) throw new Error("GEMINI_API_KEY is missing.");
   const ask = async (json: boolean) => {
@@ -186,7 +184,7 @@ async function geminiText(prompt: string, temperature: number) {
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        signal: AbortSignal.timeout(55_000),
+        signal: AbortSignal.timeout(timeoutMs),
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {

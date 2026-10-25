@@ -142,20 +142,26 @@ export function StoriesPanel({
     if (!productId || !ready || busy) return;
     setBusy(field);
     setError("");
-    const res = await fetch("/api/stories", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "vary", productId, field, pain, audience, who, page, language }),
-    });
-    const json = (await res.json().catch(() => ({}))) as { value?: string; error?: string };
-    setBusy("");
-    if (!res.ok || !json.value?.trim()) {
-      setError(json.error || "Couldn't write another version.");
-      return;
+    try {
+      const res = await fetch("/api/stories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        signal: AbortSignal.timeout(50_000),
+        body: JSON.stringify({ action: "vary", productId, field, pain, audience, who, page, language }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { value?: string; error?: string };
+      if (!res.ok || !json.value?.trim()) {
+        setError(json.error || "Couldn't write another version.");
+        return;
+      }
+      if (field === "pain") setPain(json.value);
+      else if (field === "audience") setAudience(json.value);
+      else setWho(json.value);
+    } catch {
+      setError("Couldn't write another version.");
+    } finally {
+      setBusy("");
     }
-    if (field === "pain") setPain(json.value);
-    else if (field === "audience") setAudience(json.value);
-    else setWho(json.value);
   }
 
   async function approve() {
