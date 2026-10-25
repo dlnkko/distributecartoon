@@ -672,14 +672,14 @@ export function storyArc(totalSeconds: number) {
   const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
   const moves =
     "Open on the problem already in motion. Do not add a calm introduction before it. A turn inside that problem makes it worse, or shows the cause was not what they thought. Any part may visit more than one place when the story takes them somewhere else. A later minute of the same situation stays in that place, on the same ground. Do not invent a second environment to mark that time. The solution is then used where someone would really use it. After that, the same life is shown improved, for long enough that the change is visible. Do not solve the story in the opening. Do not add a slogan or a health claim.";
-  const clock = `Use about ${problem}s for the problem, including the turn. Use about ${use}s for the solution being used. Use about ${after}s after that, so the viewer stays with the life once the pain has eased. The ending is longer than the use. It is still this story, not a tour of other days.`;
+  const clock = `Start from about ${problem}s for the problem, including the turn, about ${use}s for the solution being used, and about ${after}s after that so the change has time to land. Bend those lengths when this situation cannot hold them. A product handed over in the middle of an event that is already going keeps the problem as what the camera shows, puts the use inside that event, and lets the rest of the event, going better, be the ending. A story that can pause may use a longer spoken problem and a spoken landing. The ending still gets real time. It is still this story, not a tour of other days.`;
   let where = "";
   if (parts.length <= 1) {
-    where = "Those three stretches play in that order, in the one part. Each can change place and action when the story needs it.";
+    where = "Those three stretches play in that order, in the one part, unless the use has to happen inside the problem because that is when this product would be used. Each can change place and action when the story needs it.";
   } else if (parts.length === 2) {
-    where = "Part 1 is the problem and the turn. Do not solve it there. Part 2 is the solution being used, then the longer life after. Do not spend part 2 only on the use.";
+    where = "Part 1 carries the problem and the turn. Do not solve it there unless the product would actually arrive during that event. Part 2 is the solution being used, then the change. Do not spend part 2 only on the use, and do not leave the event for a separate testimonial if the change is the rest of that same event.";
   } else {
-    where = `Parts 1 to ${parts.length - 1} carry the problem and the turn. Do not solve it in part 1. Part ${parts.length} is the solution being used, then the longer life after. Do not spend that last part only on the use.`;
+    where = `Parts 1 to ${parts.length - 1} carry the problem and the turn. Do not solve it in part 1 unless the product would actually arrive during that event. Part ${parts.length} is the solution being used, then the change. Do not spend that last part only on the use.`;
   }
   return `${head} ${moves} ${clock} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
 }

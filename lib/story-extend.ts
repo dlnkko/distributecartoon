@@ -55,10 +55,10 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
     .map((duration, index) => `part ${index + 1} ${duration}s`)
     .join(", ");
   const wroteLines = /["“][^"”]{2,}["”]/.test(project.scriptText || "");
-  const linesNeeded = wroteLines ? Math.max(1, Math.round(gap / 3)) : Math.max(2, Math.round(gap / 5));
+  const linesNeeded = wroteLines ? Math.max(1, Math.round(gap / 3)) : Math.max(1, Math.round(gap / 8));
   const speechRule = wroteLines
-    ? "Every new scene has one or two short spoken lines. A short line is about 3 seconds. No silent scene. No slogan. No health claim. No new character."
-    : "The new scenes are the life after the fix when that has not been shown. Someone tells the other person what changed, inside the story, and that they would get it now. A quiet insert can stay silent. No slogan. No health claim. No new character.";
+    ? "Match the density of the scenes you were given. A talky stretch stays talky. A visual stretch stays visual. Add a line only where these new moments would have one. No slogan. No health claim. No new character."
+    : "The new scenes show the change once the solution has been used, inside the same situation when that is where the change would be seen. Add a spoken line only if someone there would actually speak, in the words that moment would use. No slogan. No health claim. No new character.";
   const language = project.dialogueLanguage === "spanish" ? "Spanish" : "English";
   let text = "";
   try {
@@ -67,7 +67,7 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
         "You finish a short film that came out shorter than the length the user asked for.",
         "Return one JSON object and nothing else: {\"scenes\":[...]}.",
         "Do not rewrite the scenes you are given. Add new scenes that continue after the last one.",
-        "The missing seconds belong to the life after the fix, once the solution has been used. Show that same life improved. Do not start another story.",
+        "The missing seconds show the change once the solution has been used. If that change is the rest of the same event, stay in the event. Do not start another story.",
         "Write that out. A later minute of the same situation stays in the last place, on the same ground. A new place is only when they go somewhere else. Time can pass there. Do not invent a second environment. It is still this story, not a tour of unrelated days.",
         "Do not repeat an action that already happened. If the product was already used, do not show that use again. If it was left on someone, including while they slept, it is still on them until a scene takes it off.",
         "Clothes stay with the place. They change when the place changes. Face and hair stay.",
@@ -75,7 +75,7 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
         "The style does not change the story.",
       ].join(" "),
       [
-        `Target: ${target} seconds (${parts}). The scenes below cover ${written} seconds. Add ${gap} seconds, about ${linesNeeded} short lines, and no more.`,
+        `Target: ${target} seconds (${parts}). The scenes below cover ${written} seconds. Add ${gap} seconds. Add a spoken line only where someone in these new scenes would speak, and no more than ${linesNeeded}.`,
         `Dialogue language: ${language}. Use only these people: ${names.join(", ") || fallback}.`,
         `The last scene is in ${last?.location || "the same place"}. If these seconds are still that situation, continue there, on the same ground. Start a new place only when they go somewhere else.`,
         project.storyBrief?.trim()

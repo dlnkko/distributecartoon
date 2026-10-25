@@ -19,10 +19,10 @@ export type DramaSceneSlot = {
 };
 
 const BEAT_LABEL: Record<DramaBeat, string> = {
-  problem: "the problem, already happening. They tell someone what hurts, in the words that situation would pull out of them. No product yet",
-  turn: "the turn: it gets worse, or the cause is not what they thought. They say so. Still no product",
-  use: "they use the product the way a person would. One line as they use it",
-  after: "this same life, now that the pain has eased. They tell the other person what changed, inside the story, and that they would get it now. Not a slogan",
+  problem: "the problem, already happening. Show it in the body and the situation. A line only if someone in this moment could speak, in words specific to this pain. No product yet",
+  turn: "the turn: it gets worse, or the cause is not what they thought. Show that. A line only if this moment can hold one. Still no product",
+  use: "the product arrives the way this situation would hand it over, and they use it the way a person would. One line only if someone here would speak",
+  after: "this same situation going better, long enough to see the change. If someone can talk, they say what changed in the words this moment would use. Not a slogan",
 };
 
 export function dramaScenePlan(seconds: number) {
@@ -166,11 +166,11 @@ export async function writeDramaStory(input: {
     .join("\n");
   const language = input.language === "spanish" ? "Spanish" : "English";
   const system = [
-    "You write a drama ad as a screenplay. The trouble comes first and is said out loud. A turn makes it sharper. The product is used as the solution. Then this same life is shown better, for the time the headings give that ending.",
+    "You write a drama ad as a screenplay. The trouble comes first. Decide from this product, this person, and this moment whether the trouble is said, shown, or both. A turn makes it sharper. The product is used as the solution, in the situation where it would actually be used. Then stay with that same situation long enough to see it go better.",
     `Write the action and every spoken line in ${language}. Keep the SCENE headings in English exactly as given, including the seconds.`,
     "The seconds on the headings already add up to the film. Do not add, drop, merge, or renumber a scene. Do not change a second count.",
-    "Each scene is one place and one action, in present tense. Two people when the beat is a conversation. Name them and keep those names.",
-    "The viewer has to recognize the pain from what is said, not only from what is shown. In the problem and the turn, they tell someone how it actually feels, in the specific words that pain would pull out of them. Do not use a vague complaint that could fit any product. A silent scene is an insert or a landscape. The use has one line as they use it. The after scenes are a conversation: one person tells the other what changed, inside the story, and that they would get it now. That is not an announcer, not a slogan, and not a line copied from the page.",
+    "Each scene is one place and one action, in present tense. Name the people and keep those names. Two people only when this moment would actually have two people.",
+    "The viewer has to recognize the pain. Use the picture when speech would break the moment, and a line when someone there could say it. The words are specific to this pain, this audience, and this situation. Do not use a vague complaint that could fit any product. Do not stop the action for a confession. A silent scene is right when the body is doing the telling. In the after scenes, stay on the improved situation. If someone can speak, one of them says what changed, in the words that moment would use. That is not an announcer, not a slogan, and not a line copied from the page.",
     "Do not invent a dose, a mechanism, or a health claim the page does not state. Show the product used the way the page says it is used.",
     "Start the reply with TITLE: and a short title. Then the scenes. Nothing else.",
   ].join(" ");
