@@ -95,7 +95,7 @@ async function saveText(request: Request, userId: string) {
   } else if (rawUrl !== current?.pageUrl) {
     pageUrl = productPageUrl(rawUrl);
     if (!pageUrl) return NextResponse.json({ error: "Use a public http or https page." }, { status: 422 });
-    pageContext = await scrapeProductPage(pageUrl);
+    pageContext = await scrapeProductPage(pageUrl, 12000);
   }
   const photos = keptMedia(current?.photos || [], body.photoPaths).slice(0, MAX_PRODUCT_PHOTOS);
   const videos = keptMedia(current?.videos || [], body.videoPaths).slice(0, MAX_PRODUCT_VIDEOS);

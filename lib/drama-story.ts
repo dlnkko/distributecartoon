@@ -62,16 +62,19 @@ export async function proposeDramaBrief(input: {
     "Read this product page and fill three fields for a drama ad. Do not write the story, the scenes, or any dialogue.",
     `Write the three fields in ${language}.`,
     "pain: the sharpest problem a real customer already has, in one or two sentences. No slogan and no claim the page does not make.",
-    "audience: who the page is for, specific, one sentence.",
+    "audience: who the page is for, specific, one sentence. If the page does not name them, use the narrowest real customer that page is speaking to.",
     "person: one ordinary person from that audience the film can follow. A role and a situation, not a famous name. Under 20 words.",
+    "Always fill pain, audience, and person from the page text. Never leave a field empty.",
     "Reply as JSON with keys pain, audience, and person. Nothing else.",
     briefContext(input),
   ]
     .filter(Boolean)
     .join("\n\n");
-  const text = await geminiText(prompt, 0.2);
-  const parsed = parseBrief(text);
-  if (!parsed.pain || !parsed.audience || !parsed.person) throw new Error("The page didn't suggest a pain point and an audience.");
+  let parsed = parseBrief(await geminiText(prompt, 0.2));
+  if (!parsed.pain || !parsed.audience || !parsed.person) {
+    parsed = parseBrief(await geminiText(`${prompt}\n\nThe last reply missed a field. Reply with JSON only. pain, audience, and person are all required and non-empty.`, 0.4));
+  }
+  if (!parsed.pain || !parsed.audience || !parsed.person) throw new Error("Couldn't interpret that saved page. Try again.");
   return parsed;
 }
 
@@ -145,24 +148,32 @@ function parseValue(text: string, max: number) {
 }
 
 function parseBrief(text: string): DramaBrief {
-  const fenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
-  const start = fenced.indexOf("{");
-  const end = fenced.lastIndexOf("}");
-  const slice = start >= 0 && end > start ? fenced.slice(start, end + 1) : fenced;
-  let raw: { pain?: unknown; audience?: unknown; person?: unknown } = {};
-  try {
-    raw = JSON.parse(slice) as { pain?: unknown; audience?: unknown; person?: unknown };
-  } catch {
-    raw = {};
-  }
+  const raw = jsonObject(text);
   return {
-    pain: clip(raw.pain, 400),
-    audience: clip(raw.audience, 240),
-    person: clip(raw.person, 120),
+    pain: clip(raw.pain ?? raw.pain_point ?? raw.painPoint ?? raw.problem, 400),
+    audience: clip(raw.audience ?? raw.target_audience ?? raw.targetAudience, 240),
+    person: clip(raw.person ?? raw.who ?? raw.character, 120),
   };
 }
 
+function jsonObject(text: string) {
+  const fenced = text.replace(/```(?:json)?/gi, " ").trim();
+  const start = fenced.indexOf("{");
+  const end = fenced.lastIndexOf("}");
+  const slice = start >= 0 && end > start ? fenced.slice(start, end + 1) : fenced;
+  try {
+    const parsed = JSON.parse(slice) as Record<string, unknown>;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
 function clip(value: unknown, max: number) {
+  if (value && typeof value === "object") {
+    const record = value as Record<string, unknown>;
+    return clip(record.text ?? record.value ?? record.description, max);
+  }
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
@@ -180,7 +191,7 @@ async function geminiText(prompt: string, temperature: number) {
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
             temperature,
-            maxOutputTokens: 800,
+            maxOutputTokens: 1200,
             ...(json ? { responseMimeType: "application/json" } : {}),
           },
         }),

@@ -48,22 +48,41 @@ export async function POST(request: Request) {
   }
 }
 
+function usefulPage(text: string) {
+  const clean = text.replace(/\s+/g, " ").trim();
+  if (clean.length < 200) return false;
+  if (clean.length < 800 && /just a moment|access denied|enable javascript|captcha|are you a robot/i.test(clean)) return false;
+  return true;
+}
+
+async function rememberPage(product: SavedProduct, page: string) {
+  const next = page.trim().slice(0, PAGE_LIMIT);
+  if (!next || next === product.pageContext.trim()) return;
+  const supabase = await createClient();
+  const { error } = await supabase.from("saved_products").update({ page_context: next }).eq("id", product.id);
+  if (error) console.warn("page cache", product.id, error.message);
+  else product.pageContext = next;
+}
+
 async function pageText(product: SavedProduct, supplied?: string) {
-  const given = String(supplied || "").trim().slice(0, PAGE_LIMIT);
-  if (given.length > 80) return given;
-  let page = product.pageContext || "";
+  const cached = (product.pageContext || "").trim();
+  if (usefulPage(cached)) return cached.slice(0, PAGE_LIMIT);
+  const given = String(supplied || "").trim();
+  if (usefulPage(given)) return given.slice(0, PAGE_LIMIT);
   if (product.pageUrl) {
     try {
-      page = await scrapeProductPage(product.pageUrl, PAGE_LIMIT);
+      const scraped = await scrapeProductPage(product.pageUrl, PAGE_LIMIT);
+      if (usefulPage(scraped)) {
+        await rememberPage(product, scraped);
+        return scraped;
+      }
     } catch (error) {
-      if (!page) throw error;
+      if (!cached && !given) throw error;
     }
   }
-  const notes = [product.useNotes, product.whenNotes, product.extraContext].some((item) => item.trim());
-  if (!page.trim() && !notes) {
-    return "";
-  }
-  return page;
+  const fallback = cached || given;
+  if (fallback.trim()) return fallback.slice(0, PAGE_LIMIT);
+  return "";
 }
 
 async function readBrief(body: { language?: string }, product: SavedProduct) {
