@@ -5,6 +5,54 @@ import { DURATION_CHOICES } from "@/lib/ids";
 import type { SavedProduct } from "@/lib/saved-products";
 import type { DialogueLanguage, Project } from "@/lib/types";
 
+function BriefField({
+  id,
+  label,
+  value,
+  maxLength,
+  rows,
+  busy,
+  disabled,
+  onChange,
+  onVary,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  maxLength: number;
+  rows: number;
+  busy: boolean;
+  disabled: boolean;
+  onChange: (value: string) => void;
+  onVary: () => void;
+}) {
+  return (
+    <div className="text-sm">
+      <div className="flex items-center justify-between gap-3">
+        <label htmlFor={id} className="font-medium">
+          {label}
+        </label>
+        <button
+          type="button"
+          onClick={onVary}
+          disabled={disabled}
+          className="btn-secondary shrink-0 rounded-full px-3 py-1 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {busy ? "Writing…" : "Variation"}
+        </button>
+      </div>
+      <textarea
+        id={id}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        maxLength={maxLength}
+        rows={rows}
+        className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none"
+      />
+    </div>
+  );
+}
+
 function mediaSrc(publicPath?: string) {
   if (!publicPath) return "";
   if (/^https?:\/\//i.test(publicPath)) return publicPath;
@@ -28,7 +76,7 @@ export function StoriesPanel({
   const [ready, setReady] = useState(false);
   const [seconds, setSeconds] = useState<number>(30);
   const [language, setLanguage] = useState<DialogueLanguage>("english");
-  const [busy, setBusy] = useState<"read" | "approve" | "">("");
+  const [busy, setBusy] = useState<"" | "read" | "approve" | "pain" | "audience" | "person">("");
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -88,6 +136,26 @@ export function StoriesPanel({
     setWho(json.person || "");
     setPage(json.page || "");
     setReady(true);
+  }
+
+  async function vary(field: "pain" | "audience" | "person") {
+    if (!productId || !ready || busy) return;
+    setBusy(field);
+    setError("");
+    const res = await fetch("/api/stories", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "vary", productId, field, pain, audience, who, page, language }),
+    });
+    const json = (await res.json().catch(() => ({}))) as { value?: string; error?: string };
+    setBusy("");
+    if (!res.ok || !json.value?.trim()) {
+      setError(json.error || "Couldn't write another version.");
+      return;
+    }
+    if (field === "pain") setPain(json.value);
+    else if (field === "audience") setAudience(json.value);
+    else setWho(json.value);
   }
 
   async function approve() {
@@ -207,36 +275,39 @@ export function StoriesPanel({
           <p className="text-sm font-medium">From the page</p>
           <p className="mt-0.5 text-xs text-[var(--cf-muted)]">Change anything, then approve. That writes the story and opens Setup.</p>
           <div className="mt-4 grid gap-4">
-            <label className="block text-sm">
-              <span className="font-medium">Pain point</span>
-              <textarea
-                value={pain}
-                onChange={(event) => setPain(event.target.value)}
-                maxLength={400}
-                rows={3}
-                className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium">Target audience</span>
-              <textarea
-                value={audience}
-                onChange={(event) => setAudience(event.target.value)}
-                maxLength={240}
-                rows={2}
-                className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none"
-              />
-            </label>
-            <label className="block text-sm">
-              <span className="font-medium">Who it follows</span>
-              <textarea
-                value={who}
-                onChange={(event) => setWho(event.target.value)}
-                maxLength={120}
-                rows={2}
-                className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none"
-              />
-            </label>
+            <BriefField
+              id="story-pain"
+              label="Pain point"
+              value={pain}
+              maxLength={400}
+              rows={3}
+              busy={busy === "pain"}
+              disabled={Boolean(busy)}
+              onChange={setPain}
+              onVary={() => void vary("pain")}
+            />
+            <BriefField
+              id="story-audience"
+              label="Target audience"
+              value={audience}
+              maxLength={240}
+              rows={2}
+              busy={busy === "audience"}
+              disabled={Boolean(busy)}
+              onChange={setAudience}
+              onVary={() => void vary("audience")}
+            />
+            <BriefField
+              id="story-who"
+              label="Who it follows"
+              value={who}
+              maxLength={120}
+              rows={2}
+              busy={busy === "person"}
+              disabled={Boolean(busy)}
+              onChange={setWho}
+              onVary={() => void vary("person")}
+            />
           </div>
           <button
             type="button"

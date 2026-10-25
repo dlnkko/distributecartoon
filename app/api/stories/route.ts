@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { proposeDramaBrief, writeDramaStory } from "@/lib/drama-story";
+import { proposeDramaBrief, varyDramaField, writeDramaStory } from "@/lib/drama-story";
 import { clampTotalDuration } from "@/lib/ids";
 import { scrapeProductPage } from "@/lib/product-page";
 import { applySavedProduct, savedProductFromRow, type SavedProduct } from "@/lib/saved-products";
@@ -26,6 +26,7 @@ export async function POST(request: Request) {
   const body = (await request.json().catch(() => ({}))) as {
     action?: string;
     productId?: string;
+    field?: string;
     pain?: string;
     audience?: string;
     who?: string;
@@ -39,6 +40,7 @@ export async function POST(request: Request) {
     const product = await ownedProduct(productId, user.id);
     if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
     if (body.action === "approve") return await approveStory(body, product, user.id);
+    if (body.action === "vary") return await varyBrief(body, product);
     return await readBrief(body, product);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Couldn't write that story.";
@@ -79,6 +81,34 @@ async function readBrief(body: { language?: string }, product: SavedProduct) {
     language,
   });
   return NextResponse.json({ ...brief, page });
+}
+
+async function varyBrief(
+  body: { field?: string; pain?: string; audience?: string; who?: string; page?: string; language?: string },
+  product: SavedProduct,
+) {
+  const field = body.field === "pain" || body.field === "audience" || body.field === "person" ? body.field : "";
+  if (!field) return NextResponse.json({ error: "Pick which field to vary." }, { status: 400 });
+  const page = await pageText(product, body.page);
+  if (!page && ![product.useNotes, product.whenNotes, product.extraContext].some((item) => item.trim())) {
+    return NextResponse.json({ error: "This product needs a page or a note about how it is used." }, { status: 422 });
+  }
+  const language: DialogueLanguage = isDialogueLanguage(body.language) ? body.language : "english";
+  const value = await varyDramaField({
+    productName: product.name,
+    page,
+    how: product.useNotes,
+    when: product.whenNotes,
+    extra: product.extraContext,
+    language,
+    field,
+    current: {
+      pain: String(body.pain || ""),
+      audience: String(body.audience || ""),
+      person: String(body.who || ""),
+    },
+  });
+  return NextResponse.json({ field, value });
 }
 
 async function approveStory(

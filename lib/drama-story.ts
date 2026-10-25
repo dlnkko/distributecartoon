@@ -65,6 +65,57 @@ export async function proposeDramaBrief(input: {
     "audience: who the page is for, specific, one sentence.",
     "person: one ordinary person from that audience the film can follow. A role and a situation, not a famous name. Under 20 words.",
     "Reply as JSON with keys pain, audience, and person. Nothing else.",
+    briefContext(input),
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+  const text = await geminiText(prompt, 0.2);
+  const parsed = parseBrief(text);
+  if (!parsed.pain || !parsed.audience || !parsed.person) throw new Error("The page didn't suggest a pain point and an audience.");
+  return parsed;
+}
+
+const FIELD_LIMIT = { pain: 400, audience: 240, person: 120 } as const;
+
+export async function varyDramaField(input: {
+  productName: string;
+  page: string;
+  how: string;
+  when: string;
+  extra: string;
+  language: DialogueLanguage;
+  field: keyof typeof FIELD_LIMIT;
+  current: DramaBrief;
+}): Promise<string> {
+  const language = input.language === "spanish" ? "Spanish" : "English";
+  const ask = input.field === "pain"
+    ? "Write a different customer problem the page also supports. Not a paraphrase of the current pain."
+    : input.field === "audience"
+      ? "Write a different audience the page also speaks to. Not a paraphrase of the current audience."
+      : "Write a different ordinary person the film can follow. A different role or a different situation, not the same person in new words. Not a famous name. Under 20 words.";
+  const current = input.field === "pain" ? input.current.pain : input.field === "audience" ? input.current.audience : input.current.person;
+  const prompt = [
+    "Rewrite one field of a drama-ad brief. Do not write the story, the scenes, or any dialogue. Do not rewrite the other fields.",
+    `Write the new field in ${language}.`,
+    ask,
+    "Stay inside what the page actually says. No slogan and no claim the page does not make.",
+    "Reply as JSON with one key, value. Nothing else.",
+    `Field: ${input.field}`,
+    `Current ${input.field}, which you must not repeat: ${current || "(empty)"}`,
+    `Other fields, for context only: pain: ${input.current.pain || "(empty)"} | audience: ${input.current.audience || "(empty)"} | person: ${input.current.person || "(empty)"}`,
+    briefContext(input),
+  ].join("\n\n");
+  const limit = FIELD_LIMIT[input.field];
+  let value = parseValue(await geminiText(prompt, 0.9), limit);
+  if (!value || sameText(value, current)) {
+    value = parseValue(await geminiText(`${prompt}\n\nThe last attempt repeated the current text. Pick a genuinely different angle.`, 1), limit);
+  }
+  if (!value || sameText(value, current)) throw new Error("That came back the same. Try the variation again.");
+  return value;
+}
+
+function briefContext(input: { productName: string; page: string; how: string; when: string; extra: string }) {
+  return [
     `Product name: ${input.productName || "the product"}`,
     input.how.trim() ? `HOW IT IS USED:\n${input.how.trim()}` : "",
     input.when.trim() ? `WHEN IT IS USED:\n${input.when.trim()}` : "",
@@ -73,10 +124,24 @@ export async function proposeDramaBrief(input: {
   ]
     .filter(Boolean)
     .join("\n\n");
-  const text = await geminiText(prompt);
-  const parsed = parseBrief(text);
-  if (!parsed.pain || !parsed.audience || !parsed.person) throw new Error("The page didn't suggest a pain point and an audience.");
-  return parsed;
+}
+
+function sameText(left: string, right: string) {
+  return left.replace(/\s+/g, " ").trim().toLowerCase() === right.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function parseValue(text: string, max: number) {
+  const fenced = text.replace(/^```(?:json)?\s*/i, "").replace(/\s*```$/, "").trim();
+  const start = fenced.indexOf("{");
+  const end = fenced.lastIndexOf("}");
+  const slice = start >= 0 && end > start ? fenced.slice(start, end + 1) : fenced;
+  let raw: { value?: unknown } = {};
+  try {
+    raw = JSON.parse(slice) as { value?: unknown };
+  } catch {
+    raw = {};
+  }
+  return clip(raw.value, max);
 }
 
 function parseBrief(text: string): DramaBrief {
@@ -101,7 +166,7 @@ function clip(value: unknown, max: number) {
   return String(value || "").replace(/\s+/g, " ").trim().slice(0, max);
 }
 
-async function geminiText(prompt: string) {
+async function geminiText(prompt: string, temperature: number) {
   const key = getSecrets().geminiApiKey;
   if (!key) throw new Error("GEMINI_API_KEY is missing.");
   const ask = async (json: boolean) => {
@@ -114,7 +179,7 @@ async function geminiText(prompt: string) {
         body: JSON.stringify({
           contents: [{ role: "user", parts: [{ text: prompt }] }],
           generationConfig: {
-            temperature: 0.2,
+            temperature,
             maxOutputTokens: 800,
             ...(json ? { responseMimeType: "application/json" } : {}),
           },
