@@ -622,17 +622,44 @@ function stripCueLines(text: string) {
 function linesFromBlock(text: string) {
   const out: Array<{ speaker: string; line: string; voiceover?: boolean; offscreen?: boolean }> = [];
   const skip = /^(?:scene|escena|act|acto|int|ext|end|text|title|super|caption|small print|beat)$/i;
+  const rows = text.split(/\n/);
+  for (let i = 0; i < rows.length; i++) {
+    const cue = rows[i].trim().replace(/:$/, "");
+    if (!cue || cue !== cue.toUpperCase() || !looksLikeSpeaker(cue) || skip.test(cue)) continue;
+    let at = i + 1;
+    const notes: string[] = [];
+    while (at < rows.length && /^\([^)]*\)$/.test(rows[at].trim())) {
+      notes.push(rows[at].trim());
+      at += 1;
+    }
+    const quoted = (rows[at] || "").trim().match(/^[“"]([^”"]+)[”"]$/);
+    if (!quoted) continue;
+    const line = cleanSpokenLine(quoted[1]);
+    if (!line || out.some((item) => spokenKey(item.line) === spokenKey(line))) continue;
+    const note = notes.join(" ");
+    const offscreen = /\b(?:o\.?\s*s\.?|off[- ]?screen)\b/i.test(`${cue} ${note}`);
+    const voiceover = offscreen || /\b(?:vo|v\.o\.|voice-?over)\b/i.test(`${cue} ${note}`);
+    out.push({
+      speaker: spokenName(cue),
+      line,
+      ...(voiceover ? { voiceover: true } : {}),
+      ...(offscreen ? { offscreen: true } : {}),
+    });
+    i = at;
+  }
   const quoteRe = /[“"]([^”"]+)[”"]/g;
   let found: RegExpExecArray | null;
+  const cueLines = out.length;
   while ((found = quoteRe.exec(text))) {
     const line = cleanSpokenLine(found[1]);
     if (!line) continue;
     const tagged = speakerAt(text.slice(0, found.index));
     if (tagged && skip.test(tagged.name)) continue;
-    if (!tagged && !out.length) continue;
+    if (!tagged && out.length === cueLines) continue;
     const speaker = tagged ? tagged.name : out[out.length - 1].speaker;
     const note = tagged ? tagged.note : out[out.length - 1].voiceover ? "(VO)" : "";
     if (!speaker || skip.test(speaker) || !looksLikeSpeaker(speaker)) continue;
+    if (out.some((item) => spokenKey(item.line) === spokenKey(line))) continue;
     const bareVoice = /^(?:vo|v\.o\.|voice-?over|voiceover)$/i.test(speaker);
     const offscreen = bareVoice || /\b(?:o\.?\s*s\.?|off[- ]?screen)\b/i.test(note);
     const voiceover = offscreen || /\b(?:vo|v\.o\.|voice-?over)\b/i.test(note);
@@ -643,7 +670,6 @@ function linesFromBlock(text: string) {
       ...(offscreen ? { offscreen: true } : {}),
     });
   }
-  const rows = text.split(/\n/);
   for (let i = 0; i < rows.length; i++) {
     const cue = rows[i].trim().replace(/:$/, "");
     const quoted = (rows[i + 1] || "").trim().match(/^[“"]([^”"]+)[”"]/);
@@ -927,6 +953,14 @@ function applyUserStoryboard(project: Project) {
   }
   const blocks = storyboardBlocks(project.scriptText);
   if (blocks.length < 2) return;
+  const timedHeadings = blocks.filter((block) => block.headingSeconds);
+  if (timedHeadings.length >= 2 && timedHeadings.length === blocks.length) {
+    const scenes = blocks.map((block) => sceneFromBlock(block));
+    castOnScreen(scenes);
+    project.scenes = scenes.map((scene, index) => ({ ...scene, index: index + 1 }));
+    absorbDraftedDialogue(project, drafted);
+    return;
+  }
   const used = new Set<number>();
   const next: Scene[] = [];
   for (const block of blocks) {
@@ -1013,14 +1047,6 @@ function beatParts(summary: string) {
   return [];
 }
 
-function longParts(summary: string) {
-  return summary
-    .replace(/\s*The attached product only appears as this action says[^.]*\.\s*/gi, " ")
-    .split(/(?<=[.!?])\s+/)
-    .map((part) => part.trim())
-    .filter((part) => part.length > 24 && !/^the attached product\b/i.test(part));
-}
-
 function spokenKey(line: string) {
   return line.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
 }
@@ -1060,14 +1086,13 @@ function splitPackedBeats(project: Project) {
   const spoken = project.scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.line || ""));
   const next: Scene[] = [];
   for (const scene of project.scenes) {
-    if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0)) {
+    if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0) || (scene.estimatedSeconds || 0) >= 4) {
+      scene.summary = dropSpeechFragments(scene.summary || "", spoken);
       next.push(scene);
       continue;
     }
     const summary = dropSpeechFragments(scene.summary || "", spoken);
-    const cuts = beatParts(summary);
-    const sentences =
-      cuts.length > 1 ? cuts : scriptIsStoryboard(project.scriptText) ? longParts(summary) : [];
+    const sentences = beatParts(summary);
     if (sentences.length < 2) {
       next.push(scene);
       continue;
@@ -1099,7 +1124,38 @@ function splitPackedBeats(project: Project) {
     });
   }
   project.scenes = next.map((scene, index) => ({ ...scene, index: index + 1 }));
+  joinSameBeat(project);
   dropEchoScenes(project);
+}
+
+function joinSameBeat(project: Project) {
+  if (project.song || project.scenes.length < 2) return;
+  const next: Scene[] = [];
+  for (const scene of project.scenes) {
+    const prev = next[next.length - 1];
+    const title = scene.title.trim().toLowerCase();
+    const same =
+      prev &&
+      title.length > 0 &&
+      prev.title.trim().toLowerCase() === title &&
+      (prev.estimatedSeconds || 0) + (scene.estimatedSeconds || 0) <= 30;
+    if (!same || !prev) {
+      next.push(scene);
+      continue;
+    }
+    prev.summary = [prev.summary, scene.summary].filter(Boolean).join(" ");
+    const seen = new Set((prev.dialogue || []).map((line) => spokenKey(line.line || "")));
+    for (const line of scene.dialogue || []) {
+      const key = spokenKey(line.line || "");
+      if (!key || seen.has(key)) continue;
+      prev.dialogue = [...(prev.dialogue || []), line];
+      seen.add(key);
+    }
+    prev.estimatedSeconds = (prev.estimatedSeconds || 0) + (scene.estimatedSeconds || 0);
+    prev.shots = [];
+  }
+  if (next.length === project.scenes.length) return;
+  project.scenes = next.map((scene, index) => ({ ...scene, index: index + 1 }));
 }
 
 function dropEchoScenes(project: Project) {
@@ -1129,7 +1185,7 @@ function splitLongExchanges(project: Project) {
   const board = scriptIsStoryboard(project.scriptText);
   const next: Scene[] = [];
   for (const scene of project.scenes) {
-    if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0)) {
+    if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0) || (scene.estimatedSeconds || 0) >= 4) {
       next.push(scene);
       continue;
     }
@@ -1183,8 +1239,10 @@ function scaleScenesToTarget(project: Project) {
       scene.estimatedSeconds = spoken
         ? sceneSpeechFloor(scene)
         : Math.max(3, Math.min(4, Math.round(written * 10) / 10));
-    } else {
+    } else if ((scene.estimatedSeconds || 0) < 4) {
       scene.estimatedSeconds = contentSeconds(scene);
+      scene.shots = [];
+    } else {
       scene.shots = [];
     }
   }
@@ -1576,8 +1634,8 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
   const opening = timedRows
     ? "The user wrote a timed script. A clock range is that beat's length, not a generation. 00:00-00:15 is 15 seconds. Keep that order. Copy the action and every spoken line under that clock, in their words, including a VO quote in full. Do not move a phrase from a later VO onto an earlier scene. A sound note with no VO and no quotes is not a spoken line, so that scene's dialogue stays empty. estimated_seconds is the clock range. Do not change 15 seconds into 30 because a generation holds 30. Do not drop a line and do not rewrite a line. O.S. stays off-screen. VO is Narrator, off-screen, not lipsynced. The picture in that scene is the action the line describes: if the line says the mouth opens, show the mouth opening, not a closed mouth. Say each line in one scene only. Do not copy it into the next scene. If a clock is long for the lines under it, about one short line every 3 seconds, add lines in those same voices that continue that beat. The added lines stay inside that clock. They do not change the ending the user wrote."
     : ordered
-    ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not replace a line with a different sentence. If one heading contains several beats or the word montage, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. If a heading is long and has too few lines, add lines in those voices and write the blocking the picture needs. If a heading itself says how many seconds that one card lasts, keep that."
-    : "The user gave a concept, a paragraph, or a few lines, not a timed scene list. The STORY READING already decided the aim, the problem, the solution, and the pictures. Stage PICTURES. Do not replace that film with a different one. Then write a finished film of the target duration. Keep the events in the order they told them. Name each person once and reuse that name. Write the dialogue, the places, and the blocking yourself. Decide from this situation whether the problem is said, shown, or both. If someone there can talk, they say what is wrong in the words that moment would pull out of them. If they cannot, the picture carries it, and the next person who can speak names it. Do not invent a conversation the moment would not have. Do not put a line on every shot. A person alone says a line out loud, or thinks it so it is heard, only when that moment would have one. A 30 second film is one continuous story, cut into shots when the action or the angle changes. Follow the time map. Open on the hook already happening. Do not put a calm setup before it. Inside a part, change the camera and the action when that tells this story better. Keep the place and the ground until they go somewhere else. A few minutes later is still that place. Time can pass there. Do not invent a second environment for it. Do not invent a trip just to connect the times. Then show the solution being used where someone would really use it. Then stay with what follows, long enough to see the change. If that change is the rest of the same event, stay in the event. If someone can speak, they say what changed in the words that moment would use, inside the story. The pictures fill the target. The lines fill only the moments that can hold them. The last shot is one continuous landing, long enough for someone to say what changed. Do not end on a burst of cuts. A short line is about 3 seconds. If the story would end while time is still left, the remaining scenes are that life after, not a silent hold and not a tour of unrelated days. If a product is attached or named, it is the solution and it appears in the close, used the way a person really uses it and in the situation the page describes, not during the problem. The attached product photo is the product. A mark printed on the product is that same photo, not the logo upload. In a later scene, if the product was already on someone, it stays where it was left, including the next morning, until a scene takes it off. When the moment changes, the clothes change to fit it. Face and hair stay. Make the pictures creative and specific to this story. Move the frame as the feeling changes: a reaction, a close insert, a wider view, or a cut to another moment when that picture says more than staying on the same setup. Put each action where it would really happen. Do not solve every story with the same kind of cut. If there is no product, the turn is still the solution and the later scene, and both get room. A quiet shot is any moment where nobody would speak. Do not add a line just to fill a walk. Do not add a slogan or a health claim.";
+    ? "The user already ordered this as a storyboard. Keep every heading, in that order, including a montage and an end card. Do not skip or replace one. Copy every action they wrote and every line they wrote, in their words, said by that speaker. Do not replace a line with a different sentence. A heading that already says its seconds is one scene of that length. Keep every action and every spoken line of that heading inside that one scene. Do not split it into one scene per sentence, and do not shorten it to 2 seconds. If one heading contains several beats or the word montage and it does not already give its seconds, make one scene per beat instead of one scene with CUT to inside it. A montage beat that changes room or time of day is a new place, not a continuation of the previous room. An act range is the span of those scenes together, not the length of a single scene. Do not stretch one scene to 20 seconds to fill the act, and do not crush several beats into 2 seconds. The scenes together stay inside the target duration. Do not add a part past it. If a heading is long and has too few lines, add lines in those voices and write the blocking the picture needs. If a heading itself says how many seconds that one card lasts, keep that."
+    : "The user gave a concept, a paragraph, or a few lines, not a timed scene list. The STORY READING already decided the aim, the problem, the solution, and the pictures. Stage PICTURES. Do not replace that film with a different one. Then write a finished film of the target duration. Keep the events in the order they told them. Name each person once and reuse that name. Write the dialogue, the places, and the blocking yourself. Decide from this situation whether the problem is said, shown, or both. If someone there can talk, they say what is wrong in the words that moment would pull out of them. If they cannot, the picture carries it, and the next person who can speak names it. Do not invent a conversation the moment would not have. Do not put a line on every shot. A person alone says a line out loud, or thinks it so it is heard, only when that moment would have one. A 30 second film is one continuous story, cut into shots when the action or the angle changes. Follow the time map. Open on the hook already happening. Do not put a calm setup before it. Inside a part, change the camera and the action when that tells this story better. Keep the place and the ground until they go somewhere else. A few minutes later is still that place. Time can pass there. Do not invent a second environment for it. Do leave when the next action would not happen in that room: a laptop, a call, a meal, or sleep happens where a person would really do it. Do not invent a trip just to connect the times. Then show the solution being used where someone would really use it. Then stay with what follows, long enough to see the change. If that change is the rest of the same event, stay in the event. If someone can speak, they say what changed in the words that moment would use, inside the story. The pictures fill the target. The lines fill only the moments that can hold them. The last shot is one continuous landing, long enough for someone to say what changed. Do not end on a burst of cuts. A short line is about 3 seconds. If the story would end while time is still left, the remaining scenes are that life after, not a silent hold and not a tour of unrelated days. If a product is attached or named, it is the solution and it appears in the close, used the way a person really uses it and in the situation the page describes, not during the problem. The attached product photo is the product. A mark printed on the product is that same photo, not the logo upload. In a later scene, if the product was already on someone, it stays where it was left, including the next morning, until a scene takes it off. When the moment changes, the clothes change to fit it. Face and hair stay. Make the pictures creative and specific to this story. Move the frame as the feeling changes: a reaction, a close insert, a wider view, or a cut to another moment when that picture says more than staying on the same setup. Put each action where it would really happen. Do not solve every story with the same kind of cut. If there is no product, the turn is still the solution and the later scene, and both get room. A quiet shot is any moment where nobody would speak. Do not add a line just to fill a walk. Do not add a slogan or a health claim.";
   const known = castBrief(project);
   const understood = productUnderstandingBrief(project);
   const pages = understood

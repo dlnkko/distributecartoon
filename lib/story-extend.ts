@@ -68,7 +68,7 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
         "Return one JSON object and nothing else: {\"scenes\":[...]}.",
         "Do not rewrite the scenes you are given. Add new scenes that continue after the last one.",
         "The missing seconds show the change once the solution has been used. If that change is the rest of the same event, stay in the event. Do not start another story.",
-        "Write that out. A later minute of the same situation stays in the last place, on the same ground. A new place is only when they go somewhere else. Time can pass there. Do not invent a second environment. It is still this story, not a tour of unrelated days.",
+        "Write that out. A later minute of the same situation stays in the last place, on the same ground. A new place is only when they go somewhere else. Time can pass there. Do not invent a second environment. Do leave when the next action would not happen in that room. A laptop, a call, a meal, or sleep happens where a person would really do it. It is still this story, not a tour of unrelated days.",
         "Do not repeat an action that already happened. If the product was already used, do not show that use again. If it was left on someone, including while they slept, it is still on them until a scene takes it off.",
         "Clothes stay with the place. They change when the place changes. Face and hair stay.",
         speechRule,

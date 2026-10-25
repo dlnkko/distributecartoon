@@ -565,26 +565,24 @@ export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
   return out.map((scene, index) => ({ ...scene, index: index + 1 }));
 }
 
-// The joined video matches the requested length, in generations of at most 30s.
-// A 60s film is 30 + 30. A short last generation, when one is unavoidable, is one continuous shot.
+// Keep each generation as the story timed it. Do not re-deal scenes by count:
+// that piles the opening into one clip and leaves the last lines too short to play.
 export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): SeedancePartPlan[] {
   const goal = Math.max(4, Math.round(target));
-  const indexes = parts.flatMap((part) => part.sceneIndexes).filter((index, position, all) => all.indexOf(index) === position);
-  if (!indexes.length) return generationDurations(goal).map((duration) => ({ duration, sceneIndexes: [] }));
-  const wanted = generationDurations(goal);
-  const groups = distributeScenes(
-    indexes.map((index) => ({ index, estimatedSeconds: 1 })),
-    wanted,
-  );
-  const next = wanted
-    .map((duration, index) => ({ duration, sceneIndexes: [...(groups[index] || [])] }))
-    .filter((part) => part.sceneIndexes.length);
-  for (let index = next.length - 1; index >= 1; index -= 1) {
-    const cap = Math.max(1, Math.floor(next[index].duration / 4));
-    if (next[index].sceneIndexes.length <= cap) continue;
-    const overflow = next[index].sceneIndexes.slice(0, -cap);
-    next[index].sceneIndexes = next[index].sceneIndexes.slice(-cap);
-    next[index - 1].sceneIndexes.push(...overflow);
+  const next = parts
+    .filter((part) => part.sceneIndexes.length)
+    .map((part) => ({
+      sceneIndexes: [...part.sceneIndexes],
+      duration: Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))),
+    }));
+  if (!next.length) return generationDurations(goal).map((duration) => ({ duration, sceneIndexes: [] }));
+  let drift = goal - next.reduce((sum, part) => sum + part.duration, 0);
+  for (let index = next.length - 1; index >= 0 && drift !== 0; index -= 1) {
+    const room = drift > 0 ? SEEDANCE_MAX_SECONDS - next[index].duration : next[index].duration - 4;
+    if (room <= 0) continue;
+    const step = Math.min(room, Math.abs(drift));
+    next[index].duration += drift > 0 ? step : -step;
+    drift += drift > 0 ? -step : step;
   }
   return next;
 }
