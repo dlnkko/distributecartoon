@@ -8,6 +8,7 @@ import type { Batch, Character, DialogueLine, Project, ReferenceAsset, Scene, Vi
 import { sameCameraPerspective } from "./shots";
 import { actionGesture, carriedProductSentence, clothesCarryIndexes, clothesShouldChange, continuityLine, poseCarryIndex, previousSeenCard, productCarryIndexes } from "./seen-continuity";
 import { realisticProseCast } from "./realistic-prose";
+import { dropSpeechFragments } from "./speech-echo";
 
 export type PromptRef = {
   url: string;
@@ -2366,6 +2367,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       linesByShot[best].push(line);
     }
   }
+  const spokenInFilm = project.scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.line || ""));
   const blocks = flat.map((item, i) => {
     const { scene, shot, shotIndex, index } = item;
     const sceneTextForMoment = `${scene?.title || ""} ${scene?.location || ""} ${scene?.summary || ""} ${shot.action || ""} ${(scene?.dialogue || []).map((line) => line.line).join(" ")}`;
@@ -2481,7 +2483,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           .filter((sentence) => !/\b(?:the box|the product|the package)\b/i.test(sentence))
           .join(" ")
       : visual;
-    const visible = concreteVisibleAction(shown, placeNow);
+    const cleaned = dropSpeechFragments(shown, spokenInFilm);
+    const visible = concreteVisibleAction(cleaned, placeNow);
     for (const name of peopleHere) {
       const key = name.toLowerCase();
       if (positions.has(key)) continue;
@@ -2493,7 +2496,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           : tag
             ? identityPhrase(project, name, tag)
             : `${name}.`;
-      const stance = song ? "" : stanceClause(visible || summary, name, tag, placeNow);
+      const stance = song ? "" : stanceClause(visible || cleaned, name, tag, placeNow);
       positions.set(key, `- ${identity} ${stance}`.replace(/\s{2,}/g, " ").trim());
     }
     const placeKey = placeNow.toLowerCase();
@@ -2506,7 +2509,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
         const base = positions.get(key)?.replace(/^- /, "") || "";
         if (!song || !openingPlace) return base;
         const tag = people.get(key) || "";
-        const stance = stanceClause(visible || summary, name, tag, placeNow);
+        const stance = stanceClause(visible || cleaned, name, tag, placeNow);
         return `${base} ${stance}`.replace(/\s{2,}/g, " ").trim();
       })
       .filter(Boolean);

@@ -4,6 +4,7 @@ import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary
 import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
+import { dropSpeechFragments } from "./speech-echo";
 import { balancePartSceneSeconds, estimateSceneSeconds, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, splitScenesAcrossTakes, storyArc, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion, dropUnscriptedDialogue } from "./refs";
@@ -590,14 +591,29 @@ function actionText(block: StoryBlock) {
   const supers = speech
     ? [...last.matchAll(/\b(?:Super|Small print|Text|Title|Caption)\s*:\s*[“"]([^”"]+)[”"]/gi)].map((match) => match[1])
     : [];
-  const body = speech ? columns.slice(0, -1).join(" ") : block.text;
+  const body = speech ? columns.slice(0, -1).join(" ") : stripCueLines(block.text);
   const cleaned = body
-    .replace(/\b([A-Z][A-Za-z'’-]{1,24}(?:\s+[A-Z][A-Za-z'’-]{1,24}){0,2})\s*(?:\([^)]*\))?\s*:\s*[“"][^”"]+[”"]/g, (full, who: string) =>
+    .replace(/\b([A-Z][A-Za-z'’-]{1,24}(?:\s+[A-Z][A-Za-z'’-]{1,24}){0,2})\s*(?:\([^)]*\))?\s*:?\s*[“"][^”"]+[”"]/g, (full, who: string) =>
       looksLikeSpeaker(who) && !/^(?:super|small print|text|title|caption)$/i.test(who.trim()) ? " " : full,
     )
     .replace(/\s+/g, " ")
     .trim();
   return [...(cleaned ? [cleaned] : []), ...supers].join(" ").replace(/\s+/g, " ").trim();
+}
+
+function stripCueLines(text: string) {
+  const rows = text.split(/\n/);
+  const kept: string[] = [];
+  for (let i = 0; i < rows.length; i++) {
+    const cue = rows[i].trim().replace(/:$/, "");
+    const next = (rows[i + 1] || "").trim();
+    if (looksLikeSpeaker(cue) && !/^(?:super|small print|text|title|caption)$/i.test(cue) && /^[“"]/.test(next)) {
+      i += 1;
+      continue;
+    }
+    kept.push(rows[i]);
+  }
+  return kept.join("\n");
 }
 
 function linesFromBlock(text: string) {
@@ -619,6 +635,22 @@ function linesFromBlock(text: string) {
     const voiceover = offscreen || /\b(?:vo|v\.o\.|voice-?over)\b/i.test(note);
     out.push({
       speaker: bareVoice ? "Narrator" : spokenName(speaker),
+      line,
+      ...(voiceover ? { voiceover: true } : {}),
+      ...(offscreen ? { offscreen: true } : {}),
+    });
+  }
+  const rows = text.split(/\n/);
+  for (let i = 0; i < rows.length; i++) {
+    const cue = rows[i].trim().replace(/:$/, "");
+    const quoted = (rows[i + 1] || "").trim().match(/^[“"]([^”"]+)[”"]/);
+    if (!quoted || !looksLikeSpeaker(cue) || skip.test(cue)) continue;
+    const line = cleanSpokenLine(quoted[1]);
+    if (!line || out.some((item) => spokenKey(item.line) === spokenKey(line))) continue;
+    const offscreen = /\b(?:o\.?\s*s\.?|off[- ]?screen)\b/i.test(rows[i]);
+    const voiceover = offscreen || /\b(?:vo|v\.o\.|voice-?over)\b/i.test(rows[i]);
+    out.push({
+      speaker: spokenName(cue),
       line,
       ...(voiceover ? { voiceover: true } : {}),
       ...(offscreen ? { offscreen: true } : {}),
@@ -1022,13 +1054,14 @@ function lineBuckets(lines: Array<{ speaker: string; line: string; voiceover?: b
 
 function splitPackedBeats(project: Project) {
   if (project.song) return;
+  const spoken = project.scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.line || ""));
   const next: Scene[] = [];
   for (const scene of project.scenes) {
     if (userTimedSeconds(scene.title, scene.estimatedSeconds || 0)) {
       next.push(scene);
       continue;
     }
-    const summary = scene.summary || "";
+    const summary = dropSpeechFragments(scene.summary || "", spoken);
     const cuts = beatParts(summary);
     const sentences =
       cuts.length > 1 ? cuts : scriptIsStoryboard(project.scriptText) ? longParts(summary) : [];
@@ -1062,6 +1095,29 @@ function splitPackedBeats(project: Project) {
       next.push(piece);
     });
   }
+  project.scenes = next.map((scene, index) => ({ ...scene, index: index + 1 }));
+  dropEchoScenes(project);
+}
+
+function dropEchoScenes(project: Project) {
+  const spoken = project.scenes.flatMap((scene) => (scene.dialogue || []).map((line) => line.line || ""));
+  const said = new Set<string>();
+  const next: Scene[] = [];
+  for (const scene of project.scenes) {
+    const visual = dropSpeechFragments(scene.summary || "", spoken);
+    const own = (scene.dialogue || []).filter((line) => line.line?.trim());
+    const fresh = own.filter((line) => {
+      const key = spokenKey(line.line || "");
+      return key && !said.has(key);
+    });
+    for (const line of own) {
+      const key = spokenKey(line.line || "");
+      if (key) said.add(key);
+    }
+    if (!visual && !fresh.length) continue;
+    next.push({ ...scene, summary: visual || (scene.location ? `In the ${scene.location}.` : "The shot holds.") });
+  }
+  if (!next.length) return;
   project.scenes = next.map((scene, index) => ({ ...scene, index: index + 1 }));
 }
 
