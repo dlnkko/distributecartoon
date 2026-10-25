@@ -1,6 +1,6 @@
 import { getSecrets } from "./config";
-import { clampTotalDuration } from "./ids";
 import { sonnetText } from "./sonnet";
+import { dramaAdSpans } from "./timing";
 import type { DialogueLanguage } from "./types";
 
 const GEMINI_MODEL = "gemini-3.8-flash";
@@ -11,7 +11,7 @@ export type DramaBrief = {
   person: string;
 };
 
-export type DramaBeat = "problem" | "turn" | "solution";
+export type DramaBeat = "problem" | "turn" | "use" | "after";
 
 export type DramaSceneSlot = {
   beat: DramaBeat;
@@ -19,21 +19,20 @@ export type DramaSceneSlot = {
 };
 
 const BEAT_LABEL: Record<DramaBeat, string> = {
-  problem: "problem, already happening, no product yet",
-  turn: "the turn: the trouble gets worse, or the cause is not what they thought. Still no product",
-  solution: "the product is the solution. They use it, then the result shows",
+  problem: "the problem, already happening. They tell someone what hurts, in the words that situation would pull out of them. No product yet",
+  turn: "the turn: it gets worse, or the cause is not what they thought. They say so. Still no product",
+  use: "they use the product the way a person would. One line as they use it",
+  after: "this same life, now that the pain has eased. They tell the other person what changed, inside the story, and that they would get it now. Not a slogan",
 };
 
 export function dramaScenePlan(seconds: number) {
-  const total = clampTotalDuration(seconds, 15);
-  const solution = Math.max(4, Math.round(total * 0.25));
-  const turn = Math.max(4, Math.round(total * 0.2));
-  const problem = total - solution - turn;
-  const scenes = [
-    ...splitBeat("problem", problem),
-    ...splitBeat("turn", turn),
-    ...splitBeat("solution", solution),
-  ];
+  const { total, problem, use, after } = dramaAdSpans(seconds);
+  const turn = Math.max(4, Math.round(problem * 0.3));
+  const lead = problem - turn;
+  const scenes =
+    lead >= 4
+      ? [...splitBeat("problem", lead), ...splitBeat("turn", turn), ...splitBeat("use", use), ...splitBeat("after", after)]
+      : [...splitBeat("problem", problem), ...splitBeat("use", use), ...splitBeat("after", after)];
   return { total, scenes };
 }
 
@@ -167,12 +166,12 @@ export async function writeDramaStory(input: {
     .join("\n");
   const language = input.language === "spanish" ? "Spanish" : "English";
   const system = [
-    "You write a short drama ad as a screenplay. The trouble comes first. A turn makes it sharper. The product is the solution, and it arrives only at the end.",
+    "You write a drama ad as a screenplay. The trouble comes first and is said out loud. A turn makes it sharper. The product is used as the solution. Then this same life is shown better, for the time the headings give that ending.",
     `Write the action and every spoken line in ${language}. Keep the SCENE headings in English exactly as given, including the seconds.`,
     "The seconds on the headings already add up to the film. Do not add, drop, merge, or renumber a scene. Do not change a second count.",
-    "Each scene is one place and one action, in present tense. One or two people. Name them and keep those names.",
-    "Most problem scenes and turn scenes have one short spoken line. A line is what that person would say then, in quotes, under their name. Leave a scene silent when the picture is the point. The solution has a line when they use the product, and may have one line when the result lands.",
-    "Do not write a slogan, a narrator, or a line read off the product page. Do not invent a dose, a mechanism, or a health claim that the page does not state. Show the product used the way the page says it is used.",
+    "Each scene is one place and one action, in present tense. Two people when the beat is a conversation. Name them and keep those names.",
+    "The viewer has to recognize the pain from what is said, not only from what is shown. In the problem and the turn, they tell someone how it actually feels, in the specific words that pain would pull out of them. Do not use a vague complaint that could fit any product. A silent scene is an insert or a landscape. The use has one line as they use it. The after scenes are a conversation: one person tells the other what changed, inside the story, and that they would get it now. That is not an announcer, not a slogan, and not a line copied from the page.",
+    "Do not invent a dose, a mechanism, or a health claim the page does not state. Show the product used the way the page says it is used.",
     "Start the reply with TITLE: and a short title. Then the scenes. Nothing else.",
   ].join(" ");
   const user = [

@@ -659,25 +659,29 @@ function shareSeconds(total: number, weights: number[]) {
   return next;
 }
 
-export function storyArc(totalSeconds: number) {
+export function dramaAdSpans(totalSeconds: number) {
   const total = Math.max(15, Math.round(totalSeconds || 15));
+  const [problem, use, after] = shareSeconds(total, [50, 17, 33]);
+  return { total, problem, use, after };
+}
+
+export function storyArc(totalSeconds: number) {
+  const { total, problem, use, after } = dramaAdSpans(totalSeconds);
   const parts = seedancePartDurations(total);
   const listed = parts.map((duration, index) => `part ${index + 1} (${duration}s)`).join(", ");
   const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
   const moves =
-    "Open on the hook already in motion. If the story starts in the middle of the complaint, start there. Do not add a calm introduction before it. Any part may visit more than one place when the story takes them somewhere else, and it changes the action when the story needs it. A later minute of the same situation stays in that place, on the same ground, in the hook, the knot, and the close. Do not invent a second environment to mark that time. The knot makes that conflict harder instead of repeating it. The close is the longest movement: the solution is used where someone would really use it, then what follows is shown where it would actually be seen. Time can pass there. Do not solve the story in the opening. Do not add a slogan or a health claim.";
+    "Open on the problem already in motion. Do not add a calm introduction before it. A turn inside that problem makes it worse, or shows the cause was not what they thought. Any part may visit more than one place when the story takes them somewhere else. A later minute of the same situation stays in that place, on the same ground. Do not invent a second environment to mark that time. The solution is then used where someone would really use it. After that, the same life is shown improved, for long enough that the change is visible. Do not solve the story in the opening. Do not add a slogan or a health claim.";
+  const clock = `Use about ${problem}s for the problem, including the turn. Use about ${use}s for the solution being used. Use about ${after}s after that, so the viewer stays with the life once the pain has eased. The ending is longer than the use. It is still this story, not a tour of other days.`;
   let where = "";
   if (parts.length <= 1) {
-    const [opening, knot, close] = shareSeconds(total, [25, 30, 45]);
-    where = `Use about ${opening}s for the hook, ${knot}s for the knot, and ${close}s for the close. Each of those stretches can change place and action when the story needs it.`;
+    where = "Those three stretches play in that order, in the one part. Each can change place and action when the story needs it.";
   } else if (parts.length === 2) {
-    where = "Part 1 is the hook and the knot. Part 2 is the close: the solution is used, then what follows. Either part can change place and action when the story needs it. Do not solve the story in part 1.";
-  } else if (parts.length === 3) {
-    where = "Part 1 opens on the hook. Part 2 is the knot. Part 3 is the close: the solution is used, then what follows. Any part can change place and action when the story needs it. Do not fill part 3 with a montage of the new life.";
+    where = "Part 1 is the problem and the turn. Do not solve it there. Part 2 is the solution being used, then the longer life after. Do not spend part 2 only on the use.";
   } else {
-    where = `Part 1 opens on the hook. Parts 2 to ${parts.length - 1} carry the knot, and each of those parts changes the conflict. Part ${parts.length} is the close: the solution is used, then what follows. Any part can change place and action when the story needs it.`;
+    where = `Parts 1 to ${parts.length - 1} carry the problem and the turn. Do not solve it in part 1. Part ${parts.length} is the solution being used, then the longer life after. Do not spend that last part only on the use.`;
   }
-  return `${head} ${moves} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
+  return `${head} ${moves} ${clock} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
 }
 
 export function scaleEstimatedSeconds(values: number[], target: number): number[] {
