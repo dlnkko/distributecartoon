@@ -149,14 +149,18 @@ export function StoriesPanel({
         signal: AbortSignal.timeout(50_000),
         body: JSON.stringify({ action: "vary", productId, field, pain, audience, who, page, language }),
       });
-      const json = (await res.json().catch(() => ({}))) as { value?: string; error?: string };
-      if (!res.ok || !json.value?.trim()) {
+      const json = (await res.json().catch(() => ({}))) as { pain?: string; audience?: string; person?: string; error?: string };
+      const painNext = json.pain?.trim() || "";
+      const audienceNext = json.audience?.trim() || "";
+      const personNext = json.person?.trim() || "";
+      const readyShift = field === "pain" ? painNext && audienceNext && personNext : field === "audience" ? audienceNext && personNext : personNext;
+      if (!res.ok || !readyShift) {
         setError(json.error || "Couldn't write another version.");
         return;
       }
-      if (field === "pain") setPain(json.value);
-      else if (field === "audience") setAudience(json.value);
-      else setWho(json.value);
+      if (painNext) setPain(painNext);
+      if (audienceNext) setAudience(audienceNext);
+      if (personNext) setWho(personNext);
     } catch {
       setError("Couldn't write another version.");
     } finally {
@@ -267,7 +271,7 @@ export function StoriesPanel({
       {ready ? (
         <section className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 sm:p-5">
           <p className="text-sm font-medium">From the page</p>
-          <p className="mt-0.5 text-xs text-[var(--cf-muted)]">Change anything, then approve. That writes the story and opens Setup.</p>
+          <p className="mt-0.5 text-xs text-[var(--cf-muted)]">A new pain point rewrites the audience and who it follows. A new audience rewrites who it follows. Then approve.</p>
           <div className="mt-4 grid gap-4">
             <BriefField
               id="story-pain"

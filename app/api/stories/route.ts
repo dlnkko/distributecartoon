@@ -113,7 +113,7 @@ async function varyBrief(
     return NextResponse.json({ error: "This product needs a page or a note about how it is used." }, { status: 422 });
   }
   const language: DialogueLanguage = isDialogueLanguage(body.language) ? body.language : "english";
-  const value = await varyDramaField({
+  const shift = await varyDramaField({
     productName: product.name,
     page,
     how: product.useNotes,
@@ -127,7 +127,7 @@ async function varyBrief(
       person: String(body.who || ""),
     },
   });
-  return NextResponse.json({ field, value });
+  return NextResponse.json({ field, ...shift });
 }
 
 async function approveStory(

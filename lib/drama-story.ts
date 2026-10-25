@@ -80,6 +80,12 @@ export async function proposeDramaBrief(input: {
 
 const FIELD_LIMIT = { pain: 400, audience: 240, person: 120 } as const;
 
+export type DramaShift = {
+  pain?: string;
+  audience?: string;
+  person?: string;
+};
+
 export async function varyDramaField(input: {
   productName: string;
   page: string;
@@ -89,35 +95,49 @@ export async function varyDramaField(input: {
   language: DialogueLanguage;
   field: keyof typeof FIELD_LIMIT;
   current: DramaBrief;
-}): Promise<string> {
+}): Promise<DramaShift> {
   const language = input.language === "spanish" ? "Spanish" : "English";
   const ask = input.field === "pain"
-    ? "Write a different customer problem the page also supports. Not a paraphrase of the current pain."
+    ? "Write a different pain the page supports. Then write the audience for that new pain, and one person who has that pain and belongs to that audience. Do not repeat the current pain."
     : input.field === "audience"
-      ? "Write a different audience the page also speaks to. Not a paraphrase of the current audience."
-      : "Write a different ordinary person the film can follow. A different role or a different situation, not the same person in new words. Not a famous name. Under 20 words.";
-  const current = input.field === "pain" ? input.current.pain : input.field === "audience" ? input.current.audience : input.current.person;
+      ? "Keep the pain exactly as given. Write a different audience that has that pain. Then write one person who has that same pain and belongs to the new audience. Do not repeat the current audience."
+      : "Keep the pain and the audience exactly as given. Write a different ordinary person who has that pain and belongs to that audience. A different role or situation, not the same person in new words. Not a famous name. Under 20 words.";
+  const keys = input.field === "pain" ? "pain, audience, person" : input.field === "audience" ? "audience, person" : "person";
   const prompt = [
-    "Rewrite one field of a drama-ad brief. Do not write the story, the scenes, or any dialogue. Do not rewrite the other fields.",
-    `Write the new field in ${language}.`,
+    "Rewrite part of a drama-ad brief. Do not write the story, the scenes, or any dialogue.",
+    `Write every new field in ${language}.`,
     ask,
     "Stay inside what the page actually says. No slogan and no claim the page does not make.",
-    `Reply as JSON with one key, value, holding the new ${input.field}. Nothing else.`,
-    `Current ${input.field}, which you must not repeat: ${current || "(empty)"}`,
-    `Other fields, for context only: pain: ${input.current.pain || "(empty)"} | audience: ${input.current.audience || "(empty)"} | person: ${input.current.person || "(empty)"}`,
+    `Reply as JSON with only these keys: ${keys}.`,
+    `Pain: ${input.current.pain || "(empty)"}`,
+    `Audience: ${input.current.audience || "(empty)"}`,
+    `Person, do not repeat when you are only changing the person: ${input.current.person || "(empty)"}`,
     briefContext({ ...input, page: input.page.slice(0, 6000) }),
   ].join("\n\n");
-  const limit = FIELD_LIMIT[input.field];
-  let value = parseValue(await geminiText(prompt, 0.9, 25_000), limit, input.field);
-  if (!value || sameText(value, current)) {
-    value = parseValue(
-      await geminiText(`${prompt}\n\nThat repeated the current text. Write a different ${input.field}. JSON only: {"value":"..."}`, 1, 20_000),
-      limit,
+  let shift = shiftFrom(await geminiText(prompt, 0.9, 25_000), input.field);
+  if (!shiftFits(shift, input.field, input.current)) {
+    shift = shiftFrom(
+      await geminiText(`${prompt}\n\nThe last reply missed a field or repeated the current text. JSON only, keys: ${keys}.`, 1, 20_000),
       input.field,
     );
   }
-  if (!value || sameText(value, current)) throw new Error("That came back the same. Try the variation again.");
-  return value;
+  if (!shiftFits(shift, input.field, input.current)) throw new Error("That came back the same. Try the variation again.");
+  return shift;
+}
+
+function shiftFrom(text: string, field: keyof typeof FIELD_LIMIT): DramaShift {
+  const parsed = parseBrief(text);
+  if (field === "person") return { person: parsed.person };
+  if (field === "audience") return { audience: parsed.audience, person: parsed.person };
+  return { pain: parsed.pain, audience: parsed.audience, person: parsed.person };
+}
+
+function shiftFits(shift: DramaShift, field: keyof typeof FIELD_LIMIT, current: DramaBrief) {
+  if (field === "person") return Boolean(shift.person) && !sameText(shift.person || "", current.person);
+  if (field === "audience") {
+    return Boolean(shift.audience && shift.person) && !sameText(shift.audience || "", current.audience);
+  }
+  return Boolean(shift.pain && shift.audience && shift.person) && !sameText(shift.pain || "", current.pain);
 }
 
 function briefContext(input: { productName: string; page: string; how: string; when: string; extra: string }) {
@@ -136,21 +156,12 @@ function sameText(left: string, right: string) {
   return left.replace(/\s+/g, " ").trim().toLowerCase() === right.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-function parseValue(text: string, max: number, field: string) {
-  const raw = jsonObject(text);
-  const picked = clip(raw.value ?? raw[field] ?? raw.person ?? raw.who ?? raw.pain ?? raw.audience, max);
-  if (picked) return picked;
-  const plain = text.replace(/```[\s\S]*?```/g, " ").replace(/\s+/g, " ").trim();
-  if (!plain || plain.includes("{") || plain.length > max) return "";
-  return plain;
-}
-
 function parseBrief(text: string): DramaBrief {
   const raw = jsonObject(text);
   return {
     pain: clip(raw.pain ?? raw.pain_point ?? raw.painPoint ?? raw.problem, 400),
     audience: clip(raw.audience ?? raw.target_audience ?? raw.targetAudience, 240),
-    person: clip(raw.person ?? raw.who ?? raw.character, 120),
+    person: clip(raw.person ?? raw.who ?? raw.character ?? raw.value, 120),
   };
 }
 
