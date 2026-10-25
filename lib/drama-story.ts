@@ -256,7 +256,7 @@ export async function writeDramaStory(input: {
   ]
     .filter(Boolean)
     .join("\n\n");
-  const text = await sonnetText(system, user, { maxTokens: 16000 });
+  const text = await sonnetText(system, user, { maxTokens: Math.min(32000, 4000 + plan.scenes.length * 220) });
   const title = (text.match(/^TITLE:\s*(.+)$/im)?.[1] || input.productName || "Story").replace(/\s+/g, " ").trim().slice(0, 80);
   const script = text.replace(/^TITLE:.*(?:\r?\n)+/i, "").trim();
   if (!/(?:^|\n)\s*SCENE\s+1\b/i.test(script)) throw new Error("The story came back without scenes.");

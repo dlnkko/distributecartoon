@@ -20,7 +20,7 @@ import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, par
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
-import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, fitPartsToBudget, groupConsecutiveTakes, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, fitPartsToBudget, groupConsecutiveTakes, holdTheClose, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1694,6 +1694,7 @@ export function planSeedanceBatches(project: Project) {
       )
     : groupConsecutiveTakes(project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })));
   const bounded = project.song ? parts : fitPartsToBudget(parts, target);
+  if (!project.song) holdTheClose(project.scenes, bounded);
   if (project.song) {
     const capped = balancePartSceneSeconds(timed, parts);
     const filled = fillPartSceneSeconds(

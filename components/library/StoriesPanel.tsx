@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { DURATION_CHOICES } from "@/lib/ids";
+import { DurationField } from "@/components/DurationField";
 import type { SavedProduct } from "@/lib/saved-products";
 import type { DialogueLanguage, Project } from "@/lib/types";
 
@@ -224,21 +224,9 @@ export function StoriesPanel({
       </section>
 
       <section className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 sm:p-5">
-        <label className="block text-sm font-medium" htmlFor="story-seconds">
-          Duration
-        </label>
-        <div id="story-seconds" className="mt-3 flex flex-wrap gap-1.5" role="group" aria-label="Duration in seconds">
-          {DURATION_CHOICES.map((choice) => (
-            <button
-              key={choice}
-              type="button"
-              aria-pressed={seconds === choice}
-              onClick={() => setSeconds(choice)}
-              className={`rounded-full px-3 py-1.5 text-sm font-medium tabular-nums ${seconds === choice ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white" : "bg-white/5 hover:bg-white/10"}`}
-            >
-              {choice}s
-            </button>
-          ))}
+        <p className="text-sm font-medium">Duration</p>
+        <div className="mt-3">
+          <DurationField value={seconds} disabled={Boolean(busy)} onChange={setSeconds} />
         </div>
         <div className="mt-4">
           <p className="text-sm font-medium">Language</p>

@@ -30,7 +30,7 @@ function statedSeconds(amount: string, unit: string) {
   const value = Number(amount);
   if (!Number.isFinite(value) || value <= 0) return undefined;
   const seconds = /^(?:m|min|mins|minutes?|minutos?)$/i.test(unit) ? value * 60 : value;
-  if (seconds < 8 || seconds > 240) return undefined;
+  if (seconds < 8 || seconds > 500) return undefined;
   return clampTotalDuration(seconds);
 }
 
@@ -48,7 +48,7 @@ export function scriptAskedDuration(text: string): number | undefined {
       counted += 1;
       if (stop > end) end = stop;
     }
-    if (counted >= 2 && end >= 8 && end <= 240) return clampTotalDuration(end);
+    if (counted >= 2 && end >= 8 && end <= 500) return clampTotalDuration(end);
   }
 
   const labeled = text.match(
@@ -91,7 +91,7 @@ export function scriptAskedDuration(text: string): number | undefined {
   const headings = [...text.matchAll(/^\s*(?:scene|escena)\s*\d+[^\n]{0,48}?\b(\d+(?:\.\d+)?)\s*(?:s|sec|secs|seconds)\b/gim)];
   if (headings.length >= 2) {
     const sum = headings.reduce((total, match) => total + Math.round(Number(match[1])), 0);
-    if (sum >= 8 && sum <= 240) return clampTotalDuration(sum);
+    if (sum >= 8 && sum <= 500) return clampTotalDuration(sum);
   }
   return undefined;
 }
@@ -565,50 +565,38 @@ export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
   return out.map((scene, index) => ({ ...scene, index: index + 1 }));
 }
 
-// The joined video is the sum of these takes. It matches the requested length.
-// A leftover of 4 seconds or more opens another part instead of stopping short.
+// The joined video matches the requested length, in generations of at most 30s.
+// A 60s film is 30 + 30. A short last generation, when one is unavoidable, is one continuous shot.
 export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): SeedancePartPlan[] {
   const goal = Math.max(4, Math.round(target));
-  const next = parts
-    .filter((part) => part.sceneIndexes.length)
-    .map((part) => ({
-      ...part,
-      sceneIndexes: [...part.sceneIndexes],
-      duration: Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))),
-    }));
-  const sum = () => next.reduce((total, part) => total + part.duration, 0);
-  let extra = sum() - goal;
-  for (let index = next.length - 1; index >= 0 && extra > 0; index -= 1) {
-    const room = next[index].duration - 4;
-    if (room <= 0) continue;
-    const cut = Math.min(room, extra);
-    next[index].duration -= cut;
-    extra -= cut;
-  }
-  while (extra > 0 && next.length > 1) {
-    const last = next[next.length - 1];
-    next[next.length - 2].sceneIndexes.push(...last.sceneIndexes);
-    extra -= last.duration;
-    next.pop();
-  }
-  let short = goal - sum();
-  for (let index = next.length - 1; index >= 0 && short > 0; index -= 1) {
-    const room = SEEDANCE_MAX_SECONDS - next[index].duration;
-    if (room <= 0) continue;
-    const add = Math.min(room, short);
-    next[index].duration += add;
-    short -= add;
-  }
-  if (short >= 4 && next.length) {
-    const last = next[next.length - 1];
-    const tail = last.sceneIndexes[last.sceneIndexes.length - 1];
-    if (tail !== undefined && last.sceneIndexes.length > 1) last.sceneIndexes.pop();
-    next.push({
-      duration: Math.min(SEEDANCE_MAX_SECONDS, short),
-      sceneIndexes: tail === undefined ? [...last.sceneIndexes] : [tail],
-    });
+  const indexes = parts.flatMap((part) => part.sceneIndexes).filter((index, position, all) => all.indexOf(index) === position);
+  if (!indexes.length) return generationDurations(goal).map((duration) => ({ duration, sceneIndexes: [] }));
+  const wanted = generationDurations(goal);
+  const groups = distributeScenes(
+    indexes.map((index) => ({ index, estimatedSeconds: 1 })),
+    wanted,
+  );
+  const next = wanted
+    .map((duration, index) => ({ duration, sceneIndexes: [...(groups[index] || [])] }))
+    .filter((part) => part.sceneIndexes.length);
+  for (let index = next.length - 1; index >= 1; index -= 1) {
+    const cap = Math.max(1, Math.floor(next[index].duration / 4));
+    if (next[index].sceneIndexes.length <= cap) continue;
+    const overflow = next[index].sceneIndexes.slice(0, -cap);
+    next[index].sceneIndexes = next[index].sceneIndexes.slice(-cap);
+    next[index - 1].sceneIndexes.push(...overflow);
   }
   return next;
+}
+
+// The last shot of the last generation carries the close, so it weighs more than a passing cut.
+export function holdTheClose(scenes: Array<{ index: number; estimatedSeconds?: number }>, parts: SeedancePartPlan[]) {
+  const last = parts[parts.length - 1];
+  if (!last?.sceneIndexes.length || last.duration < 8) return;
+  const scene = scenes.find((item) => item.index === last.sceneIndexes[last.sceneIndexes.length - 1]);
+  if (!scene) return;
+  const hold = Math.min(last.duration, Math.max(6, Math.round(last.duration * 0.4)));
+  scene.estimatedSeconds = Math.max(scene.estimatedSeconds || 0, hold);
 }
 
 export function groupConsecutiveTakes(scenes: Array<{ index: number; estimatedSeconds: number }>): SeedancePartPlan[] {
@@ -677,9 +665,9 @@ export function storyArc(totalSeconds: number) {
   if (parts.length <= 1) {
     where = "Those three stretches play in that order, in the one part, unless the use has to happen inside the problem because that is when this product would be used. Each can change place and action when the story needs it.";
   } else if (parts.length === 2) {
-    where = "Part 1 carries the problem and the turn. Do not solve it there unless the product would actually arrive during that event. Part 2 is the solution being used, then the change. Do not spend part 2 only on the use, and do not leave the event for a separate testimonial if the change is the rest of that same event.";
+    where = "Part 1 carries the problem and the turn. Do not solve it there unless the product would actually arrive during that event. Part 2 is the solution being used, then the change. Do not spend part 2 only on the use, and do not leave the event for a separate testimonial if the change is the rest of that same event. End part 2 on one continuous shot, long enough to see the change. If someone can speak, that shot is where they say what changed. Do not end on a burst of cuts.";
   } else {
-    where = `Parts 1 to ${parts.length - 1} carry the problem and the turn. Do not solve it in part 1 unless the product would actually arrive during that event. Part ${parts.length} is the solution being used, then the change. Do not spend that last part only on the use.`;
+    where = `Parts 1 to ${parts.length - 1} carry the problem and the turn. Do not solve it in part 1 unless the product would actually arrive during that event. Part ${parts.length} is the solution being used, then the change. Do not spend that last part only on the use. End that part on one continuous shot, long enough to see the change. If someone can speak, that shot is where they say what changed. Do not end on a burst of cuts.`;
   }
   return `${head} ${moves} ${clock} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
 }

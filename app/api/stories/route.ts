@@ -148,7 +148,7 @@ async function openFilm(
 ) {
   const script = story.script.trim();
   if (script.length < 40) return NextResponse.json({ error: "The story came back too short." }, { status: 422 });
-  if (script.length > 20000) return NextResponse.json({ error: "That story is too long." }, { status: 422 });
+  if (script.length > 80000) return NextResponse.json({ error: "That story is too long." }, { status: 422 });
   const title = story.title.replace(/\s+/g, " ").trim().slice(0, 80) || "Story";
   const project = await createProject("pixar", "16:9", userId, "setup");
   project.title = title;

@@ -5,7 +5,8 @@ import { createClient } from "@/lib/supabase/client";
 import { type AgentMode, type AspectRatio, type Character, type DialogueLanguage, type Project, type ReferenceAsset, type ScriptCastMember, type VisualStyle, type WorkflowStep } from "@/lib/types";
 import { isUnseenVoice } from "@/lib/refs";
 import { activeTask } from "@/lib/tasks";
-import { DURATION_CHOICES } from "@/lib/ids";
+import { DurationField } from "@/components/DurationField";
+import { clampTotalDuration } from "@/lib/ids";
 import { durableVideoSrc, isProviderContentUrl, MAX_CONCURRENT_RENDERS, RENDER_WAIT_MESSAGE, projectAwaitingVideo, projectDeliveredSrc, projectIsGenerating, projectIsMultipart, projectJoinedSrc } from "@/lib/video-jobs";
 import { Brand } from "@/components/Brand";
 import { downloadHref } from "@/components/library/download";
@@ -1342,7 +1343,7 @@ export function StudioApp() {
   }
 
   function changeDuration(seconds: number) {
-    const next = Math.min(300, Math.max(5, Math.round(seconds)));
+    const next = clampTotalDuration(seconds);
     if (projectRef.current?.targetDurationSeconds === next) return;
     applySettings({ targetDurationSeconds: next });
   }
@@ -2374,7 +2375,7 @@ function SetupStep({
         {project.song ? null : (
           <div className="mt-4">
             <p className="mb-2 text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--muted)]">Length</p>
-            <DurationControl value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
+            <DurationField value={project.targetDurationSeconds || 15} disabled={busy} onChange={onDuration} />
             <p className="mt-2 text-xs text-[var(--muted)]">
               Each take is at most 30s. A 15s beat stays 15s, and the next beat fills the rest of the take.
             </p>
@@ -2823,40 +2824,6 @@ function ProduceStep({
           {affordable ? null : <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p>}
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function DurationControl({
-  value,
-  disabled,
-  onChange,
-}: {
-  value: number;
-  disabled?: boolean;
-  onChange: (seconds: number) => void;
-}) {
-  const selected = DURATION_CHOICES.includes(value as (typeof DURATION_CHOICES)[number])
-    ? value
-    : DURATION_CHOICES[0];
-  return (
-    <div className="flex flex-wrap gap-1.5" role="group" aria-label="Duration in seconds">
-      {DURATION_CHOICES.map((seconds) => (
-        <button
-          key={seconds}
-          type="button"
-          disabled={disabled}
-          aria-pressed={selected === seconds}
-          onClick={() => onChange(seconds)}
-          className={`rounded-full px-3 py-1.5 text-sm font-medium tabular-nums ${
-            selected === seconds
-              ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]"
-              : "bg-white/5 text-[var(--ink)] hover:bg-white/10"
-          } disabled:opacity-40`}
-        >
-          {seconds}s
-        </button>
-      ))}
     </div>
   );
 }
