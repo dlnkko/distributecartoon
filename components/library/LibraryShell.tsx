@@ -8,6 +8,7 @@ import { MobileNav } from "@/components/library/MobileNav";
 import type { LibraryDraft, LibraryFilter, LibraryGenerating, LibraryProfile, LibrarySort, LibraryVideo, LibraryView, LibraryZone } from "@/components/library/types";
 import { VideoGrid } from "@/components/library/VideoGrid";
 import { ProductsPanel } from "@/components/library/ProductsPanel";
+import { ClonePanel } from "@/components/library/ClonePanel";
 import { StoriesPanel } from "@/components/library/StoriesPanel";
 import type { Project } from "@/lib/types";
 
@@ -110,9 +111,11 @@ export function LibraryShell({
 
   const total = videos.length + generating.length;
   const shown = finished.length + pending.length;
-  const empty = zone === "drafts" ? drafts.length === 0 : zone === "products" || zone === "stories" ? false : total === 0;
+  const empty = zone === "drafts" ? drafts.length === 0 : zone === "products" || zone === "stories" || zone === "clone" ? false : total === 0;
   const summary =
-    zone === "stories"
+    zone === "clone"
+      ? "Upload a video. The story is rewritten around your product."
+      : zone === "stories"
       ? "A drama from a product. You pick the look after."
       : zone === "products"
       ? "Saved once. Pick them in any video."
@@ -177,6 +180,10 @@ export function LibraryShell({
             <StoryIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Stories"}
           </button>
+          <button type="button" aria-label="Clone" aria-current={zone === "clone" ? "page" : undefined} onClick={() => onZone("clone")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "clone" ? "bg-[linear-gradient(135deg,rgba(91,140,255,0.2),rgba(122,108,255,0.12))] text-white shadow-[0_0_24px_rgba(91,140,255,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
+            <CloneIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
+            {narrow ? null : "Clone"}
+          </button>
           <button type="button" aria-label="Drafts" aria-current={zone === "drafts" ? "page" : undefined} onClick={() => onZone("drafts")} className={`no-press flex items-center rounded-xl text-sm font-medium ${zone === "drafts" ? "bg-[linear-gradient(135deg,rgba(91,140,255,0.2),rgba(122,108,255,0.12))] text-white shadow-[0_0_24px_rgba(91,140,255,0.16)]" : "text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"} ${narrow ? "size-9 justify-center" : "min-h-11 w-full gap-3 px-3"}`}>
             <DraftIcon className={narrow ? "h-3.5 w-3.5" : "h-4 w-4"} />
             {narrow ? null : "Drafts"}
@@ -234,18 +241,20 @@ export function LibraryShell({
           <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(91,140,255,0.22),transparent_68%)] blur-3xl" />
           <div className="relative flex items-end gap-3">
             <div className="min-w-0 flex-1">
-              <h2 className="display text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-5xl">{zone === "drafts" ? "Drafts" : zone === "products" ? "Products" : zone === "stories" ? "Stories" : "Your videos"}</h2>
+              <h2 className="display text-[40px] leading-none font-semibold tracking-[-0.045em] sm:text-5xl">{zone === "drafts" ? "Drafts" : zone === "products" ? "Products" : zone === "stories" ? "Stories" : zone === "clone" ? "Clone" : "Your videos"}</h2>
               <p className="mt-2 text-sm text-[var(--cf-muted)]">{summary}</p>
             </div>
             <div className="flex items-center gap-2 lg:hidden">
-              <button type="button" className="no-press grid h-11 w-11 place-items-center rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)]" aria-label={searchOpen ? "Close search" : "Search videos"} aria-expanded={searchOpen} onClick={() => setSearchOpen((open) => !open)}>
-                <SearchIcon />
-              </button>
+              {zone === "videos" || zone === "drafts" ? (
+                <button type="button" className="no-press grid h-11 w-11 place-items-center rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)]" aria-label={searchOpen ? "Close search" : "Search videos"} aria-expanded={searchOpen} onClick={() => setSearchOpen((open) => !open)}>
+                  <SearchIcon />
+                </button>
+              ) : null}
               <CreditsPill credits={credits} onClick={() => setCreditsOpen(true)} />
             </div>
           </div>
 
-          <div className={`relative mt-4 flex flex-wrap items-center gap-2 ${zone === "products" || zone === "stories" ? "hidden" : ""}`}>
+          <div className={`relative mt-4 flex flex-wrap items-center gap-2 ${zone === "products" || zone === "stories" || zone === "clone" ? "hidden" : ""}`}>
             <label className={`relative min-w-0 flex-1 ${searchOpen ? "flex" : "hidden lg:block"}`}>
               <span className="sr-only">Search videos</span>
               <span className="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-[var(--cf-muted)]">
@@ -294,6 +303,8 @@ export function LibraryShell({
             <ProductsPanel />
           ) : zone === "stories" ? (
             <StoriesPanel onOpen={onOpenStory} onProducts={() => onZone("products")} />
+          ) : zone === "clone" ? (
+            <ClonePanel onOpen={onOpenStory} onProducts={() => onZone("products")} />
           ) : zone === "drafts" ? (
             shownDrafts.length === 0 ? (
               <div className="mx-auto mt-10 flex max-w-lg flex-col items-center rounded-[20px] border border-[var(--cf-line)] bg-[radial-gradient(circle_at_50%_0%,rgba(91,140,255,0.22),transparent_55%),var(--cf-surface)] px-6 py-16 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
@@ -352,7 +363,7 @@ export function LibraryShell({
         </div>
       </div>
 
-      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onProducts={() => onZone("products")} onStories={() => onZone("stories")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} createLocked={createLocked} />
+      <MobileNav zone={zone} onVideos={() => onZone("videos")} onDrafts={() => onZone("drafts")} onProducts={() => onZone("products")} onStories={() => onZone("stories")} onClone={() => onZone("clone")} onCreate={onCreate} onSong={onCreateSong} onAccount={onAccount} createLocked={createLocked} />
 
       {creditsOpen ? (
         <div className="fixed inset-0 z-50 lg:hidden">
@@ -409,6 +420,15 @@ function ProductIcon({ className = "h-4 w-4" }: { className?: string }) {
     <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
       <path d="M3 5.5 8 3l5 2.5v6L8 14.5 3 11.5v-6Z" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       <path d="M3.2 5.7 8 8.2l4.8-2.5M8 8.2V14" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function CloneIcon({ className = "h-4 w-4" }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="3.5" width="8.5" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="5.5" y="6.5" width="8.5" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }

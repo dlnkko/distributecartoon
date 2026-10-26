@@ -157,7 +157,7 @@ function viewUrl(view: {
 
 function zoneFromSearch(params: URLSearchParams): LibraryZone {
   const zone = params.get("zone");
-  if (zone === "drafts" || zone === "products" || zone === "stories") return zone;
+  if (zone === "drafts" || zone === "products" || zone === "stories" || zone === "clone") return zone;
   return "videos";
 }
 
