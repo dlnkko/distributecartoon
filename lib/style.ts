@@ -702,6 +702,16 @@ function isVoiceoverSpeaker(project: Project, speaker: string) {
   return isUnseenVoice({ name: raw, description: "", voiceNotes: "" });
 }
 
+function isRemoteVoice(speaker: string) {
+  return /^(?:the\s+)?(?:intercom|speaker|p\.?a\.?|phone|radio|announcer|dispatcher|operator|walkie(?:-talkie)?|headset)\b/i.test(speaker.trim());
+}
+
+function speakerIsOffScreen(project: Project, speaker: string, onScreen: string[]) {
+  if (isVoiceoverSpeaker(project, speaker) || isRemoteVoice(speaker)) return true;
+  const name = (findSpeakerCharacter(project, speaker)?.name || speaker).trim().toLowerCase();
+  return !onScreen.some((item) => item === name);
+}
+
 export function narrationLines(project: Project, sceneIndexes?: number[]) {
   const scenes = sceneIndexes ? sceneIndexes.map((index) => sceneByIndex(project, index)) : project.scenes;
   return scenes.flatMap((scene) =>
@@ -2236,22 +2246,56 @@ function sceneSays(
       parts.push(`On-screen text: "${text}"`);
       continue;
     }
-    if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker)) {
+    if (entry.voiceover && !isVoiceoverSpeaker(project, entry.speaker) && !isRemoteVoice(entry.speaker)) {
       const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
       const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
       parts.push(`${who}, voice-over, heard as their thought, mouth closed, no lipsync: "${text}"`);
       continue;
     }
-    if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
-      const voice = narratorTag ? ` ${narratorTag}` : "";
-      parts.push(`Voice-over${voice}: "${text}"`);
-      continue;
-    }
     const name = findSpeakerCharacter(project, entry.speaker)?.name || entry.speaker.trim();
     const who = people.get(name.toLowerCase()) || speakerLabel(project, name);
-    parts.push(onScreen.includes(name.toLowerCase()) ? `${who}: "${text}"` : `${who}, voice-over: "${text}"`);
+    if (project.song) {
+      if (entry.voiceover || isVoiceoverSpeaker(project, entry.speaker)) {
+        const voice = narratorTag ? ` ${narratorTag}` : "";
+        parts.push(`Voice-over${voice}: "${text}"`);
+      } else {
+        parts.push(onScreen.includes(name.toLowerCase()) ? `${who}: "${text}"` : `${who}, voice-over: "${text}"`);
+      }
+      continue;
+    }
+    if (entry.voiceover || speakerIsOffScreen(project, entry.speaker, onScreen)) {
+      const voice = narratorTag && isVoiceoverSpeaker(project, entry.speaker) ? ` ${narratorTag}` : "";
+      parts.push(`Audio (Off-screen / Intercom Speaker)${voice}: "${text}"`);
+      continue;
+    }
+    parts.push(`Dialogue (On-screen Lip-sync) — ${who}: "${text}"`);
   }
   return parts;
+}
+
+function stillMouthLine(names: string[]) {
+  const who = names.map((name) => name.trim()).filter(Boolean);
+  if (who.length === 0) return "The person on screen listens without moving their lips.";
+  if (who.length === 1) return `${who[0]} listens without moving their lips.`;
+  if (who.length === 2) return `${who[0]} and ${who[1]} listen without moving their lips.`;
+  return `${who.slice(0, -1).join(", ")}, and ${who[who.length - 1]} listen without moving their lips.`;
+}
+
+function heardBeforeReaction(project: Project, scene: Scene | undefined, slice: DialogueLine[], peopleHere: string[], action: string) {
+  if (project.song || !slice.length) return action;
+  const onScreen = sceneOnScreenNames(scene, project).map((name) => name.toLowerCase());
+  const remote = slice.some((line) => line.speaker && speakerIsOffScreen(project, line.speaker, onScreen));
+  if (!remote) return action;
+  const speaking = new Set(
+    slice
+      .filter((line) => line.speaker && !speakerIsOffScreen(project, line.speaker, onScreen))
+      .map((line) => (findSpeakerCharacter(project, line.speaker)?.name || line.speaker).trim().toLowerCase()),
+  );
+  const listeners = peopleHere.filter((name) => !speaking.has(name.toLowerCase()));
+  const listen = stillMouthLine(listeners.length ? listeners : peopleHere);
+  const reacts = /\b(?:freez\w*|squints?|startl\w*|flinch\w*|winces?|recoils?|awkward silence|stunned|taken aback|embarrass\w*)\b/i.test(action);
+  const order = reacts ? "The off-screen line is heard first. Only after it is heard does the reaction happen." : "";
+  return [order, listen, action].filter(Boolean).join(" ").replace(/[ \t]{2,}/g, " ").trim();
 }
 
 
@@ -2525,7 +2569,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     const shotName = cameraTitle(camera).replace(/[.]+$/, "");
     const outfit = !changeClothes || /Clothes have changed/i.test(`${visible} ${placement}`) ? "" : outfitChangeLine(seen.outfit);
     const actionLine = [
-      graphicScene(scene) ? "The frame holds the card." : visible,
+      graphicScene(scene) ? "The frame holds the card." : heardBeforeReaction(project, scene, slice, peopleHere, visible),
       stayed ? "" : placement,
       outfit,
       ...logoTags,

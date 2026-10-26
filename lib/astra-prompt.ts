@@ -92,6 +92,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
         ? "Keep every SCENE duration, every @Video and @Image tag already inside that scene, and every quoted line. Leave the language line first. Each character speaks only their own line. A face stays on its tag."
         : "Keep every SCENE duration, every @Video tag already inside that scene, and every quoted line. Leave the language line first. This draft names people in words and has no @Image tag. Do not add one. Keep each person's description as written, including the words 'the same' when they are there.",
       "Each scene is one forward action, then the spoken line. Continue a beat only when the draft says that beat is still going. When the draft says the previous scene already finished, start the next action and do not replay the last gesture.",
+      "Keep every 'Audio (Off-screen / Intercom Speaker)' label and every 'Dialogue (On-screen Lip-sync)' label. An intercom, phone, radio, narrator, or other voice that is not a face in the frame stays off-screen, and the visible person listens without moving their lips. A person who is in the frame and speaks is Dialogue (On-screen Lip-sync). If a freeze, a squint, a startle, or another reaction is caused by a reply, a line, or a sound in that same scene, the ACTION hears that cause first and the reaction comes after. Do not open that action on the reaction. Leave an action that is not waiting on something heard in that scene as written.",
       "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. Nobody sings and nobody mouths the words. Do not add a singing mouth.",
       prior
         ? /short cut of the previous part/i.test(trimmed)
@@ -135,6 +136,10 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (/still visible after it was used/i.test(trimmed) && !/still visible after it was used/i.test(revised)) return trimmed;
     if (!/@Image\d+/.test(trimmed) && /@Image\d+/.test(revised)) return trimmed;
     if (/do not say them again/i.test(trimmed) && !/do not say them again/i.test(revised)) return trimmed;
+    if (/Audio \(Off-screen \/ Intercom Speaker\)/.test(trimmed) && !/Audio \(Off-screen \/ Intercom Speaker\)/.test(revised)) return trimmed;
+    if (/Dialogue \(On-screen Lip-sync\)/.test(trimmed) && !/Dialogue \(On-screen Lip-sync\)/.test(revised)) return trimmed;
+    if (/listens without moving (?:their|his|her) lips/i.test(trimmed) && !/listens without moving (?:their|his|her) lips/i.test(revised)) return trimmed;
+    if (/heard first/i.test(trimmed) && !/heard first/i.test(revised)) return trimmed;
     if (/@Audio1\b/.test(trimmed) && !/@Audio1\b/.test(revised)) return trimmed;
     if (/@Audio2\b/.test(revised)) return trimmed;
     if (/While @Audio1 plays/i.test(trimmed) && !/While @Audio1 plays/i.test(revised)) return trimmed;
