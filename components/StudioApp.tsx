@@ -18,6 +18,7 @@ import { LibraryShell } from "@/components/library/LibraryShell";
 import { SavedProductPicker } from "@/components/library/ProductsPanel";
 import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
+import { KieKeyGate } from "@/components/KieKeyGate";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { realisticProseCast } from "@/lib/realistic-prose";
@@ -1302,15 +1303,6 @@ export function StudioApp() {
   async function beginProduce() {
     const current = projectRef.current;
     if (!current) return;
-    if (!current.paidAt) {
-      const status = await fetch(`/api/checkout?projectId=${encodeURIComponent(current.id)}`).then((response) =>
-        response.json().catch(() => ({ enabled: false })),
-      );
-      if (status.enabled && !status.paid) {
-        setPayOpen(true);
-        return;
-      }
-    }
     setPane("library");
     await run("produce");
   }
@@ -1904,14 +1896,15 @@ export function StudioApp() {
       ))}
 
       {panel === "membership" ? <MembershipPanel onClose={closePanel} /> : null}
+      <KieKeyGate />
 
       {panel === "credits" ? (
         <div className="studio-dark fixed inset-0 z-50 grid place-items-center bg-black/60 p-3">
           <div className="max-h-[min(92vh,760px)] w-full max-w-md overflow-y-auto rounded-3xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-5 shadow-2xl">
             <div className="mb-4 flex items-start justify-between">
               <div>
-                <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">Buy credits</p>
-                <h3 className="display mt-1 text-2xl">Credits</h3>
+                <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--muted)]">Membership</p>
+                <h3 className="display mt-1 text-2xl">The workflow</h3>
               </div>
               <button type="button" onClick={closePanel} className="text-sm text-[var(--muted)]">
                 Close
@@ -1941,13 +1934,13 @@ export function StudioApp() {
             <dl className="mt-5 space-y-3 text-sm">
               <div className="flex items-end justify-between rounded-2xl bg-[var(--bg)] px-4 py-3">
                 <dt>
-                  <span className="block text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Credits left</span>
-                  <span className="display mt-1 block text-3xl">{credits}</span>
+                  <span className="block text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Video billing</span>
+                  <span className="display mt-1 block text-xl">Your KIE key</span>
                 </dt>
-                <dd className="max-w-[140px] text-right text-xs text-[var(--muted)]">A 30s film uses 30 credits.</dd>
+                <dd className="max-w-[140px] text-right text-xs text-[var(--muted)]">The membership pays for the workflow.</dd>
               </div>
               <div className="rounded-2xl border border-[var(--line)] p-3">
-                <p className="px-1 text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Buy credits</p>
+                <p className="px-1 text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Membership</p>
                 <div className="mt-2">
                   <CreditsShop />
                 </div>
@@ -2600,7 +2593,6 @@ function CastStep({
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [drafts, setDrafts] = useState<Record<string, string>>({});
   const ready = wordsOnly || characters.length === 0 || characters.every((character) => Boolean(lookSrc(character)));
-  const affordable = credits >= creditCost;
 
   return (
     <div className="rise-in flex flex-1 flex-col gap-3">
@@ -2696,7 +2688,7 @@ function CastStep({
         <div className="flex flex-col items-end gap-1">
           <button
             type="button"
-            disabled={busy || !ready || !affordable}
+            disabled={busy || !ready}
             onClick={() =>
               onContinue(
                 wordsOnly
@@ -2711,9 +2703,8 @@ function CastStep({
             }
             className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
           >
-            {`Generate - ${creditCost} credits`}
+            Generate
           </button>
-          {affordable ? null : <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p>}
         </div>
       </div>
     </div>
@@ -2747,7 +2738,6 @@ function ProduceStep({
   const awaiting = projectAwaitingVideo(project) || projectIsGenerating(project);
   const working = busy || awaiting;
   const done = Boolean(delivered) && !working;
-  const affordable = credits >= creditCost;
   const duration =
     project.targetDurationSeconds ||
     project.batches.reduce((sum, batch) => sum + (batch.duration || 0), 0) ||
@@ -2815,13 +2805,11 @@ function ProduceStep({
         <div className="flex flex-col items-start gap-1">
           <button
             type="button"
-            disabled={!affordable}
             onClick={onGenerate}
             className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40 sm:w-auto"
           >
-            {`Generate - ${creditCost} credits`}
+            Generate
           </button>
-          {affordable ? null : <p className="text-[11px] text-[var(--danger)]">{`You need ${creditCost} credits.`}</p>}
         </div>
       ) : null}
     </div>

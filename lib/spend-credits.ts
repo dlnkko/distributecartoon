@@ -31,13 +31,19 @@ export async function spendCredits(
     }
     return { ok: true, credits: -1 };
   }
-  const { data, error } = await supabase.rpc("spend_credits_for_generation", {
+  const { data, error } = await supabase.rpc("authorize_member_generation", {
     amount,
     project_id: projectId,
   });
   if (error) {
+    if (/kie api key required/i.test(error.message)) {
+      return { ok: false, error: "Add your KIE API key. Video runs on your KIE account." };
+    }
+    if (/membership required/i.test(error.message)) {
+      return { ok: false, error: "Subscribe before generating. The membership pays for the workflow." };
+    }
     const short = /not enough credits/i.test(error.message);
-    return { ok: false, error: short ? `You need ${amount} credits to generate this video.` : "Couldn't use those credits." };
+    return { ok: false, error: short ? `You need ${amount} credits to generate this video.` : "Couldn't start that video." };
   }
   return { ok: true, credits: Number(data) };
 }

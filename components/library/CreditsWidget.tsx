@@ -45,23 +45,22 @@ export function CreditsWidget({
         </svg>
         {compact ? null : (
           <div className="min-w-0">
-            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--cf-muted)]">Credits</p>
-            <p className="display text-[1.7rem] leading-none tabular-nums">{credits}</p>
+            <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-[var(--cf-muted)]">Membership</p>
+            <p className="display text-[1.35rem] leading-none">Workflow</p>
           </div>
         )}
       </div>
       {compact ? (
-        <p className="mt-0.5 text-center text-xs font-medium tabular-nums">{credits}</p>
+        <p className="mt-0.5 text-center text-[10px] font-medium">Plan</p>
       ) : (
         <>
-          <p className="mt-2 text-[11px] leading-4 text-[var(--cf-muted)]">credits = seconds of video</p>
-          {low ? <p className="mt-1 text-[11px] text-[#C5D4FF]">Low balance. A short film needs more credits.</p> : null}
+          <p className="mt-2 text-[11px] leading-4 text-[var(--cf-muted)]">Pays for the workflow. Video runs on your KIE key.</p>
           <button
             type="button"
             onClick={onBuy}
             className="btn-primary mt-3 flex min-h-11 w-full items-center justify-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)]"
           >
-            Buy credits
+            Membership
           </button>
         </>
       )}
@@ -76,10 +75,9 @@ export function CreditsPill({ credits, onClick }: { credits: number; onClick: ()
       type="button"
       onClick={onClick}
       className={`no-press inline-flex min-h-11 items-center gap-2 rounded-xl border px-3 text-sm ${low ? "border-[#5B8CFF]/60 text-[#C5D4FF]" : "border-[var(--cf-line)] text-white"} bg-[var(--cf-surface)]`}
-      aria-label={`${credits} credits. Open credit details`}
+      aria-label="Open membership"
     >
-      <span className="font-medium tabular-nums">{credits}</span>
-      <span className="text-[var(--cf-muted)]">credits</span>
+      <span className="font-medium">Membership</span>
     </button>
   );
 }

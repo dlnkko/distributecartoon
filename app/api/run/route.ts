@@ -151,6 +151,9 @@ export async function POST(request: Request) {
         await startProduce(project);
       } catch (error) {
         const message = error instanceof Error ? error.message : "";
+        if (/kie api key/i.test(message)) {
+          return new Response(JSON.stringify({ error: "Add your KIE API key. Video runs on your KIE account." }), { status: 402 });
+        }
         if (/not enough credits/i.test(message)) {
           return new Response(JSON.stringify({ error: "You need credits to generate this video." }), { status: 402 });
         }

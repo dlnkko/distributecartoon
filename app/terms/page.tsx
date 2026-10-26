@@ -4,7 +4,7 @@ import { CONTACT_EMAIL } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Terms of Service",
-  description: "The terms for using Clickframes, credits, and monthly plans.",
+  description: "The terms for using Clickframes and a membership.",
 };
 
 export default function TermsPage() {
@@ -20,13 +20,13 @@ export default function TermsPage() {
         <p>You keep ownership of the scripts, photos, songs, and logos you upload. You give Clickframes permission to use them only to make, store, and show the video you asked for.</p>
         <p>You confirm that you have the rights to everything you upload, and permission from the people in the photos. You own the finished videos Clickframes makes for you, and you may use them anywhere, including in ads, gifts, and social posts.</p>
       </LegalSection>
-      <LegalSection title="Credits and plans">
-        <p>1 credit is 1 second of video. A monthly plan adds its credits each billing period. The month starts the day you pay. A one-time top-up is only for someone with an active monthly plan, and those credits are added once.</p>
-        <p>Credits are used when a video starts generating. If you change plans, the new month starts the day that payment goes through, and the previous plan stops then. You can cancel a membership from the account menu. An active plan keeps access until the current period ends.</p>
+      <LegalSection title="Membership and video">
+        <p>A membership pays for the Clickframes workflow. The video is generated with the KIE API key you add after the plan is active, and that render is billed on your KIE account. The key is used only to make your films.</p>
+        <p>You can cancel a membership from the account menu. An active plan keeps access until the current period ends.</p>
       </LegalSection>
       <LegalSection title="Payments">
         <p>
-          Whop processes the charge. The price you confirm at checkout is the price for that plan or top-up. If a charge looks wrong, email{" "}
+          Whop processes the membership charge. The price you confirm at checkout is the price of that plan. If a charge looks wrong, email{" "}
           <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a> and include the Google account you used.
         </p>
       </LegalSection>

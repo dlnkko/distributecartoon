@@ -111,7 +111,7 @@ export const BRAND_PAIN = [
 export const BRAND_AGENCY = {
   title: "Rather skip the ideation too?",
   text: "Hire us on an agency plan and we come up with the concepts for you.",
-  cta: "See agency plans",
+  cta: "Book a call",
 };
 
 export const STEPS = [
@@ -129,25 +129,6 @@ export const STEPS = [
   },
 ];
 
-export const TRIAL_OFFERS = {
-  personal: {
-    title: "We want your idea on screen.",
-    text: "Your first 40 credits are a one time $9.99. Try it and judge the quality yourself.",
-    was: "$19.99/mo",
-    now: "$9.99",
-    yes: "Yes, I want this!",
-    no: "No, I don't want my idea to come to life",
-  },
-  brands: {
-    title: "We want your winning ad on screen.",
-    text: "Your first 40 credits are a one time $9.99. Try it and judge the quality yourself.",
-    was: "$19.99/mo",
-    now: "$9.99",
-    yes: "Yes, I want this!",
-    no: "No, I don't want ads that win",
-  },
-} as const;
-
 export function faqFor(mode: Mode) {
   return [
     {
@@ -162,7 +143,10 @@ export function faqFor(mode: Mode) {
           : "Yes. Faces, voices, places, and scenes stay consistent for the whole video.",
     },
     { q: "How long does it take?", a: "About 10 minutes for most animations." },
-    { q: "What is a credit?", a: "1 credit = 1 second of video." },
+    {
+      q: "What do I pay for?",
+      a: "A membership for the Clickframes workflow. The video runs on your own KIE API key, so the render is billed on your KIE account and stays cheap.",
+    },
     { q: "How long can a video be?", a: "Up to 3 minutes today. Up to 5 minutes is coming soon." },
     { q: "Who owns the video?", a: "You do. You own all the rights to every video you create on Clickframes." },
   ];

@@ -1,6 +1,8 @@
 import { abortableDelay } from "./abort";
+import { withUserKieKey } from "./kie";
 import { advanceProduce, saveSoon, setProjectSaver, type ProduceState } from "./pipeline";
 import { getProject, saveProject } from "./store";
+import { kieKeyForUser } from "./user-kie";
 import { activeProjectIds, claimProject, saveClaimedProject, workerEnabled } from "./worker-db";
 import type { Project } from "./types";
 
@@ -42,30 +44,46 @@ async function runDrive(projectId: string, budgetMs: number, options: DriveOptio
     }
   }
   if (!project) return null;
-  if (!project.keepGenerating) {
-    if (claimHeld) await saveClaimedProject(project, 0).catch(() => undefined);
-    return project;
+  const film = project;
+  if (!film.keepGenerating) {
+    if (claimHeld) await saveClaimedProject(film, 0).catch(() => undefined);
+    return film;
   }
 
-  if (claimHeld) setProjectSaver(project.id, (next) => saveClaimedProject(next, leaseSeconds()));
-  let state: ProduceState = "waiting";
-  try {
-    while (true) {
-      try {
-        state = await advanceProduce(project, options.onStatus || (() => undefined));
-      } catch (error) {
-        console.error("produce step failed", project.id, error);
-      }
-      await saveSoon(project);
-      options.onProject?.(project);
-      if (state !== "waiting" || Date.now() + STEP_GAP_MS > startedAt + budgetMs) break;
-      await abortableDelay(STEP_GAP_MS);
-    }
-  } finally {
-    await saveSoon(project).catch(() => undefined);
-    setProjectSaver(project.id);
-    if (claimHeld) await saveClaimedProject(project, 0).catch(() => undefined);
-    else await saveProject(project).catch(() => undefined);
+  if (claimHeld) setProjectSaver(film.id, (next) => saveClaimedProject(next, leaseSeconds()));
+  const apiKey = film.ownerId ? await kieKeyForUser(film.ownerId) : null;
+  if (!apiKey && process.env.NODE_ENV !== "development") {
+    film.keepGenerating = false;
+    const batch = film.batches.find((item) => item.status === "generating_video" || item.status === "planned");
+    if (batch) batch.error = "Add your KIE API key. Video runs on your KIE account.";
+    await saveSoon(film);
+    if (claimHeld) await saveClaimedProject(film, 0).catch(() => undefined);
+    else await saveProject(film).catch(() => undefined);
+    return film;
   }
-  return project;
+  const drive = () => runSteps();
+  return apiKey ? withUserKieKey(apiKey, drive) : drive();
+
+  async function runSteps() {
+    let state: ProduceState = "waiting";
+    try {
+      while (true) {
+        try {
+          state = await advanceProduce(film, options.onStatus || (() => undefined));
+        } catch (error) {
+          console.error("produce step failed", film.id, error);
+        }
+        await saveSoon(film);
+        options.onProject?.(film);
+        if (state !== "waiting" || Date.now() + STEP_GAP_MS > startedAt + budgetMs) break;
+        await abortableDelay(STEP_GAP_MS);
+      }
+    } finally {
+      await saveSoon(film).catch(() => undefined);
+      setProjectSaver(film.id);
+      if (claimHeld) await saveClaimedProject(film, 0).catch(() => undefined);
+      else await saveProject(film).catch(() => undefined);
+    }
+    return film;
+  }
 }

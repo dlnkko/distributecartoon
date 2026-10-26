@@ -2,10 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Brand } from "@/components/Brand";
-import { CreditRange } from "@/components/pricing/CreditRange";
-import { DFY_PLANS, INTRO_OFFER, LEAD_PLANS, SLIDER_PLANS, formatPlanPrice } from "@/lib/plans";
 import { CONTACT_EMAIL } from "@/lib/site";
-import { startCheckout } from "@/components/landing/checkout";
 import {
   BRAND_AGENCY,
   BRAND_HERO,
@@ -15,7 +12,6 @@ import {
   PERSONAL_EDGE,
   PERSONAL_HERO,
   STEPS,
-  TRIAL_OFFERS,
   ZOOM_URL,
   faqFor,
   type Film,
@@ -27,14 +23,8 @@ import { VideoCard } from "@/components/landing/VideoCard";
 export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: string }) {
   const [mode, setMode] = useState(initialMode);
   const copy = COPY[mode];
-  const [offer, setOffer] = useState(false);
-  const [closing, setClosing] = useState(false);
-  const [left, setLeft] = useState(OFFER_SECONDS);
-  const barRef = useRef<HTMLDivElement>(null);
-  const closingRef = useRef(false);
   const [sticky, setSticky] = useState(false);
   const [openFaq, setOpenFaq] = useState<string | null>(null);
-  const [busy, setBusy] = useState("");
 
   useEffect(() => {
     const sync = () => {
@@ -46,79 +36,8 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
   }, []);
 
   useEffect(() => {
-    setOffer(false);
-    setClosing(false);
-    closingRef.current = false;
     document.title = COPY[mode].metaTitle;
   }, [mode]);
-
-  useEffect(() => {
-    if (offerSeen(mode)) return;
-    const timer = window.setTimeout(() => {
-      rememberOffer(mode);
-      setLeft(OFFER_SECONDS);
-      setOffer(true);
-      track("trial_offer_shown", { mode });
-    }, 20000);
-    return () => window.clearTimeout(timer);
-  }, [mode]);
-
-  useEffect(() => {
-    if (!offer || closing) return;
-    const started = Date.now();
-    let frame = 0;
-    let shown = OFFER_SECONDS;
-    const tick = () => {
-      const remainingMs = OFFER_SECONDS * 1000 - (Date.now() - started);
-      const bar = barRef.current;
-      if (remainingMs <= 0) {
-        if (bar) bar.style.transform = "scaleX(0)";
-        setLeft(0);
-        closeOffer();
-        return;
-      }
-      if (bar) bar.style.transform = `scaleX(${remainingMs / (OFFER_SECONDS * 1000)})`;
-      const next = Math.ceil(remainingMs / 1000);
-      if (next !== shown) {
-        shown = next;
-        setLeft(next);
-      }
-      frame = window.requestAnimationFrame(tick);
-    };
-    frame = window.requestAnimationFrame(tick);
-    return () => window.cancelAnimationFrame(frame);
-  }, [offer, closing]);
-
-  useEffect(() => {
-    if (!closing) return;
-    const timer = window.setTimeout(() => {
-      setOffer(false);
-      setClosing(false);
-      closingRef.current = false;
-    }, 340);
-    return () => window.clearTimeout(timer);
-  }, [closing]);
-
-  useEffect(() => {
-    if (!offer) return;
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeOffer();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [offer]);
-
-  function closeOffer() {
-    if (closingRef.current) return;
-    closingRef.current = true;
-    rememberOffer(mode);
-    setClosing(true);
-  }
 
   function pickMode(next: Mode) {
     if (next === mode) return;
@@ -140,26 +59,14 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
     };
   }, []);
 
-  async function buy(planId: string, event: string) {
-    setBusy(planId);
-    track(event, { plan: planId, mode });
-    try {
-      await startCheckout(planId);
-    } catch {
-      setBusy("");
-    }
-  }
-
-  const trial = TRIAL_OFFERS[mode];
-
   return (
     <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
       <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
         <Brand tone="accent" />
         <ModeToggle mode={mode} base={base} onPick={pickMode} />
         <nav className="flex items-center gap-2">
-          <a href="#pricing" className="hidden rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold sm:inline-flex">
-            Pricing
+          <a href="#workflow" className="hidden rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold sm:inline-flex">
+            How you pay
           </a>
           <a href="/login" className="cf-btn btn-primary whitespace-nowrap px-3 py-2 text-sm font-semibold sm:px-4">
             Sign in
@@ -210,7 +117,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
         </div>
       </section>
 
-      <Pricing mode={mode} busy={busy} onBuy={(id) => void buy(id, "pricing_pack_click")} />
+      <WorkflowPay mode={mode} />
 
       <Faq mode={mode} open={openFaq} onToggle={(q) => {
         setOpenFaq((current) => (current === q ? null : q));
@@ -227,98 +134,15 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
       </footer>
       </div>
 
-      {sticky && !offer ? (
+      {sticky ? (
         <div className="fixed inset-x-0 bottom-0 z-[80] border-t border-white/10 bg-[#0b0b0d]/95 p-3 md:hidden">
-          <a href="#pricing" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
+          <a href="/login" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
             {copy.cta}
           </a>
         </div>
       ) : null}
-
-      {offer ? (
-        <div
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="trial-offer-title"
-          className={`fixed inset-0 z-[100] grid place-items-center bg-black/80 p-4 backdrop-blur-md ${closing ? "land-veil-out" : "land-veil-in"}`}
-          onClick={(event) => {
-            if (event.target === event.currentTarget) closeOffer();
-          }}
-        >
-          <div className={`relative w-full max-w-lg overflow-hidden rounded-[2rem] border border-white/10 bg-[#141417] p-7 text-center shadow-[0_30px_80px_rgba(0,0,0,0.55)] sm:p-10 ${closing ? "land-offer-out" : "land-offer-in"}`}>
-            <div className="pointer-events-none absolute -top-24 left-1/2 h-48 w-48 -translate-x-1/2 rounded-full bg-[#5B8CFF]/30 blur-3xl" />
-            <h2 id="trial-offer-title" className="land-display relative text-4xl leading-[1.02] text-white sm:text-5xl">
-              {trial.title}
-            </h2>
-            <p className="relative mx-auto mt-4 max-w-sm text-base leading-relaxed text-white/75">{trial.text}</p>
-            <p className="relative mt-6 flex items-baseline justify-center gap-3">
-              <s className="text-xl text-white/45">{trial.was}</s>
-              <span className="text-5xl font-semibold text-white">{trial.now}</span>
-              <span className="text-sm text-white/60">one time</span>
-            </p>
-            <div className="relative mt-6">
-              <p className="text-[11px] font-semibold uppercase tracking-[0.22em] text-white/70">One time offer</p>
-              <div className="mt-2 flex items-center gap-3">
-                <div className="h-1.5 min-w-0 flex-1 overflow-hidden rounded-full bg-white/10" aria-hidden="true">
-                  <div ref={barRef} className="cf-grad h-full w-full origin-left rounded-full" style={{ transform: "scaleX(1)" }} />
-                </div>
-                <span className="w-9 shrink-0 text-right text-[11px] tabular-nums text-white/60">{formatOfferTime(left)}</span>
-              </div>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                rememberOffer(mode);
-                void buy(INTRO_OFFER.id, "trial_offer_accept");
-              }}
-              className="cf-btn btn-primary relative mt-7 w-full rounded-2xl py-3.5 text-base font-semibold"
-            >
-              {busy === INTRO_OFFER.id ? "Opening…" : trial.yes}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                track("trial_offer_decline", { mode });
-                closeOffer();
-              }}
-              className="relative mt-3 w-full py-2 text-sm text-white/50 underline-offset-4 hover:text-white/80 hover:underline"
-            >
-              {trial.no}
-            </button>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
-}
-
-const OFFER_SECONDS = 60;
-
-function offerSeenKey(mode: Mode) {
-  return mode === "brands" ? "cf-offer-once-brands" : "cf-offer-once-personal";
-}
-
-function offerSeen(mode: Mode) {
-  try {
-    return localStorage.getItem(offerSeenKey(mode)) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function rememberOffer(mode: Mode) {
-  try {
-    localStorage.setItem(offerSeenKey(mode), "1");
-  } catch {
-    /* The browser blocked storage. The offer still closes for this view. */
-  }
-}
-
-function formatOfferTime(seconds: number) {
-  const safe = Math.max(0, seconds);
-  const mins = Math.floor(safe / 60);
-  const secs = safe % 60;
-  return `${mins}:${String(secs).padStart(2, "0")}`;
 }
 
 function ModeToggle({ mode, base, onPick }: { mode: Mode; base: string; onPick: (mode: Mode) => void }) {
@@ -393,7 +217,7 @@ function HeroCopy({
         <a href="#films" onClick={() => track("hero_films_click", { mode })} className={`rounded-xl border px-5 py-3 text-sm font-semibold ${ghost}`}>
           {copy.films}
         </a>
-        <a href="#pricing" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-center text-sm font-semibold">
+        <a href="/login" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-center text-sm font-semibold">
           {copy.cta}
         </a>
       </div>
@@ -607,108 +431,48 @@ function BrandBody() {
   );
 }
 
-function creditLength(seconds: number) {
-  const label = seconds.toLocaleString("en-US");
-  if (seconds < 60) return `${label} credits = about ${seconds} seconds`;
-  const minutes = Math.floor(seconds / 60);
-  const rest = seconds % 60;
-  const minuteLabel = minutes === 1 ? "1 minute" : `${minutes} minutes`;
-  if (!rest) return `${label} credits = about ${minuteLabel}`;
-  return `${label} credits = about ${minuteLabel} ${rest} seconds`;
-}
-
-function Pricing({ mode, busy, onBuy }: { mode: Mode; busy: string; onBuy: (id: string) => void }) {
-  const [tier, setTier] = useState(0);
-  const flex = SLIDER_PLANS[tier] ?? SLIDER_PLANS[0];
-  const recommended = LEAD_PLANS[1];
-  const starter = LEAD_PLANS[0];
+function WorkflowPay({ mode }: { mode: Mode }) {
   return (
-    <section id="pricing" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
+    <section id="workflow" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
       <Reveal>
-        <h2 className="land-display text-3xl sm:text-4xl">Pricing</h2>
-        <p className="mt-3 text-sm text-[var(--cf-muted)]">1 credit = 1 second of video.</p>
+        <h2 className="land-display text-3xl sm:text-4xl">You pay for the workflow</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--cf-muted)]">
+          The membership is Clickframes: the story, the shots, and the direction. The video itself runs on your KIE account. After the plan is active, you add your KIE API key, and every film is billed there. That is why each video stays cheap.
+        </p>
       </Reveal>
-      <div className="mt-8 grid gap-4 lg:grid-cols-3">
-        {starter ? (
-          <Reveal className="order-2 flex lg:order-none">
-            <PlanCard plan={starter} busy={busy} onBuy={onBuy} />
+      <div className="mt-8 grid gap-4 md:grid-cols-3">
+        {[
+          ["Membership", "One plan for the workflow. The price is the price of using Clickframes, not a pile of video seconds."],
+          ["Your KIE key", "As soon as the plan is active, Clickframes asks for your KIE API key and uses it only for your films."],
+          ["Cheap video", "KIE bills the render on your key. You are not buying seconds from us."],
+        ].map(([title, text], index) => (
+          <Reveal key={title} delay={index * 80}>
+            <article className="h-full rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
+              <h3 className="text-lg font-medium">{title}</h3>
+              <p className="mt-3 text-sm leading-relaxed text-[var(--cf-muted)]">{text}</p>
+            </article>
           </Reveal>
-        ) : null}
-        {recommended ? (
-          <Reveal className="order-1 flex lg:order-none">
-            <PlanCard plan={recommended} busy={busy} onBuy={onBuy} recommended />
-          </Reveal>
-        ) : null}
-        <Reveal className="order-3 flex lg:order-none">
-          <article className="flex flex-1 flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
-            <div className="flex items-center justify-between gap-3">
-              <h3 className="text-lg font-medium">{flex.seconds.toLocaleString("en-US")} credits</h3>
-              <span className="rounded-full border border-white/15 px-2 py-0.5 text-[11px] text-[var(--cf-muted)]">{flex.badge ?? "Max / Ultra"}</span>
-            </div>
-            <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(flex.price)}<span className="text-lg font-medium">/mo</span></p>
-            <p className="mt-2 text-sm text-[var(--cf-muted)]">{creditLength(flex.seconds)}</p>
-            <div className="mt-5">
-              <CreditRange labels={["250", "Max", "Ultra"]} index={tier} onChange={setTier} label="Monthly plan size" />
-            </div>
-            <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{flex.blurb}</p>
-            <button type="button" onClick={() => onBuy(flex.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
-              {busy === flex.id ? "Opening…" : "Start plan"}
-            </button>
-          </article>
-        </Reveal>
+        ))}
       </div>
+      <a href="/login" className="cf-btn btn-primary mt-8 inline-flex rounded-xl px-5 py-3 text-sm font-semibold">
+        Sign in
+      </a>
       {mode === "brands" ? (
         <div id="agency" className="mt-14 scroll-mt-24">
           <h3 className="land-display text-3xl">{BRAND_AGENCY.title}</h3>
           <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
-          <div className="mt-6 grid gap-4 md:grid-cols-2">
-            {DFY_PLANS.map((plan) => (
-              <article key={plan.id} className="flex flex-col rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
-                <h3 className="text-lg font-medium">{plan.name}</h3>
-                <p className="mt-3 text-3xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
-                <p className="mt-3 flex-1 text-sm leading-relaxed text-[var(--cf-muted)]">{plan.blurb}</p>
-                <a
-                  href={ZOOM_URL}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => track("book_call_click", { mode, place: plan.id })}
-                  className="cf-btn btn-primary mt-5 inline-flex justify-center rounded-xl px-3 py-2 text-sm font-semibold"
-                >
-                  Book a call
-                </a>
-              </article>
-            ))}
-          </div>
+          <a
+            href={ZOOM_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => track("book_call_click", { mode, place: "agency" })}
+            className="cf-btn btn-primary mt-5 inline-flex rounded-xl px-5 py-3 text-sm font-semibold"
+          >
+            Book a call
+          </a>
         </div>
       ) : null}
     </section>
-  );
-}
-
-function PlanCard({
-  plan,
-  busy,
-  onBuy,
-  recommended = false,
-}: {
-  plan: (typeof LEAD_PLANS)[number];
-  busy: string;
-  onBuy: (id: string) => void;
-  recommended?: boolean;
-}) {
-  return (
-    <article className={`flex flex-1 flex-col rounded-2xl border bg-[var(--cf-surface)] p-6 ${recommended ? "border-[#5B8CFF]" : "border-white/10"}`}>
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-lg font-medium">{plan.seconds.toLocaleString("en-US")} credits</h3>
-        {recommended ? <span className="rounded-full bg-[#5B8CFF] px-2 py-0.5 text-[11px] font-semibold text-white">Recommended</span> : null}
-      </div>
-      <p className="mt-3 text-4xl font-semibold">{formatPlanPrice(plan.price)}<span className="text-lg font-medium">/mo</span></p>
-      <p className="mt-2 text-sm text-[var(--cf-muted)]">{creditLength(plan.seconds)}</p>
-      <p className="mt-3 flex-1 text-sm text-[var(--cf-muted)]">{plan.blurb}</p>
-      <button type="button" onClick={() => onBuy(plan.id)} className="cf-btn btn-primary mt-5 rounded-xl px-3 py-2 text-sm font-semibold">
-        {busy === plan.id ? "Opening…" : "Start plan"}
-      </button>
-    </article>
   );
 }
 

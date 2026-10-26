@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { loadOwnedProject } from "@/lib/auth";
-import { CANONICAL_ORIGIN } from "@/lib/site";
-import { whopClient, whopConfig, whopReady } from "@/lib/whop";
+import { whopReady } from "@/lib/whop";
 
 export const runtime = "nodejs";
 
@@ -18,19 +17,10 @@ export async function POST(request: Request) {
   if (!body.projectId) return NextResponse.json({ error: "Missing project." }, { status: 400 });
   const loaded = await loadOwnedProject(body.projectId);
   if ("response" in loaded) return loaded.response;
-  const { user, project } = loaded;
+  const { project } = loaded;
   if (project.paidAt) return NextResponse.json({ paid: true, project });
-  if (!whopReady()) {
-    return NextResponse.json({ error: "Whop is not configured yet." }, { status: 503 });
-  }
-
-  const { companyId, planId } = whopConfig();
-  const checkout = await whopClient().checkoutConfigurations.create({
-    account_id: companyId,
-    plan_id: planId,
-    mode: "payment",
-    metadata: { project_id: project.id, user_id: user.id },
-    redirect_url: CANONICAL_ORIGIN,
-  });
-  return NextResponse.json({ sessionId: checkout.id });
+  return NextResponse.json(
+    { error: "Video runs on your KIE key. The membership pays for the workflow." },
+    { status: 410 },
+  );
 }

@@ -1,7 +1,14 @@
+import { AsyncLocalStorage } from "node:async_hooks";
 import { getSecrets } from "./config";
 import { CANONICAL_ORIGIN } from "./site";
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { generateGptImage25Flare as generateFalGptImage25Flare, uploadLocalPublicPath } from "./fal";
+
+const kieKeyStore = new AsyncLocalStorage<string>();
+
+export function withUserKieKey<T>(apiKey: string, run: () => Promise<T>) {
+  return kieKeyStore.run(apiKey, run);
+}
 
 const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
 const KIE_BASE = "https://api.kie.ai";
@@ -64,8 +71,10 @@ type KieRecord = {
 };
 
 function kieHeaders() {
-  const { kieApiKey } = getSecrets();
-  if (!kieApiKey) throw new Error("KIE_API_KEY is missing.");
+  const own = kieKeyStore.getStore()?.trim() || "";
+  const fallback = process.env.NODE_ENV === "development" ? getSecrets().kieApiKey : "";
+  const kieApiKey = own || fallback;
+  if (!kieApiKey) throw new Error("Add your KIE API key. Video runs on your KIE account.");
   return {
     Authorization: `Bearer ${kieApiKey}`,
     "Content-Type": "application/json",
