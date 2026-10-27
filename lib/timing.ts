@@ -695,7 +695,7 @@ export function groupConsecutiveTakes(scenes: Array<{ index: number; estimatedSe
   return parts;
 }
 
-/** The user's duration, exactly. 60 seconds is 30+30. A scene never drops below the time its lines need. */
+/** The user's duration, exactly. 60 seconds is 30+30. Scenes keep the time the story gave them. Seconds left over land on the closing scene, a few at a time. A scene never drops below the time its lines need, and a short closing shot is not stretched into its own generation. */
 export function exactFilmParts(
   scenes: Array<{ index: number; estimatedSeconds: number; floor: number }>,
   targetSeconds: number,
@@ -711,7 +711,8 @@ export function exactFilmParts(
     const floor = floorOf(scene.index);
     seconds.set(scene.index, Math.min(SEEDANCE_MAX_SECONDS, Math.max(floor, Math.round(scene.estimatedSeconds || floor))));
   }
-  const sum = () => [...seconds.values()].reduce((total, value) => total + value, 0);
+  const sumOf = (indexes: number[]) => indexes.reduce((total, index) => total + (seconds.get(index) || 0), 0);
+  const sum = () => sumOf(scenes.map((scene) => scene.index));
   let guard = 0;
   while (sum() > target && guard < 800) {
     guard += 1;
@@ -721,70 +722,105 @@ export function exactFilmParts(
     const index = slack[0];
     seconds.set(index, (seconds.get(index) || 0) - 1);
   }
-  let gap = target - sum();
-  let spin = 0;
-  while (gap > 0 && scenes.length && spin < scenes.length * 40) {
-    const index = scenes[spin % scenes.length].index;
-    const current = seconds.get(index) || 0;
-    if (current < SEEDANCE_MAX_SECONDS) {
-      seconds.set(index, current + 1);
-      gap -= 1;
+  const bases = new Map(scenes.map((scene) => [scene.index, seconds.get(scene.index) || 0]));
+  const giveSpare = (indexes: number[], missing: number) => {
+    let left = missing;
+    for (let step = 0; step < indexes.length && left > 0; step += 1) {
+      const index = indexes[indexes.length - 1 - step];
+      const room = Math.min(SEEDANCE_MAX_SECONDS, (bases.get(index) || 0) + 8) - (seconds.get(index) || 0);
+      const give = Math.min(left, Math.max(0, room));
+      if (give <= 0) continue;
+      seconds.set(index, (seconds.get(index) || 0) + give);
+      left -= give;
     }
-    spin += 1;
-  }
-  const groups: number[][] = durations.map(() => []);
-  let part = 0;
-  const partSum = (slot: number) => groups[slot].reduce((total, index) => total + (seconds.get(index) || 0), 0);
-  for (const scene of scenes) {
-    const span = () => seconds.get(scene.index) || floorOf(scene.index);
-    if (part < durations.length - 1 && groups[part].length && partSum(part) + span() > durations[part]) {
-      let need = partSum(part) + span() - durations[part];
-      for (const donor of [...groups[part]].reverse()) {
-        if (need <= 0) break;
-        const room = (seconds.get(donor) || 0) - floorOf(donor);
-        if (room <= 0) continue;
-        const cut = Math.min(room, need);
-        seconds.set(donor, (seconds.get(donor) || 0) - cut);
-        need -= cut;
-      }
-      if (partSum(part) + span() > durations[part]) part += 1;
-    }
-    groups[Math.min(part, durations.length - 1)].push(scene.index);
-  }
-  for (let slot = durations.length - 1; slot > 0; slot -= 1) {
-    while (!groups[slot].length && groups[slot - 1].length > 1) {
-      const moved = groups[slot - 1].pop();
-      if (moved) groups[slot].unshift(moved);
-    }
-  }
-  for (let slot = 0; slot < durations.length; slot += 1) {
-    const indexes = groups[slot];
-    if (!indexes.length) continue;
-    let over = partSum(slot) - durations[slot];
-    for (const index of [...indexes].reverse()) {
-      if (over <= 0) break;
-      const room = (seconds.get(index) || 0) - floorOf(index);
-      if (room <= 0) continue;
-      const cut = Math.min(room, over);
-      seconds.set(index, (seconds.get(index) || 0) - cut);
-      over -= cut;
-    }
-    let missing = durations[slot] - partSum(slot);
     let spins = 0;
-    while (missing > 0 && spins < indexes.length * SEEDANCE_MAX_SECONDS) {
-      const index = indexes[spins % indexes.length];
+    while (left > 0 && indexes.length && spins < indexes.length * SEEDANCE_MAX_SECONDS) {
+      const index = indexes[indexes.length - 1 - (spins % indexes.length)];
       const current = seconds.get(index) || 0;
       if (current < SEEDANCE_MAX_SECONDS) {
         seconds.set(index, current + 1);
-        missing -= 1;
+        left -= 1;
       }
       spins += 1;
     }
+  };
+  giveSpare(scenes.map((scene) => scene.index), target - sum());
+  const indexes = scenes.map((scene) => scene.index);
+  const groups = splitFilmParts(indexes, durations, (index) => seconds.get(index) || 0);
+  for (let slot = 0; slot < groups.length; slot += 1) {
+    const group = groups[slot];
+    if (!group.length) continue;
+    let over = sumOf(group) - durations[slot];
+    let cuts = 0;
+    while (over > 0 && cuts < 800) {
+      cuts += 1;
+      const slack = group.filter((index) => (seconds.get(index) || 0) > floorOf(index));
+      if (!slack.length) break;
+      slack.sort((a, b) => (seconds.get(b) || 0) - floorOf(b) - ((seconds.get(a) || 0) - floorOf(a)));
+      seconds.set(slack[0], (seconds.get(slack[0]) || 0) - 1);
+      over -= 1;
+    }
+    const missing = durations[slot] - sumOf(group);
+    if (missing > 0) giveSpare(group, missing);
   }
   return {
-    parts: durations.map((duration, index) => ({ duration, sceneIndexes: groups[index] })).filter((item) => item.sceneIndexes.length),
+    parts: durations.map((duration, index) => ({ duration, sceneIndexes: groups[index] || [] })).filter((item) => item.sceneIndexes.length),
     seconds,
   };
+}
+
+// Ordered split. A scene stays at the length the story gave it. The cut is the one that asks for the smallest later trim, and a short last shot does not get a generation to itself.
+function splitFilmParts(indexes: number[], slots: number[], span: (index: number) => number) {
+  const count = indexes.length;
+  const parts = slots.length;
+  const groups = slots.map(() => [] as number[]);
+  if (!count || !parts) return groups;
+  if (count < parts) {
+    indexes.forEach((index, position) => groups[Math.min(position, parts - 1)].push(index));
+    return groups;
+  }
+  const prefix = [0];
+  for (const index of indexes) prefix.push(prefix[prefix.length - 1] + span(index));
+  const cost = Array.from({ length: count + 1 }, () => Array(parts + 1).fill(Number.POSITIVE_INFINITY));
+  const prev = Array.from({ length: count + 1 }, () => Array(parts + 1).fill(-1));
+  cost[0][0] = 0;
+  for (let part = 1; part <= parts; part += 1) {
+    for (let end = part; end <= count - (parts - part); end += 1) {
+      for (let start = part - 1; start < end; start += 1) {
+        if (!Number.isFinite(cost[start][part - 1])) continue;
+        const sum = prefix[end] - prefix[start];
+        const slot = slots[part - 1];
+        let penalty = Math.abs(sum - slot);
+        if (parts > 1 && end - start === 1 && sum + 8 < slot) penalty += 1000;
+        const next = cost[start][part - 1] + penalty;
+        if (next < cost[end][part]) {
+          cost[end][part] = next;
+          prev[end][part] = start;
+        }
+      }
+    }
+  }
+  if (!Number.isFinite(cost[count][parts])) {
+    let part = 0;
+    let used = 0;
+    for (const index of indexes) {
+      const weight = span(index);
+      if (part < parts - 1 && groups[part].length && used + weight > slots[part]) {
+        part += 1;
+        used = 0;
+      }
+      groups[Math.min(part, parts - 1)].push(index);
+      used += weight;
+    }
+    return groups;
+  }
+  let end = count;
+  for (let part = parts; part >= 1; part -= 1) {
+    const start = prev[end][part];
+    groups[part - 1] = indexes.slice(start, end);
+    end = start;
+  }
+  return groups;
 }
 
 export function formatPartPlan(parts: SeedancePartPlan[]) {
