@@ -17,6 +17,7 @@ import {
   type Film,
   type Mode,
 } from "@/components/landing/copy";
+import { startCheckout } from "@/components/landing/checkout";
 import { track } from "@/components/landing/track";
 import { VideoCard } from "@/components/landing/VideoCard";
 import { MEMBERSHIP_MINUTES } from "@/lib/plans";
@@ -503,13 +504,16 @@ function WorkflowPay({ mode }: { mode: Mode }) {
           <p className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">
             Workflow for {pick.minutes.toLocaleString("en-US")} minutes of finished video. The render stays on your KIE key.
           </p>
-          <a
-            href="/login"
-            onClick={() => track("membership_checkout_click", { mode, minutes: String(pick.minutes), price: String(pick.price) })}
+          <button
+            type="button"
+            onClick={() => {
+              track("membership_checkout_click", { mode, minutes: String(pick.minutes), price: String(pick.price) });
+              void startCheckout(pick.id).catch(() => undefined);
+            }}
             className="cf-btn btn-primary mt-6 inline-flex rounded-xl px-5 py-3 text-sm font-semibold"
           >
             Get this membership
-          </a>
+          </button>
         </article>
       </Reveal>
       <div className="mt-8 grid gap-4 md:grid-cols-3">

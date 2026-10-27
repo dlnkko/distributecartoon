@@ -43,13 +43,14 @@ export async function takeWorkflowPrep(
   }
   const { data: membership, error: memberError } = await client
     .from("memberships")
-    .select("plan, status")
+    .select("plan, status, bonus_seconds")
     .eq("user_id", userId)
     .in("status", ["active", "trialing", "past_due", "canceling", "completed"])
     .maybeSingle();
   if (memberError) return { ok: false, status: 503, error: "Couldn't check the script limit." };
   if (!membership) return { ok: false, ...MESSAGES.membership };
-  const seconds = planById(String(membership.plan || ""))?.seconds || 300;
+  const bonus = Number(membership.bonus_seconds || 0);
+  const seconds = (planById(String(membership.plan || ""))?.seconds || 300) + (Number.isFinite(bonus) && bonus > 0 ? bonus : 0);
   const caps = prepCaps(seconds, kind);
   const { data, error } = await client.rpc("take_workflow_prep", {
     member: userId,

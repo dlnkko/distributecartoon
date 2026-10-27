@@ -173,6 +173,29 @@ export async function replaceMembership(userId: string, plan: string, paymentId:
   }
 }
 
+const LIVE_PLAN = new Set(["active", "trialing", "past_due", "canceling", "completed"]);
+
+export async function grantMinutePack(userId: string, paymentId: string, planId: string, membershipId?: string) {
+  const bought = planById(planId);
+  const client = admin();
+  if (!bought || bought.kind !== "topup" || !bought.id.startsWith("once") || bought.seconds < 1) return;
+  if (!client || !userId || !paymentId) return;
+  const { error } = await client.from("minute_topups").insert({ payment_id: paymentId, user_id: userId, seconds: bought.seconds });
+  if (error) {
+    if (!/duplicate|unique/i.test(error.message)) console.error("minute topup", error.message);
+    return;
+  }
+  const local = await localMembership(userId);
+  if (local && LIVE_PLAN.has(local.status)) {
+    const { data } = await client.from("memberships").select("bonus_seconds").eq("user_id", userId).maybeSingle();
+    const next = Number(data?.bonus_seconds || 0) + bought.seconds;
+    const { error: updateError } = await client.from("memberships").update({ bonus_seconds: next, updated_at: new Date().toISOString() }).eq("user_id", userId);
+    if (updateError) console.error("minute topup", updateError.message);
+    return;
+  }
+  await saveMembership(userId, bought.id, paymentId, membershipId);
+}
+
 export async function grantCredits(userId: string, credits: number, paymentId: string, membershipId?: string) {
   if (!userId || !paymentId || !Number.isInteger(credits) || credits < 1) return;
   const client = admin();
@@ -210,6 +233,9 @@ export async function applyWhopPurchase(userId: string, planId: string, paymentI
     if (local?.whop_membership_id !== membershipId || local?.plan !== bought.id) {
       await saveMembership(userId, bought.id, paymentId, membershipId);
     }
+  }
+  if (bought.kind === "topup" && bought.id.startsWith("once")) {
+    await grantMinutePack(userId, membershipId || paymentId, bought.id, membershipId);
   }
   if ((bought.kind === "monthly" || bought.kind === "topup" || bought.kind === "intro") && bought.seconds > 0) {
     await grantCredits(userId, bought.seconds, paymentId, membershipId);
@@ -274,6 +300,7 @@ export async function syncWhopCredits(userId: string) {
     const memberships = await listRecentMemberships(companyId);
     const claimed = new Set<string>();
     let savedMonthly = false;
+    const minutePacks: Array<{ key: string; planId: string; membershipId: string }> = [];
 
     for (const item of memberships) {
       const metadata = item.metadata || {};
@@ -289,6 +316,7 @@ export async function syncWhopCredits(userId: string) {
         }
       }
       if (bought.seconds > 0) await grantCredits(userId, bought.seconds, item.id, item.id);
+      if (bought.kind === "topup" && bought.id.startsWith("once")) minutePacks.push({ key: item.id, planId: bought.id, membershipId: item.id });
     }
 
     // A promo checkout still creates a paid membership. The company key can list
@@ -321,7 +349,9 @@ export async function syncWhopCredits(userId: string) {
         }
       }
       await grantCredits(userId, bought.seconds, item.id, item.id);
+      if (bought.kind === "topup" && bought.id.startsWith("once")) minutePacks.push({ key: item.id, planId: bought.id, membershipId: item.id });
     }
+    for (const pack of minutePacks) await grantMinutePack(userId, pack.key, pack.planId, pack.membershipId);
   } catch (error) {
     creditSyncAt.delete(userId);
     console.error("whop credit sync failed", error instanceof Error ? error.message : error);

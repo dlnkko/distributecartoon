@@ -78,21 +78,45 @@ export const MONTHLY_PLANS: Plan[] = [
 export const LEAD_PLANS = MONTHLY_PLANS.slice(0, 2);
 export const SLIDER_PLANS = MONTHLY_PLANS.slice(2);
 
-export const MEMBERSHIP_MINUTES: { minutes: number; price: number }[] = [
-  { minutes: 5, price: 9.99 },
-  { minutes: 10, price: 19.99 },
-  { minutes: 30, price: 54.99 },
-  { minutes: 60, price: 109.99 },
-  { minutes: 120, price: 209.99 },
-  { minutes: 180, price: 299.99 },
-  { minutes: 300, price: 499.99 },
-  { minutes: 400, price: 649.99 },
-  { minutes: 500, price: 799.99 },
-  { minutes: 600, price: 949.99 },
-  { minutes: 700, price: 1099.99 },
-  { minutes: 800, price: 1249.99 },
-  { minutes: 900, price: 1399.99 },
-  { minutes: 1000, price: 1549.99 },
+function minutePlan(minutes: number, price: number, whopPlanId: string, kind: "monthly" | "topup"): Plan & { minutes: number } {
+  const id = kind === "monthly" ? `min${minutes}` : `once${minutes}`;
+  const label = minutes.toLocaleString("en-US");
+  return {
+    id,
+    minutes,
+    name: kind === "monthly" ? `${label} min / month` : `${label} minutes`,
+    price,
+    seconds: minutes * 60,
+    perCredit: "",
+    blurb: kind === "monthly" ? `${label} minutes of workflow every month.` : `${label} minutes of workflow, once.`,
+    kind,
+    whopPlanId,
+    purchaseUrl: `https://whop.com/checkout/${whopPlanId}`,
+  };
+}
+
+export const MEMBERSHIP_MINUTES: Array<Plan & { minutes: number }> = [
+  minutePlan(5, 9.99, "plan_VKR9Kyz2NlLFs", "monthly"),
+  minutePlan(10, 19.99, "plan_1VhyW1qVWrq6B", "monthly"),
+  minutePlan(30, 54.99, "plan_iU8eh9SCxNXmP", "monthly"),
+  minutePlan(60, 109.99, "plan_O481kXlGPGIt5", "monthly"),
+  minutePlan(120, 209.99, "plan_jkcys0UUPvgAg", "monthly"),
+  minutePlan(180, 299.99, "plan_Ui3JdSRbeVSrd", "monthly"),
+  minutePlan(300, 499.99, "plan_Dh1OTFaT7s4JQ", "monthly"),
+  minutePlan(400, 649.99, "plan_DAM27W7gYwe0x", "monthly"),
+  minutePlan(500, 799.99, "plan_k9nLbNj6V5jzE", "monthly"),
+  minutePlan(600, 949.99, "plan_RghSbAXWoRuqV", "monthly"),
+  minutePlan(700, 1099.99, "plan_Ee0vcp8jSS8fO", "monthly"),
+  minutePlan(800, 1249.99, "plan_pwgFf2GxhXaR5", "monthly"),
+  minutePlan(900, 1399.99, "plan_cpIFWA4vaw6tl", "monthly"),
+  minutePlan(1000, 1549.99, "plan_HlIdOFPLQ7hXS", "monthly"),
+];
+
+export const MINUTE_TOPUPS: Array<Plan & { minutes: number }> = [
+  minutePlan(10, 19.99, "plan_Q6zbO303j76IY", "topup"),
+  minutePlan(30, 59.99, "plan_ZugWWxSxWTBGx", "topup"),
+  minutePlan(60, 119.99, "plan_GE32GMYRZtClw", "topup"),
+  minutePlan(120, 219.99, "plan_x31JVwsPTnBLj", "topup"),
 ];
 
 export const TOPUP_PLANS: Plan[] = [
@@ -158,7 +182,7 @@ const LEGACY_PLANS: Plan[] = [
 ];
 
 function catalog() {
-  return [...MONTHLY_PLANS, ...TOPUP_PLANS, INTRO_OFFER, ...DFY_PLANS, ...LEGACY_PLANS];
+  return [...MONTHLY_PLANS, ...MEMBERSHIP_MINUTES, ...MINUTE_TOPUPS, ...TOPUP_PLANS, INTRO_OFFER, ...DFY_PLANS, ...LEGACY_PLANS];
 }
 
 export function planById(id: string) {
