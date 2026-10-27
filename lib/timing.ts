@@ -695,13 +695,12 @@ export function groupConsecutiveTakes(scenes: Array<{ index: number; estimatedSe
   return parts;
 }
 
-/** The user's duration, exactly. 60 seconds is 30+30. Scenes keep the time the story gave them. Seconds left over land on the closing scene, a few at a time. A scene never drops below the time its lines need, and a short closing shot is not stretched into its own generation. */
+/** The user's duration, exactly. A generation is only as long as the scenes inside it, up to 30 seconds. The generations add up to the length the user asked for. A scene is not stretched to fill a generation, and the next scene is not dropped to stay inside one. */
 export function exactFilmParts(
   scenes: Array<{ index: number; estimatedSeconds: number; floor: number }>,
   targetSeconds: number,
 ): { parts: SeedancePartPlan[]; seconds: Map<number, number> } {
   const target = Math.max(4, Math.round(targetSeconds));
-  const durations = generationDurations(target);
   const seconds = new Map<number, number>();
   const floorOf = (index: number) => {
     const scene = scenes.find((item) => item.index === index);
@@ -744,83 +743,42 @@ export function exactFilmParts(
       spins += 1;
     }
   };
-  giveSpare(scenes.map((scene) => scene.index), target - sum());
-  const indexes = scenes.map((scene) => scene.index);
-  const groups = splitFilmParts(indexes, durations, (index) => seconds.get(index) || 0);
-  for (let slot = 0; slot < groups.length; slot += 1) {
-    const group = groups[slot];
-    if (!group.length) continue;
-    let over = sumOf(group) - durations[slot];
-    let cuts = 0;
-    while (over > 0 && cuts < 800) {
-      cuts += 1;
-      const slack = group.filter((index) => (seconds.get(index) || 0) > floorOf(index));
-      if (!slack.length) break;
-      slack.sort((a, b) => (seconds.get(b) || 0) - floorOf(b) - ((seconds.get(a) || 0) - floorOf(a)));
-      seconds.set(slack[0], (seconds.get(slack[0]) || 0) - 1);
-      over -= 1;
+  giveSpare(
+    scenes.map((scene) => scene.index),
+    target - sum(),
+  );
+  const groups: number[][] = [];
+  let used = 0;
+  for (const scene of scenes) {
+    const span = seconds.get(scene.index) || floorOf(scene.index);
+    const current = groups[groups.length - 1];
+    if (current?.length && used + span > SEEDANCE_MAX_SECONDS) {
+      groups.push([]);
+      used = 0;
     }
-    const missing = durations[slot] - sumOf(group);
-    if (missing > 0) giveSpare(group, missing);
+    if (!groups.length) groups.push([]);
+    groups[groups.length - 1].push(scene.index);
+    used += span;
+  }
+  for (let index = groups.length - 1; index > 0; index -= 1) {
+    const span = sumOf(groups[index]);
+    if (span >= 4) continue;
+    if (sumOf(groups[index - 1]) + span > SEEDANCE_MAX_SECONDS) continue;
+    groups[index - 1].push(...groups[index]);
+    groups.splice(index, 1);
+  }
+  for (const group of groups) {
+    const short = 4 - sumOf(group);
+    if (short <= 0 || !group.length) continue;
+    const last = group[group.length - 1];
+    seconds.set(last, (seconds.get(last) || 0) + short);
   }
   return {
-    parts: durations.map((duration, index) => ({ duration, sceneIndexes: groups[index] || [] })).filter((item) => item.sceneIndexes.length),
+    parts: groups
+      .filter((group) => group.length)
+      .map((group) => ({ duration: sumOf(group), sceneIndexes: group })),
     seconds,
   };
-}
-
-// Ordered split. A scene stays at the length the story gave it. The cut is the one that asks for the smallest later trim, and a short last shot does not get a generation to itself.
-function splitFilmParts(indexes: number[], slots: number[], span: (index: number) => number) {
-  const count = indexes.length;
-  const parts = slots.length;
-  const groups = slots.map(() => [] as number[]);
-  if (!count || !parts) return groups;
-  if (count < parts) {
-    indexes.forEach((index, position) => groups[Math.min(position, parts - 1)].push(index));
-    return groups;
-  }
-  const prefix = [0];
-  for (const index of indexes) prefix.push(prefix[prefix.length - 1] + span(index));
-  const cost = Array.from({ length: count + 1 }, () => Array(parts + 1).fill(Number.POSITIVE_INFINITY));
-  const prev = Array.from({ length: count + 1 }, () => Array(parts + 1).fill(-1));
-  cost[0][0] = 0;
-  for (let part = 1; part <= parts; part += 1) {
-    for (let end = part; end <= count - (parts - part); end += 1) {
-      for (let start = part - 1; start < end; start += 1) {
-        if (!Number.isFinite(cost[start][part - 1])) continue;
-        const sum = prefix[end] - prefix[start];
-        const slot = slots[part - 1];
-        let penalty = Math.abs(sum - slot);
-        if (parts > 1 && end - start === 1 && sum + 8 < slot) penalty += 1000;
-        const next = cost[start][part - 1] + penalty;
-        if (next < cost[end][part]) {
-          cost[end][part] = next;
-          prev[end][part] = start;
-        }
-      }
-    }
-  }
-  if (!Number.isFinite(cost[count][parts])) {
-    let part = 0;
-    let used = 0;
-    for (const index of indexes) {
-      const weight = span(index);
-      if (part < parts - 1 && groups[part].length && used + weight > slots[part]) {
-        part += 1;
-        used = 0;
-      }
-      groups[Math.min(part, parts - 1)].push(index);
-      used += weight;
-    }
-    return groups;
-  }
-  let end = count;
-  for (let part = parts; part >= 1; part -= 1) {
-    const start = prev[end][part];
-    groups[part - 1] = indexes.slice(start, end);
-    end = start;
-  }
-  return groups;
 }
 
 export function formatPartPlan(parts: SeedancePartPlan[]) {
@@ -856,20 +814,15 @@ export function dramaAdSpans(totalSeconds: number) {
 
 export function storyArc(totalSeconds: number) {
   const { total, problem, use, after } = dramaAdSpans(totalSeconds);
-  const parts = seedancePartDurations(total);
-  const listed = parts.map((duration, index) => `part ${index + 1} (${duration}s)`).join(", ");
-  const head = parts.length > 1 ? `The film is ${total} seconds, told in ${listed}.` : `The film is ${total} seconds, in one part.`;
+  const head =
+    total <= SEEDANCE_MAX_SECONDS
+      ? `The film is ${total} seconds, in one generation.`
+      : `The film is ${total} seconds. A generation is at most 30 seconds and only as long as the scenes inside it. Generations can be 15, 25, or 5 seconds. Together they add up to ${total}. Do not stretch a scene so a generation reaches 30. If the next scene does not fit in the time left, it starts the next generation at its own length. Do not drop it.`;
   const moves =
-    "Open on the problem already in motion. Do not add a calm introduction before it. A turn inside that problem makes it worse, or shows the cause was not what they thought. Any part may visit more than one place when the story takes them somewhere else. A later minute of the same situation stays in that place, on the same ground. Do not invent a second environment to mark that time. The solution is then used where someone would really use it. After that, the same life is shown improved, for long enough that the change is visible. Do not solve the story in the opening. Do not add a slogan or a health claim.";
+    "Open on the problem already in motion. Do not add a calm introduction before it. A turn inside that problem makes it worse, or shows the cause was not what they thought. The story may visit more than one place when it takes them somewhere else. A later minute of the same situation stays in that place, on the same ground. Do not invent a second environment to mark that time. The solution is then used where someone would really use it. After that, the same life is shown improved, for long enough that the change is visible. Do not solve the story in the opening. Do not add a slogan or a health claim.";
   const clock = `Start from about ${problem}s for the problem, including the turn, about ${use}s for the solution being used, and about ${after}s after that so the change has time to land. Bend those lengths when this situation cannot hold them. A product handed over in the middle of an event that is already going keeps the problem as what the camera shows, puts the use inside that event, and lets the rest of the event, going better, be the ending. A story that can pause may use a longer spoken problem and a spoken landing. The ending still gets real time. It is still this story, not a tour of other days.`;
-  let where = "";
-  if (parts.length <= 1) {
-    where = "Those three stretches play in that order, in the one part, unless the use has to happen inside the problem because that is when this product would be used. Each can change place and action when the story needs it.";
-  } else if (parts.length === 2) {
-    where = "Part 1 carries the problem and the turn. Do not solve it there unless the product would actually arrive during that event. Part 2 is the solution being used, then the change. Do not spend part 2 only on the use, and do not leave the event for a separate testimonial if the change is the rest of that same event. End part 2 on one continuous shot, long enough to see the change. If someone can speak, that shot is where they say what changed. Do not end on a burst of cuts.";
-  } else {
-    where = `Parts 1 to ${parts.length - 1} carry the problem and the turn. Do not solve it in part 1 unless the product would actually arrive during that event. Part ${parts.length} is the solution being used, then the change. Do not spend that last part only on the use. End that part on one continuous shot, long enough to see the change. If someone can speak, that shot is where they say what changed. Do not end on a burst of cuts.`;
-  }
+  const where =
+    "Those three stretches play in that order. A generation can hold more than one of them, and one stretch can continue into the next generation. The cut does not lengthen a scene and does not leave the next scene out. End on one continuous shot, long enough to see the change, at the length that shot needs. If someone can speak, that shot is where they say what changed. Do not end on a burst of cuts, and do not hold a shot just to fill 30 seconds.";
   return `${head} ${moves} ${clock} ${where} This shape is the same for Pixar, claymation, and realistic. The style changes the look of the picture, not the story.`;
 }
 

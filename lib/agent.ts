@@ -5,7 +5,7 @@ import { driveProduce } from "./produce";
 import { applyScriptLooks, castBrief, lookIsThin } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { dropSpeechFragments } from "./speech-echo";
-import { balancePartSceneSeconds, estimateSceneSeconds, fitSpokenScenes, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, storyArc, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, estimateSceneSeconds, fitSpokenScenes, parseDurationFromText, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, storyArc, userTimedSeconds } from "./timing";
 import { ensureSceneShots } from "./shots";
 import { ensureReferenceSlots, isUnseenVoice, promptReadyReferences, refineStoryLeads, syncReferenceInclusion, dropUnscriptedDialogue } from "./refs";
 import { productLookBrief, productPageBrief, productUnderstandingBrief, productUseBrief } from "./product-facts";
@@ -1658,9 +1658,6 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
       : "";
     return withStoryReading(project, `${songTask} ${songContext}`.trim());
   }
-  const parts = seedancePartDurations(project.targetDurationSeconds || 15).map(
-    (duration, index) => `part ${index + 1} (max ${duration}s)`,
-  );
   const ordered = scriptIsStoryboard(project.scriptText);
   const timedRows = timestampRows(project.scriptText).length >= 2;
   const opening = timedRows
@@ -1691,7 +1688,7 @@ Each scene is one lyric line, or two short lines that are the same picture. Do n
       : storyArc(project.targetDurationSeconds || 15);
   return withStoryReading(
     project,
-    `${opening} ${known} ${pages} ${watched} ${presence} ${arc} Dialogue language: ${language}. Every line you write is in ${language}. A line the user already wrote stays in their words. Target total duration: ${project.targetDurationSeconds}s. The story you write fills that length. Generations are at most 30s of consecutive story time (${parts.join(", ")}). A generation is not one heading. A short beat stays short and the next beat fills the rest of that generation. Do not stretch a clock. ${timing} ${styleLine}`,
+    `${opening} ${known} ${pages} ${watched} ${presence} ${arc} Dialogue language: ${language}. Every line you write is in ${language}. A line the user already wrote stays in their words. Target total duration: ${project.targetDurationSeconds}s. The story you write fills that length. A generation is at most 30s and only as long as the scenes inside it. Generations can be 15s, 25s, or 5s, and together they are ${project.targetDurationSeconds}s. A generation is not one heading. A short beat stays short. Do not lengthen it to fill a generation, and do not leave the next scene out because the time left is short. That scene starts the next generation at its own length. Do not stretch a clock. ${timing} ${styleLine}`,
   );
 }
 

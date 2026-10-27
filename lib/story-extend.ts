@@ -1,6 +1,6 @@
 import { clampTotalDuration, createId } from "./ids";
 import { sonnetText } from "./sonnet";
-import { sceneSpeechFloor, seedancePartDurations } from "./timing";
+import { sceneSpeechFloor } from "./timing";
 import type { Project, Scene } from "./types";
 
 const CLOCK = /\d{1,2}:\d{2}\s*(?:to|–|—|-)\s*\d{1,2}:\d{2}/gi;
@@ -51,9 +51,6 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
   const names = project.characters.filter((character) => !character.isExtra && character.name.trim()).map((character) => character.name);
   const last = project.scenes[project.scenes.length - 1];
   const fallback = (last?.dialogue || []).find((line) => line.speaker?.trim())?.speaker || names[0] || "the man";
-  const parts = seedancePartDurations(target)
-    .map((duration, index) => `part ${index + 1} ${duration}s`)
-    .join(", ");
   const wroteLines = /["“][^"”]{2,}["”]/.test(project.scriptText || "");
   const linesNeeded = wroteLines ? Math.max(1, Math.round(gap / 3)) : Math.max(1, Math.round(gap / 8));
   const speechRule = wroteLines
@@ -75,7 +72,7 @@ export async function extendShortStory(project: Project, signal?: AbortSignal) {
         "The style does not change the story.",
       ].join(" "),
       [
-        `Target: ${target} seconds (${parts}). The scenes below cover ${written} seconds. Add ${gap} seconds. Add a spoken line only where someone in these new scenes would speak, and no more than ${linesNeeded}.`,
+        `Target: ${target} seconds. The scenes below cover ${written} seconds. Add ${gap} seconds. A new scene is as long as its action, not long enough to fill a 30 second generation. Add a spoken line only where someone in these new scenes would speak, and no more than ${linesNeeded}.`,
         `Dialogue language: ${language}. Use only these people: ${names.join(", ") || fallback}.`,
         `The last scene is in ${last?.location || "the same place"}. If these seconds are still that situation, continue there, on the same ground. Start a new place only when they go somewhere else.`,
         project.storyBrief?.trim()
