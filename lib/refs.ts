@@ -780,7 +780,7 @@ function attributedQuotes(script: string) {
   for (const match of script.matchAll(pattern)) {
     const speaker = match[1].replace(/\s+/g, " ").trim();
     const line = match[2].replace(/\s+/g, " ").trim();
-    if (!speaker || !line || /^(?:super|small print|text|title|caption|on-?screen(?:\s+text)?)$/i.test(speaker)) continue;
+    if (!speaker || !line || /^(?:super|small print|text|title|caption|on[\s-]?screen(?:\s+text)?|text\s+on[\s-]?screen)$/i.test(speaker)) continue;
     const voiceover = /^(?:vo|v\/o|voice-?over|voiceover|o\.?\s*s\.?|narrator)$/i.test(speaker);
     found.push({ speaker: voiceover ? "Narrator" : speaker, line, voiceover });
   }

@@ -20,7 +20,7 @@ import { assignCharacterSourcePhotos, dropUnscriptedDialogue, isUnseenVoice, par
 import { abortableDelay, isAbortError, throwIfAborted } from "./abort";
 import { uploadFalBuffer } from "./fal";
 import { characterAnchorPrompt, characterLookFromPhotoPrompt, characterLookPrompt, characterLookRevisionPrompt, labeledReferencePrompt, locationPlatePrompt, narrationLines, narratorVoicePrompt, openingFrameCharacters, packedScenePrompt, sceneFramePrompt, type PromptRef } from "./style";
-import { balancePartSceneSeconds, clockBeatSeconds, fillPartSceneSeconds, fitPartsToBudget, groupConsecutiveTakes, holdTheClose, packScenesIntoParts, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, splitScenesAcrossTakes, userTimedSeconds } from "./timing";
+import { balancePartSceneSeconds, clockBeatSeconds, exactFilmParts, fillPartSceneSeconds, fitPartsToBudget, fitSpokenScenes, packScenesIntoParts, sceneDurationFloor, sceneHasStory, sceneSpeechFloor, shouldGenerateOneShot, userTimedSeconds } from "./timing";
 import type { Batch, Character, Project, ReferenceAsset } from "./types";
 
 type StatusFn = (text: string) => void;
@@ -1675,10 +1675,10 @@ export function planSeedanceBatches(project: Project) {
     const clocks = clockBeatSeconds(project.scriptText || "");
     if (clocks.length >= 2 && clocks.length === project.scenes.length) {
       project.scenes.forEach((scene, index) => {
-        scene.estimatedSeconds = clocks[index];
+        scene.estimatedSeconds = Math.max(clocks[index], sceneSpeechFloor(scene));
       });
     }
-    project.scenes = splitScenesAcrossTakes(project.scenes);
+    fitSpokenScenes(project.scenes, target);
   }
   const timed = project.scenes.map((scene) => ({
     index: scene.index,
@@ -1686,15 +1686,30 @@ export function planSeedanceBatches(project: Project) {
     floor: sceneSpeechFloor(scene),
     lock: userTimedSeconds(scene.title, scene.estimatedSeconds) || (/end\s*card|tarjeta\s+final/i.test(`${scene.title} ${scene.summary}`) ? scene.estimatedSeconds : undefined),
   }));
-  const parts = project.song
-    ? packScenesIntoParts(
+  const packed = project.song
+    ? null
+    : exactFilmParts(
+        project.scenes.map((scene) => ({
+          index: scene.index,
+          estimatedSeconds: scene.estimatedSeconds || 0,
+          floor: sceneDurationFloor(scene),
+        })),
+        target,
+      );
+  if (packed) {
+    project.scenes.forEach((scene) => {
+      const next = packed.seconds.get(scene.index);
+      if (next) scene.estimatedSeconds = next;
+    });
+  }
+  const parts = packed
+    ? packed.parts
+    : packScenesIntoParts(
         project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })),
         target,
-        project.song.clips.map((clip) => clip.durationSeconds),
-      )
-    : groupConsecutiveTakes(project.scenes.map((scene) => ({ index: scene.index, estimatedSeconds: scene.estimatedSeconds || 0 })));
-  const bounded = project.song ? parts : fitPartsToBudget(parts, target);
-  if (!project.song) holdTheClose(project.scenes, bounded);
+        project.song?.clips.map((clip) => clip.durationSeconds),
+      );
+  const bounded = project.song ? fitPartsToBudget(parts, target) : parts;
   if (project.song) {
     const capped = balancePartSceneSeconds(timed, parts);
     const filled = fillPartSceneSeconds(

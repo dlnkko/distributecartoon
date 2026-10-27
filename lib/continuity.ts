@@ -329,9 +329,10 @@ export function continuityPass(project: Project) {
     const lines = sentences(text);
     const prevCast = previous ? onScreenLeads(previous, project) : [];
     const prevExited = previous ? exitedNames(project, previous, allCast) : new Set<string>();
-    if (!continuous) held.forEach((state, prop) => !castKeys.has((state.holder || "").toLowerCase()) && held.delete(prop));
-
-    if (!continuous) placed.clear();
+    if (!continuous) {
+      held.clear();
+      placed.clear();
+    }
 
     // Props: carry what each character holds across cuts; flag props that pop in or vanish.
     const touched = new Set<string>();

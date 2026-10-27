@@ -114,7 +114,7 @@ export function LibraryShell({
   const empty = zone === "drafts" ? drafts.length === 0 : zone === "products" || zone === "stories" || zone === "clone" ? false : total === 0;
   const summary =
     zone === "clone"
-      ? "Upload a video. The story is rewritten around your product."
+      ? "Upload a video. The trouble stays, and its cause becomes the pain point. The remedy becomes your product."
       : zone === "stories"
       ? "A drama from a product. You pick the look after."
       : zone === "products"

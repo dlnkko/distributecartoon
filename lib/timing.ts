@@ -120,6 +120,74 @@ export function sceneSpeechFloor(scene: Pick<Scene, "dialogue">): number {
   return Math.min(SEEDANCE_MAX_SECONDS, Math.max(3, Math.round(talk * 10) / 10));
 }
 
+export function sceneDurationFloor(scene: Pick<Scene, "dialogue">) {
+  const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
+  if (!lines.length) return 2;
+  return Math.max(3, Math.round(sceneSpeechFloor(scene)));
+}
+
+/** Lines that can be said in full inside these seconds. A line that does not fit is left out. */
+export function linesThatFit<T extends { line?: string }>(lines: T[], seconds: number): T[] {
+  const kept: T[] = [];
+  let used = 0;
+  for (const line of lines) {
+    const said = (line.line || "").trim();
+    if (!said) continue;
+    const need = estimateDialogueSeconds(said);
+    if (used + need > seconds + 0.35) break;
+    kept.push(line);
+    used += need;
+  }
+  return kept;
+}
+
+function spokenLines<T extends { dialogue?: Array<{ line?: string }> }>(scene: T) {
+  return (scene.dialogue || []).filter((line) => (line.line || "").trim());
+}
+
+/**
+ * A scene keeps enough seconds to finish the lines it still has.
+ * When raising those scenes makes the film longer than its target, extra lines come off until what remains can be said in full.
+ */
+export function fitSpokenScenes<T extends { summary?: string; dialogue?: Array<{ line?: string }>; estimatedSeconds?: number }>(
+  scenes: T[],
+  targetSeconds: number,
+) {
+  const target = Math.max(4, Math.round(targetSeconds));
+  const speechFloorOf = (scene: T) => {
+    const lines = spokenLines(scene);
+    if (!lines.length) return 2;
+    return sceneSpeechFloor({ dialogue: lines.map((line) => ({ speaker: "", line: line.line || "" })) });
+  };
+  for (const scene of scenes) {
+    const floor = speechFloorOf(scene);
+    if ((scene.estimatedSeconds || 0) < floor) scene.estimatedSeconds = floor;
+  }
+  let guard = 0;
+  while (scenes.reduce((sum, scene) => sum + (scene.estimatedSeconds || 0), 0) > target + 0.05 && guard < 800) {
+    guard += 1;
+    const loose = scenes.filter((scene) => (scene.estimatedSeconds || 0) > speechFloorOf(scene) + 0.05);
+    if (loose.length) {
+      loose.sort((a, b) => (b.estimatedSeconds || 0) - speechFloorOf(b) - ((a.estimatedSeconds || 0) - speechFloorOf(a)));
+      const donor = loose[0];
+      donor.estimatedSeconds = Math.max(speechFloorOf(donor), (donor.estimatedSeconds || 0) - 1);
+      continue;
+    }
+    const talky = scenes.filter((scene) => spokenLines(scene).length > 1);
+    const pool = talky.length ? talky : scenes.filter((scene) => spokenLines(scene).length > 0);
+    if (!pool.length) break;
+    pool.sort((a, b) => spokenLines(b).length - spokenLines(a).length);
+    const victim = pool[0];
+    victim.dialogue = (victim.dialogue || []).slice(0, -1);
+    const floor = speechFloorOf(victim);
+    victim.estimatedSeconds = Math.max(floor, (victim.estimatedSeconds || floor) - 3);
+  }
+  for (const scene of scenes) {
+    const floor = speechFloorOf(scene);
+    scene.estimatedSeconds = Math.min(SEEDANCE_MAX_SECONDS, Math.max(floor, scene.estimatedSeconds || floor));
+  }
+}
+
 export function estimateSceneSeconds(scene: Pick<Scene, "summary" | "dialogue">): number {
   const lines = (scene.dialogue || []).filter((line) => line.line?.trim());
   if (lines.length) return sceneSpeechFloor(scene);
@@ -339,7 +407,7 @@ export function balancePartSceneSeconds(
   for (const scene of scenes) {
     const locked = scene.lock && scene.lock > 0 ? Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, scene.lock)) : 0;
     const floor = Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, scene.floor ?? 2));
-    const start = locked || Math.max(floor, sceneSpan(scene.estimatedSeconds));
+    const start = Math.max(floor, locked || sceneSpan(scene.estimatedSeconds));
     next.set(scene.index, Math.min(SEEDANCE_MAX_SECONDS, start));
   }
   for (const part of parts) {
@@ -359,7 +427,6 @@ export function balancePartSceneSeconds(
       }
     };
     shrink((index) => Math.max(2, meta.get(index)?.floor ?? 2));
-    shrink(() => 2);
   }
   return next;
 }
@@ -440,7 +507,6 @@ export function capPartSceneSeconds(
       const floor = floors?.get(index);
       return floor == null ? 2 : Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, floor));
     });
-    if (overflow > 0.05) cutSlack(() => 2);
     part.sceneIndexes.forEach((index, position) => {
       next.set(index, fitted[position]);
     });
@@ -550,6 +616,10 @@ export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
     let remaining = roundTenth(Math.max(2, scene.estimatedSeconds || 2));
     const total = remaining;
     let offset = 0;
+    const floor = Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, sceneSpeechFloor(scene)));
+    if (used > 0 && SEEDANCE_MAX_SECONDS - used + 0.05 < Math.min(remaining, floor) && remaining <= SEEDANCE_MAX_SECONDS) {
+      used = 0;
+    }
     while (remaining > 0.05) {
       if (used > 0 && SEEDANCE_MAX_SECONDS - used < 2) used = 0;
       const room = roundTenth(SEEDANCE_MAX_SECONDS - used);
@@ -567,7 +637,7 @@ export function splitScenesAcrossTakes(scenes: Scene[]): Scene[] {
 
 // Keep each generation as the story timed it. Do not re-deal scenes by count:
 // that piles the opening into one clip and leaves the last lines too short to play.
-export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): SeedancePartPlan[] {
+export function fitPartsToBudget(parts: SeedancePartPlan[], target: number, minimums?: Map<number, number>): SeedancePartPlan[] {
   const goal = Math.max(4, Math.round(target));
   const next = parts
     .filter((part) => part.sceneIndexes.length)
@@ -575,10 +645,15 @@ export function fitPartsToBudget(parts: SeedancePartPlan[], target: number): See
       sceneIndexes: [...part.sceneIndexes],
       duration: Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(part.duration))),
     }));
+  const floorOf = (part: SeedancePartPlan) => {
+    if (!minimums) return 4;
+    const sum = part.sceneIndexes.reduce((total, index) => total + (minimums.get(index) || 2), 0);
+    return Math.min(SEEDANCE_MAX_SECONDS, Math.max(4, Math.round(sum)));
+  };
   if (!next.length) return generationDurations(goal).map((duration) => ({ duration, sceneIndexes: [] }));
   let drift = goal - next.reduce((sum, part) => sum + part.duration, 0);
   for (let index = next.length - 1; index >= 0 && drift !== 0; index -= 1) {
-    const room = drift > 0 ? SEEDANCE_MAX_SECONDS - next[index].duration : next[index].duration - 4;
+    const room = drift > 0 ? SEEDANCE_MAX_SECONDS - next[index].duration : next[index].duration - floorOf(next[index]);
     if (room <= 0) continue;
     const step = Math.min(room, Math.abs(drift));
     next[index].duration += drift > 0 ? step : -step;
@@ -618,6 +693,98 @@ export function groupConsecutiveTakes(scenes: Array<{ index: number; estimatedSe
   }
   flush();
   return parts;
+}
+
+/** The user's duration, exactly. 60 seconds is 30+30. A scene never drops below the time its lines need. */
+export function exactFilmParts(
+  scenes: Array<{ index: number; estimatedSeconds: number; floor: number }>,
+  targetSeconds: number,
+): { parts: SeedancePartPlan[]; seconds: Map<number, number> } {
+  const target = Math.max(4, Math.round(targetSeconds));
+  const durations = generationDurations(target);
+  const seconds = new Map<number, number>();
+  const floorOf = (index: number) => {
+    const scene = scenes.find((item) => item.index === index);
+    return Math.min(SEEDANCE_MAX_SECONDS, Math.max(2, Math.round(scene?.floor || 2)));
+  };
+  for (const scene of scenes) {
+    const floor = floorOf(scene.index);
+    seconds.set(scene.index, Math.min(SEEDANCE_MAX_SECONDS, Math.max(floor, Math.round(scene.estimatedSeconds || floor))));
+  }
+  const sum = () => [...seconds.values()].reduce((total, value) => total + value, 0);
+  let guard = 0;
+  while (sum() > target && guard < 800) {
+    guard += 1;
+    const slack = scenes.map((scene) => scene.index).filter((index) => (seconds.get(index) || 0) > floorOf(index));
+    if (!slack.length) break;
+    slack.sort((a, b) => (seconds.get(b) || 0) - floorOf(b) - ((seconds.get(a) || 0) - floorOf(a)));
+    const index = slack[0];
+    seconds.set(index, (seconds.get(index) || 0) - 1);
+  }
+  let gap = target - sum();
+  let spin = 0;
+  while (gap > 0 && scenes.length && spin < scenes.length * 40) {
+    const index = scenes[spin % scenes.length].index;
+    const current = seconds.get(index) || 0;
+    if (current < SEEDANCE_MAX_SECONDS) {
+      seconds.set(index, current + 1);
+      gap -= 1;
+    }
+    spin += 1;
+  }
+  const groups: number[][] = durations.map(() => []);
+  let part = 0;
+  const partSum = (slot: number) => groups[slot].reduce((total, index) => total + (seconds.get(index) || 0), 0);
+  for (const scene of scenes) {
+    const span = () => seconds.get(scene.index) || floorOf(scene.index);
+    if (part < durations.length - 1 && groups[part].length && partSum(part) + span() > durations[part]) {
+      let need = partSum(part) + span() - durations[part];
+      for (const donor of [...groups[part]].reverse()) {
+        if (need <= 0) break;
+        const room = (seconds.get(donor) || 0) - floorOf(donor);
+        if (room <= 0) continue;
+        const cut = Math.min(room, need);
+        seconds.set(donor, (seconds.get(donor) || 0) - cut);
+        need -= cut;
+      }
+      if (partSum(part) + span() > durations[part]) part += 1;
+    }
+    groups[Math.min(part, durations.length - 1)].push(scene.index);
+  }
+  for (let slot = durations.length - 1; slot > 0; slot -= 1) {
+    while (!groups[slot].length && groups[slot - 1].length > 1) {
+      const moved = groups[slot - 1].pop();
+      if (moved) groups[slot].unshift(moved);
+    }
+  }
+  for (let slot = 0; slot < durations.length; slot += 1) {
+    const indexes = groups[slot];
+    if (!indexes.length) continue;
+    let over = partSum(slot) - durations[slot];
+    for (const index of [...indexes].reverse()) {
+      if (over <= 0) break;
+      const room = (seconds.get(index) || 0) - floorOf(index);
+      if (room <= 0) continue;
+      const cut = Math.min(room, over);
+      seconds.set(index, (seconds.get(index) || 0) - cut);
+      over -= cut;
+    }
+    let missing = durations[slot] - partSum(slot);
+    let spins = 0;
+    while (missing > 0 && spins < indexes.length * SEEDANCE_MAX_SECONDS) {
+      const index = indexes[spins % indexes.length];
+      const current = seconds.get(index) || 0;
+      if (current < SEEDANCE_MAX_SECONDS) {
+        seconds.set(index, current + 1);
+        missing -= 1;
+      }
+      spins += 1;
+    }
+  }
+  return {
+    parts: durations.map((duration, index) => ({ duration, sceneIndexes: groups[index] })).filter((item) => item.sceneIndexes.length),
+    seconds,
+  };
 }
 
 export function formatPartPlan(parts: SeedancePartPlan[]) {

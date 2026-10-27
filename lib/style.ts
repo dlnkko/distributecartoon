@@ -9,6 +9,7 @@ import { sameCameraPerspective } from "./shots";
 import { actionGesture, carriedProductSentence, clothesCarryIndexes, clothesShouldChange, continuityLine, poseCarryIndex, previousSeenCard, productCarryIndexes } from "./seen-continuity";
 import { realisticProseCast } from "./realistic-prose";
 import { dropSpeechFragments } from "./speech-echo";
+import { linesThatFit, sceneSpeechFloor } from "./timing";
 
 export type PromptRef = {
   url: string;
@@ -1173,16 +1174,23 @@ type CompactPromptOptions = {
 
 type TagSwap = { names: string[]; tag: string; person?: boolean; exact?: boolean };
 
-function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number) {
+function fittedSeconds(scenes: Array<Scene | undefined>, maxSeconds?: number, floors?: number[]) {
   const budget = maxSeconds && maxSeconds > 0 ? Math.round(maxSeconds) : 0;
-  const raw = scenes.map((scene) => Math.max(1, Math.round(scene?.estimatedSeconds || 4)));
+  const floorAt = (index: number) => {
+    const given = floors?.[index];
+    if (given != null) return Math.max(2, Math.round(given));
+    const scene = scenes[index];
+    const spoken = (scene?.dialogue || []).some((line) => line.line?.trim());
+    return spoken && scene ? Math.max(2, Math.round(sceneSpeechFloor(scene))) : 2;
+  };
+  const raw = scenes.map((scene, index) => Math.max(floorAt(index), Math.round(scene?.estimatedSeconds || 4)));
   const sum = raw.reduce((total, value) => total + value, 0);
   if (!(budget > 0) || !sum || sum === budget) return raw;
   const scale = budget / sum;
-  const next = raw.map((value) => Math.max(1, Math.round(value * scale)));
+  const next = raw.map((value, index) => Math.max(floorAt(index), Math.round(value * scale)));
   let used = next.reduce((total, value) => total + value, 0);
   for (let index = next.length - 1; index >= 0 && used > budget; index -= 1) {
-    const cut = Math.min(Math.max(0, next[index] - 1), used - budget);
+    const cut = Math.min(Math.max(0, next[index] - floorAt(index)), used - budget);
     if (cut <= 0) continue;
     next[index] -= cut;
     used -= cut;
@@ -1444,7 +1452,10 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
   const { project, sceneIndexes } = options;
   const { people, refs, swaps, narratorTag } = buildTags(project, options.images || [], options.videos || []);
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
-  const seconds = fittedSeconds(scenes, options.maxSeconds);
+  const speechFloors = scenes.map((scene) =>
+    scene && (scene.dialogue || []).some((line) => line.line?.trim()) ? Math.max(2, Math.round(sceneSpeechFloor(scene))) : 2,
+  );
+  const seconds = fittedSeconds(scenes, options.maxSeconds, speechFloors);
   const shots = continuityPass(project);
 
   const places: string[] = [];
@@ -1517,7 +1528,12 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
       .join(" ");
     const tagged = scrubSpanishSpeakerPhrases(replaceSpeakerNames(applyTags(body, swaps), project));
     const text = `${moved ? settingLine(place, options.images || [], true) : ""} ${withoutPlaceRestatement(tagged, options.images || [])}`.trim();
-    const dialogue = dialogueBlock(project, scene, people, narratorTag);
+    const dialogue = dialogueBlock(
+      project,
+      scene ? { ...scene, dialogue: linesThatFit(scene.dialogue || [], seconds[i] || 0) } : scene,
+      people,
+      narratorTag,
+    );
     return [`SCENE ${i + 1} (${seconds[i]}s) — ${cameraTitle(camera)}:`, text, dialogue].filter(Boolean).join("\n");
   });
 
@@ -1525,13 +1541,16 @@ export function compactVideoPrompt(options: CompactPromptOptions) {
 }
 
 function exactSeconds(scenes: Array<Scene | undefined>, total?: number) {
-  const raw = scenes.map((scene) => Math.max(1.5, scene?.estimatedSeconds || 4));
+  const floors = scenes.map((scene) =>
+    scene && (scene.dialogue || []).some((line) => line.line?.trim()) ? Math.max(2, Math.round(sceneSpeechFloor(scene))) : 2,
+  );
+  const raw = scenes.map((scene, index) => Math.max(floors[index], scene?.estimatedSeconds || 4));
   const sum = raw.reduce((acc, value) => acc + value, 0);
   const target = total && total > 0 ? total : sum;
-  const scaled = raw.map((value) => Math.round((value / sum) * target * 10) / 10);
+  const scaled = raw.map((value, index) => Math.max(floors[index], Math.round((value / sum) * target * 10) / 10));
   const drift = Math.round((target - scaled.reduce((acc, value) => acc + value, 0)) * 10) / 10;
-  if (scaled.length) scaled[scaled.length - 1] = Math.round((scaled[scaled.length - 1] + drift) * 10) / 10;
-  return { durations: scaled, total: target };
+  if (scaled.length && drift > 0) scaled[scaled.length - 1] = Math.round((scaled[scaled.length - 1] + drift) * 10) / 10;
+  return { durations: scaled, total: scaled.reduce((acc, value) => acc + value, 0) };
 }
 
 function secondsLabel(value: number) {
@@ -2011,16 +2030,24 @@ function purgeDirection(text: string) {
 
 function graphicScene(scene?: Scene) {
   const blob = `${scene?.title || ""} ${scene?.summary || ""}`;
-  return /\b(on-?screen text|pack\s*shot|packshot|title card|end card|small print|\bsuper\b|caption)\b/i.test(blob);
+  const card = /\b(on-?screen text|text\s+on[\s-]?screen|pack\s*shot|packshot|title card|end card|small print|\bsuper\b|caption)\b/i.test(blob);
+  if (!card) return false;
+  const rest = blob
+    .replace(/\b(?:text\s+)?on[\s-]?screen(?:\s+text)?\s*:\s*(?:["“][^"”]+["”]|[^.!?\n]{1,80})/gi, " ")
+    .replace(/[^a-z0-9]+/gi, " ")
+    .trim();
+  const words = rest.split(/\s+/).filter((word) => word.length > 2);
+  return words.length < 10;
 }
 
 function takeOnScreenCards(summary: string) {
   const cards: string[] = [];
   const visual = purgeDirection(summary).replace(
-    /\b(?:vo\s*\/\s*)?on[\s-]?screen(?:\s+text)?\s*:\s*["“]?([^"”\n]+)["”]?/gi,
-    (_full, card: string) => {
-      const text = card.replace(/[.]+$/, "").trim();
-      if (text) cards.push(text);
+    /\b(?:text\s+)?(?:vo\s*\/\s*)?on[\s-]?screen(?:\s+text)?\s*:\s*(?:["“]([^"”]{1,80})["”]|([A-Za-z0-9][^.\n]{0,60}))/gi,
+    (full, quoted: string | undefined, bare: string | undefined) => {
+      const text = (quoted || bare || "").replace(/[.]+$/, "").trim();
+      if (!text || text.split(/\s+/).length > 8) return full;
+      cards.push(text);
       return " ";
     },
   );
@@ -2338,7 +2365,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const previousLine = refs.find((line) => /this part starts after it/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
-  const seconds = fittedSeconds(scenes, options.maxSeconds);
+  const speechFloors = scenes.map((scene) =>
+    scene && (scene.dialogue || []).some((line) => line.line?.trim()) ? Math.max(2, Math.round(sceneSpeechFloor(scene))) : 2,
+  );
+  const seconds = fittedSeconds(scenes, options.maxSeconds, speechFloors);
   const shots = continuityPass(project);
   const locationTags = images.map((item, index) => (item.kind === "location" ? `@Image${index + 1}` : "")).filter(Boolean);
   const song = Boolean(project.song);
@@ -2377,6 +2407,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const cutSeconds = fittedSeconds(
     flat.map((item) => ({ estimatedSeconds: item.shot.seconds }) as Scene),
     options.maxSeconds,
+    speechFloors,
   );
   const linesByShot: DialogueLine[][] = flat.map(() => []);
   const shotGroups = new Map<number, number[]>();
@@ -2387,7 +2418,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   });
   for (const indexes of shotGroups.values()) {
     const scene = flat[indexes[0]]?.scene;
-    const lines = (scene?.dialogue || []).filter((line) => line.speaker && line.line?.trim());
+    const room = indexes.reduce((sum, flatIndex) => sum + (cutSeconds[flatIndex] || 0), 0);
+    const lines = linesThatFit(
+      (scene?.dialogue || []).filter((line) => line.speaker && line.line?.trim()),
+      room,
+    );
     const narrated = lines.filter((line) => line.voiceover || isVoiceoverSpeaker(project, line.speaker));
     const spoken = lines.filter((line) => !narrated.includes(line));
     const take = Math.ceil(spoken.length / Math.max(1, indexes.length));
@@ -2540,8 +2575,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
           : tag
             ? identityPhrase(project, name, tag)
             : `${name}.`;
-      const stance = song ? "" : stanceClause(visible || cleaned, name, tag, placeNow);
-      positions.set(key, `- ${identity} ${stance}`.replace(/\s{2,}/g, " ").trim());
+      if (!positions.has(key)) positions.set(key, `- ${identity}`.replace(/\s{2,}/g, " ").trim());
     }
     const placeKey = placeNow.toLowerCase();
     const openingPlace = placeKey ? !openedPlaces.has(placeKey) : i === 0;
@@ -2551,9 +2585,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       .map((name) => {
         const key = name.toLowerCase();
         const base = positions.get(key)?.replace(/^- /, "") || "";
-        if (!song || !openingPlace) return base;
         const tag = people.get(key) || "";
-        const stance = stanceClause(visible || cleaned, name, tag, placeNow);
+        const stance = song && !openingPlace ? "" : stanceClause(visible || cleaned, name, tag, placeNow);
         return `${base} ${stance}`.replace(/\s{2,}/g, " ").trim();
       })
       .filter(Boolean);

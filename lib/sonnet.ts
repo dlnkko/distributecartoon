@@ -62,7 +62,7 @@ async function postWithFallback(body: Record<string, unknown>, signal: AbortSign
   }
 }
 
-export async function sonnetText(system: string, user: string, options?: { maxTokens?: number; signal?: AbortSignal }) {
+export async function sonnetText(system: string, user: string, options?: { maxTokens?: number; signal?: AbortSignal; effort?: boolean }) {
   const content = await postWithFallback(
     {
       max_tokens: options?.maxTokens ?? 8000,
@@ -70,7 +70,7 @@ export async function sonnetText(system: string, user: string, options?: { maxTo
       messages: [{ role: "user", content: user }],
     },
     options?.signal,
-    true,
+    options?.effort !== false,
   );
   return content
     .filter((block) => block.type === "text" && block.text?.trim())

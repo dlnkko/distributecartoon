@@ -84,17 +84,17 @@ export function ClonePanel({
     });
     const json = (await res.json().catch(() => ({}))) as { pain?: string; audience?: string; page?: string; error?: string };
     setBusy("");
-    if (!res.ok || !json.pain) {
+    if (!res.ok || !json.audience || !json.pain) {
       setError(json.error || "Couldn't read that page.");
       return;
     }
     setPain(json.pain);
-    setAudience(json.audience || "");
+    setAudience(json.audience);
     setPage(json.page || "");
   }
 
   async function go() {
-    if (!productId || !file || !pain.trim() || !audience.trim() || busy) return;
+    if (!productId || !file || !audience.trim() || !pain.trim() || busy) return;
     setBusy("continue");
     setError("");
     const body = new FormData();
@@ -106,7 +106,7 @@ export function ClonePanel({
     body.set("language", language);
     if (page) body.set("page", page);
     try {
-      const res = await fetch("/api/clone", { method: "POST", body, signal: AbortSignal.timeout(240_000) });
+      const res = await fetch("/api/clone", { method: "POST", body, signal: AbortSignal.timeout(480_000) });
       const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
       if (!res.ok || !json.project) {
         setError(json.error || "Couldn't adapt that video.");
@@ -136,7 +136,7 @@ export function ClonePanel({
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <section className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 sm:p-5">
         <p className="text-sm font-medium">Reference video</p>
-        <p className="mt-0.5 text-xs text-[var(--cf-muted)]">An mp4, mov, or webm under 2 minutes. The shape stays. The product changes.</p>
+        <p className="mt-0.5 text-xs text-[var(--cf-muted)]">An mp4, mov, or webm under 10 minutes. The shape stays. The cause and the product change.</p>
         <label className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[var(--cf-line)] bg-black/20 px-4 py-5 text-center text-sm">
           <input
             type="file"
@@ -188,7 +188,7 @@ export function ClonePanel({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <p className="text-sm font-medium">Pain point and audience</p>
-            <p className="mt-0.5 text-xs text-[var(--cf-muted)]">Gemini can read the product page, or you can type both.</p>
+            <p className="mt-0.5 text-xs text-[var(--cf-muted)]">Gemini can read the product page, or you can type both. The pain is why the person fails inside this story. The audience decides how the people look. A long video is shortened to the duration so that problem still lands.</p>
           </div>
           <button
             type="button"

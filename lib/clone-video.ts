@@ -9,7 +9,7 @@ import { sonnetText } from "./sonnet";
 import type { DialogueLanguage } from "./types";
 
 const GEMINI_MODEL = "gemini-3.8-flash";
-const SOURCE_MAX_SECONDS = 120;
+const SOURCE_MAX_SECONDS = 600;
 const WATCH_BYTES = 12 * 1024 * 1024;
 
 function ffmpegBinary() {
@@ -19,7 +19,7 @@ function ffmpegBinary() {
 
 function runFfmpeg(args: string[]) {
   return new Promise<void>((resolve, reject) => {
-    execFile(ffmpegBinary(), args, { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 }, (error, _stdout, stderr) => {
+    execFile(ffmpegBinary(), args, { timeout: 240_000, maxBuffer: 4 * 1024 * 1024 }, (error, _stdout, stderr) => {
       if (error) reject(new Error((stderr || error.message).trim().slice(0, 400)));
       else resolve();
     });
@@ -59,11 +59,15 @@ async function compactWithAudio(buffer: Buffer, crf: string, width: number) {
 }
 
 async function videoForRead(buffer: Buffer) {
+  const heavy = buffer.length > 8 * 1024 * 1024;
   try {
-    const compact = await compactWithAudio(buffer, "32", 640);
+    const compact = await compactWithAudio(buffer, heavy ? "36" : "32", heavy ? 480 : 640);
     if (compact.length <= WATCH_BYTES) return compact;
-    return compactWithAudio(buffer, "38", 480);
+    const smaller = await compactWithAudio(buffer, "40", 360);
+    if (smaller.length <= WATCH_BYTES) return smaller;
+    throw new Error("That video is too heavy to read. Export a smaller file.");
   } catch (error) {
+    if (error instanceof Error && /too heavy to read/.test(error.message)) throw error;
     if (buffer.length <= WATCH_BYTES) return buffer;
     throw error;
   }
@@ -71,7 +75,7 @@ async function videoForRead(buffer: Buffer) {
 
 export function assertCloneLength(seconds: number) {
   if (seconds > SOURCE_MAX_SECONDS + 0.05) {
-    throw new Error("That video is longer than 2 minutes. Use a shorter cut.");
+    throw new Error("That video is longer than 10 minutes. Use a shorter cut.");
   }
   if (seconds < 3) throw new Error("That video is too short to clone.");
 }
@@ -85,7 +89,7 @@ export async function readCloneSource(buffer: Buffer, mime: string) {
     {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(90_000),
+      signal: AbortSignal.timeout(180_000),
       body: JSON.stringify({
         contents: [
           {
@@ -99,14 +103,14 @@ export async function readCloneSource(buffer: Buffer, mime: string) {
                   "If the speaker is not on screen, or is an intercom, phone, radio, or voice-over, mark them OFF-SCREEN. If they are in the frame, mark them ON-SCREEN.",
                   "If someone reacts to a line or a sound, put that reaction after the line, not before it.",
                   "Keep the original lines in quotes. Do not improve them. Do not name a product that is not in the video.",
-                  "Under 900 words.",
+                  "Cover every beat through the end of the video. A few lines per beat. Do not stop partway through.",
                 ].join(" "),
               },
               { inlineData: { mimeType: mime.startsWith("video/") ? mime : "video/mp4", data: clip.toString("base64") } },
             ],
           },
         ],
-        generationConfig: { temperature: 0.2, maxOutputTokens: 4000 },
+        generationConfig: { temperature: 0.2, maxOutputTokens: 12000 },
       }),
     },
   );
@@ -121,7 +125,7 @@ export async function readCloneSource(buffer: Buffer, mime: string) {
     .join("\n")
     .trim();
   if (text.length < 40) throw new Error("Couldn't read the shape of that video.");
-  return text.slice(0, 12000);
+  return text.slice(0, 24000);
 }
 
 export async function adaptCloneStory(input: {
@@ -139,35 +143,47 @@ export async function adaptCloneStory(input: {
   const seconds = clampTotalDuration(input.seconds, 30);
   const language = input.language === "spanish" ? "Spanish" : "English";
   const system = [
-    "You adapt an existing ad into a new one. Keep the shape: the same order of beats, the same kind of reveal, the same places of speech. Replace the product, the pain, and the audience.",
-    `Write the action and every spoken line in ${language}. SCENE headings stay in English and include the seconds.`,
-    `The scenes must add up to ${seconds} seconds. Scale the source clocks to that length. Do not add a new plot. If the new film is longer, give the extra time to the same beats, mostly to the change after the product is used. If it is shorter, shorten beats. Do not drop the reveal.`,
-    "Each scene is one place and one action, in present tense. That place is where this action would actually happen. Do not stage an action in a room where a person would not do it. The product is used the way the page says it is used. Do not add a place only to show that time passed.",
-    "Follow one person who fits this audience. Recast the source's lead into that person. Keep a second person only when the source beat needs them.",
-    "A spoken line is the character's name alone on a line, in capitals, then the line in quotes.",
-    "If the source marks a speaker OFF-SCREEN, that speaker stays off-screen. Name them INTERCOM, NARRATOR, or the same remote role. Do not put that voice in a face. If the source marks a speaker ON-SCREEN, that person is in the frame when they speak.",
+    "You adapt an existing film. Keep its shape: the same kind of conflict, the same relationships, the same person who offers the remedy, and a change after that remedy is used. Do not invent a different plot.",
+    "The pain point is why the person fails at what this story needs them to do. Replace the source's cause with this pain, so this product can actually turn it. Do not keep a cause this product does not solve. Do not turn the pain into a new story. If no pain point is given, keep the source's cause.",
+    "The only swap of the remedy is this product. Whatever the source offers as the fix, an object, a bottle, a routine, or a person handing something over, becomes this product. It is offered and used the way the page says this product is used. What anyone says about the fix comes from this page. Do not keep the source brand, the source remedy, or a claim this page does not state.",
+    "The audience decides how these people look and how old they read, so they belong to that audience. It does not replace the story. If the audience sentence mentions a problem, ignore that problem. Each person keeps their role.",
+    `Write the action and every spoken line in ${language}. Each scene starts with its own line, exactly SCENE N (Xs), the seconds in parentheses and nothing else on that line. The place is the next line.`,
+    `The seconds in the headings add up to exactly ${seconds}. A spoken line needs about 3 seconds of its scene, and each extra line needs about 3 more. The action in that scene finishes inside those same seconds. Do not write a scene of 2 seconds that contains more than one spoken line. Do not write several lines into a scene that is too short to say them. If the source is too long for ${seconds} seconds, drop beats and lines until the film fits that exact duration. Keep the conflict, the moment the remedy is given, and the change after it.`,
+    "Each scene is one place and one action, in present tense. That place is where this action would actually happen.",
+    "A spoken line is the character's name alone on its own line, in capitals, and the quoted line on the next line. Never put the name and the line on the same line. A time card is its own line, Text on screen: and a few words, with no quotation marks, and nobody says it.",
+    "If the source marks a speaker OFF-SCREEN, that speaker stays off-screen. Name them INTERCOM, NARRATOR, or the same remote role. Do not put that voice in a face. If the source marks a speaker ON-SCREEN, that person is in the frame when they speak, and their name is the speaker line.",
     "A reaction to a reply, a line, or a sound is written after that cause, never before it.",
     "When a scene is a day or more later, name different clothes. Face and hair stay. A few minutes later keeps the same clothes.",
-    "Do not keep the source brand, slogan, or product. Do not invent a dose, a mechanism, or a health claim the page does not state.",
-    "The words are specific to this pain and this audience. Not a slogan copied from the page.",
+    "Do not invent a dose, a mechanism, or a health claim the page does not state.",
     "Start the reply with TITLE: and a short title. Then the scenes. Nothing else.",
   ].join(" ");
   const user = [
     `Product name: ${input.productName || "the product"}`,
-    `The problem to use: ${input.pain.trim()}`,
-    `This ad is for: ${input.audience.trim()}`,
+    input.pain.trim()
+      ? `Why the person fails, inside this same story: ${input.pain.trim()}`
+      : "No pain point was given. Keep the cause already in the source.",
+    input.audience.trim()
+      ? `How the people should look. This is not a new story: ${input.audience.trim()}`
+      : "No audience was given. Keep the people the source already follows.",
     input.how.trim() ? `HOW IT IS USED:\n${input.how.trim()}` : "",
     input.when.trim() ? `WHEN IT IS USED:\n${input.when.trim()}` : "",
     input.extra.trim() ? `ADDITIONAL CONTEXT:\n${input.extra.trim()}` : "",
     `PRODUCT PAGE:\n${input.page.trim() || "No page text. Use only the notes above. Do not invent a use."}`,
-    `SOURCE AD, already watched. Adapt this shape. Do not copy its brand.\n${input.source.trim()}`,
-    `Write the adapted screenplay for a ${seconds} second film.`,
+    `SOURCE FILM, already watched. Keep this shape. The cause of the failure becomes the pain point. The remedy becomes the product above.\n${input.source.trim()}`,
+    `Write the adapted screenplay for a ${seconds} second film. Every scene is long enough for the lines and the action inside it.`,
   ]
     .filter(Boolean)
     .join("\n\n");
-  const text = await sonnetText(system, user, { maxTokens: Math.min(16000, 4000 + Math.ceil(seconds / 4) * 180) });
+  const ask = (extra: string) => sonnetText(system, extra ? `${user}\n\n${extra}` : user, { maxTokens: 12000, effort: false });
+  const sceneBody = (value: string) => value.replace(/^TITLE:.*(?:\r?\n)+/i, "").trim();
+  let text = await ask("");
+  if (sceneBody(text).length < 800 || !/(?:^|\n)\s*SCENE\s+1\b/i.test(text)) {
+    text = await ask(
+      `Reply again as a full screenplay. First line is TITLE:. Then SCENE 1, SCENE 2, and so on. Each heading is SCENE N (Xs) and those seconds add up to ${seconds}. A scene with two spoken lines is at least 6 seconds. Finish the last scene. Nothing else.`,
+    );
+  }
   const title = (text.match(/^TITLE:\s*(.+)$/im)?.[1] || input.productName || "Clone").replace(/\s+/g, " ").trim().slice(0, 80);
-  const script = text.replace(/^TITLE:.*(?:\r?\n)+/i, "").trim();
-  if (!/(?:^|\n)\s*SCENE\s+1\b/i.test(script)) throw new Error("The adapted story came back without scenes.");
+  const script = sceneBody(text);
+  if (script.length < 800 || !/(?:^|\n)\s*SCENE\s+1\b/i.test(script)) throw new Error("The adapted story came back without scenes.");
   return { title: title || "Clone", script, seconds };
 }

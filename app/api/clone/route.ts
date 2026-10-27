@@ -10,7 +10,7 @@ import { createClient } from "@/lib/supabase/server";
 import { isDialogueLanguage, type DialogueLanguage } from "@/lib/types";
 
 export const runtime = "nodejs";
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const VIDEO_EXT: Record<string, string> = {
   ".mp4": "video/mp4",
@@ -31,13 +31,14 @@ export async function POST(request: Request) {
   if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
   const form = await request.formData();
   const productId = String(form.get("productId") || "").trim();
-  const pain = String(form.get("pain") || "").replace(/\s+/g, " ").trim().slice(0, 400);
   const audience = String(form.get("audience") || "").replace(/\s+/g, " ").trim().slice(0, 240);
+  const pain = String(form.get("pain") || "").replace(/\s+/g, " ").trim().slice(0, 400);
   const seconds = clampTotalDuration(form.get("seconds"), 30);
   const language: DialogueLanguage = isDialogueLanguage(String(form.get("language") || "")) ? (String(form.get("language")) as DialogueLanguage) : "english";
   const file = form.get("file");
   if (!productId) return NextResponse.json({ error: "Pick a product." }, { status: 400 });
-  if (!pain || !audience) return NextResponse.json({ error: "Add a pain point and an audience." }, { status: 422 });
+  if (!audience) return NextResponse.json({ error: "Add an audience." }, { status: 422 });
+  if (!pain) return NextResponse.json({ error: "Add a pain point." }, { status: 422 });
   if (!(file instanceof File)) return NextResponse.json({ error: "Upload a video to clone." }, { status: 400 });
   const ext = path.extname(file.name).toLowerCase();
   const mime = VIDEO_EXT[ext] || (file.type.startsWith("video/") ? file.type : "");
