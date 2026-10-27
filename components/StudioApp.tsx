@@ -438,6 +438,7 @@ export function StudioApp() {
   const busyRef = useRef(false);
   const poppingRef = useRef(false);
   const urlReadyRef = useRef(false);
+  const openedGenerating = useRef("");
 
   function markGenerating(projectId: string, active: boolean) {
     setGeneratingIds((current) => {
@@ -791,6 +792,7 @@ export function StudioApp() {
         return;
       }
       markGenerating(started.id, true);
+      setLibraryZone("videos");
       setPane("library");
       setStatus("Generating your video…");
     } else if (mode === "plan") {
@@ -933,6 +935,7 @@ export function StudioApp() {
       item.workflowStep === "produce" &&
       !projectDeliveredSrc(item) &&
       (projectIsGenerating(item) || generatingIds.includes(item.id));
+    if (producing) setLibraryZone("videos");
     setPane(producing ? "library" : "studio");
     setSidebarOpen(false);
     try {
@@ -1303,6 +1306,7 @@ export function StudioApp() {
   async function beginProduce() {
     const current = projectRef.current;
     if (!current) return;
+    setLibraryZone("videos");
     setPane("library");
     await run("produce");
   }
@@ -1409,9 +1413,21 @@ export function StudioApp() {
   useEffect(() => {
     const current = projectRef.current;
     if (!current) return;
-    if (current.workflowStep !== "produce") return;
-    if (projectDeliveredSrc(current)) return;
-    if (generatingIds.includes(current.id) || projectIsGenerating(current)) setPane("library");
+    const marked = generatingIds.includes(current.id);
+    if (current.workflowStep !== "produce" && !marked) return;
+    if (projectDeliveredSrc(current)) {
+      if (openedGenerating.current === current.id) openedGenerating.current = "";
+      return;
+    }
+    const active = generatingIds.includes(current.id) || projectIsGenerating(current);
+    if (!active) {
+      if (openedGenerating.current === current.id) openedGenerating.current = "";
+      return;
+    }
+    setPane("library");
+    if (openedGenerating.current === current.id) return;
+    openedGenerating.current = current.id;
+    setLibraryZone("videos");
   }, [generatingIds, project?.id, project?.workflowStep, project?.joinedVideoPublicPath, project?.batches]);
 
   panelRef.current = panel;
@@ -1702,6 +1718,7 @@ export function StudioApp() {
                 onPaid={(next) => {
                   remember(next);
                   setPayOpen(false);
+                  setLibraryZone("videos");
                   setPane("library");
                   void run("produce");
                 }}
