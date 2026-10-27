@@ -184,6 +184,9 @@ export type Batch = {
   tailAttempts?: number;
   voiceRefs?: Array<{ name: string; publicPath: string; remoteUrl: string }>;
   voiceRefKey?: string;
+  voiceCuts?: string;
+  voiceCutKey?: string;
+  voiceCutAttempts?: number;
   seenContinuity?: string;
   seenContinuityKey?: string;
   seenAttempts?: number;

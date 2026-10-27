@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import ffmpegPath from "ffmpeg-static";
 import { getSecrets } from "./config";
+import { speakingCutLine, speakingCutsTooLong } from "./seen-continuity";
 
 const GEMINI_MODEL = "gemini-3.8-flash";
 const WATCH_BYTES = 8 * 1024 * 1024;
@@ -48,6 +49,49 @@ async function compactVideo(buffer: Buffer, crf: string, width: number) {
     return await readFile(out);
   } finally {
     await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function compactSpeech(buffer: Buffer, crf: string, width: number) {
+  const dir = await mkdtemp(path.join(os.tmpdir(), "speak-"));
+  const input = path.join(dir, "in.mp4");
+  const out = path.join(dir, "out.mp4");
+  await writeFile(input, buffer);
+  try {
+    await runFfmpeg([
+      "-y",
+      "-i",
+      input,
+      "-vf",
+      `scale='min(${width},iw)':-2`,
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      crf,
+      "-c:a",
+      "aac",
+      "-b:a",
+      "64k",
+      "-movflags",
+      "+faststart",
+      out,
+    ]);
+    return await readFile(out);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+async function videoForSpeech(buffer: Buffer) {
+  try {
+    const compact = await compactSpeech(buffer, "32", 640);
+    if (compact.length <= WATCH_BYTES) return compact;
+    return compactSpeech(buffer, "38", 480);
+  } catch (error) {
+    if (buffer.length <= WATCH_BYTES) return buffer;
+    throw error;
   }
 }
 
@@ -136,4 +180,79 @@ export async function watchRenderedPart(video: Buffer, context: string, options?
     .trim();
   if (!/CARRY_PRODUCT\s*:/i.test(text)) throw new Error("Couldn't read the handoff from that part.");
   return text.slice(0, options?.describeLooks ? 2200 : 1500);
+}
+
+export async function watchSpeakingCuts(video: Buffer, names: string[], durationSeconds: number) {
+  const key = getSecrets().geminiApiKey;
+  if (!key) throw new Error("GEMINI_API_KEY is missing.");
+  const people = [...new Set(names.map((name) => name.trim()).filter(Boolean))];
+  if (!people.length) return "VOICES: none";
+  const clip = await videoForSpeech(video);
+  const duration = Math.max(1, Math.round(durationSeconds || 0));
+  const ask = (extra: string, thinking: boolean) =>
+    requestSpeakingCuts(key, clip, people, duration, extra, thinking).catch((error) => {
+      const message = error instanceof Error ? error.message : "";
+      if (thinking && /thinking|budget|unknown field/i.test(message)) return requestSpeakingCuts(key, clip, people, duration, extra, false);
+      throw error;
+    });
+  let text = await ask("", true);
+  if (speakingCutsTooLong(text)) {
+    text = await ask("Each range was longer than 4 seconds. Choose a shorter cut while that person is speaking. Every range is at most 4 seconds.", true);
+  }
+  const line = speakingCutLine(text, duration);
+  if (!line) throw new Error("Couldn't find a speaking cut.");
+  return line;
+}
+
+async function requestSpeakingCuts(key: string, clip: Buffer, names: string[], duration: number, extra: string, thinking: boolean) {
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(key)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      signal: AbortSignal.timeout(90_000),
+      body: JSON.stringify({
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: [
+                  `This video is ${duration} seconds long. Listen to it.`,
+                  `People who may speak: ${names.join(", ")}.`,
+                  "For each person who speaks, you choose the cut. One cut per person, a separate moment from the others.",
+                  "The cut is while their mouth is moving and their voice is heard. It has to be long enough to hear them, and it must not be longer than 4 seconds.",
+                  "Skip anyone who is silent. Do not return the whole scene, and do not return a range longer than 4 seconds.",
+                  "Reply with one line per person and nothing else: NAME start-end",
+                  "Times are seconds from the start of this video. Example shape only: Sam 3.0-6.5",
+                  extra,
+                ]
+                  .filter(Boolean)
+                  .join("\n"),
+              },
+              { inlineData: { mimeType: "video/mp4", data: clip.toString("base64") } },
+            ],
+          },
+        ],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 1024,
+          ...(thinking ? { thinkingConfig: { thinkingBudget: 0 } } : {}),
+        },
+      }),
+    },
+  );
+  const json = (await response.json().catch(() => ({}))) as {
+    error?: { message?: string };
+    candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
+  };
+  if (!response.ok) throw new Error(json.error?.message || "Couldn't watch who speaks.");
+  const text = (json.candidates || [])
+    .flatMap((candidate) => candidate.content?.parts || [])
+    .map((part) => part.text || "")
+    .join("\n")
+    .replace(/\*\*/g, "")
+    .trim();
+  if (!text) throw new Error("Couldn't watch who speaks.");
+  return text;
 }

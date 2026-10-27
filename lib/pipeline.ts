@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { downloadToPublic, extensionFromUrl, readPublicFile, storeGeneratedFile } from "./assets";
-import { clipVideoBuffer, concatVideoBuffers, replaceVideoAudio, tailVideoBuffer } from "./concat";
+import { clipVideoBuffer, concatVideoBuffers, cutSpokenClip, replaceVideoAudio, tailVideoBuffer } from "./concat";
 import { charactersPresent, continuityFlags, projectSeed } from "./continuity";
 import { assignScenePlaces, isJunkPlace, placeLabel, richerPlaceName, samePlace } from "./places";
 import { refineSeedancePrompt } from "./astra-prompt";
@@ -9,7 +9,7 @@ import { clampClipDuration, clampTotalDuration, createId, nowIso, slugify, norma
 import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
-import { watchRenderedPart } from "./continuity-watch";
+import { watchRenderedPart, watchSpeakingCuts } from "./continuity-watch";
 import { chooseVoiceSpans, clothesShouldChange, parseSeenCard, partKeepsCarriedProduct, previousSeenCard, referenceRanges, seenCardMatters } from "./seen-continuity";
 import { REALISTIC_REFERENCE_FALLBACK_SECONDS, realisticProseCast, storyClipCast } from "./realistic-prose";
 import { ownerProductContext, productUnderstandingBrief } from "./product-facts";
@@ -617,7 +617,7 @@ async function ensureVoiceReference(project: Project, batch: Batch) {
   const earlier = [...project.batches].filter((item) => item.index < batch.index && durableVideoSrc(item));
   const plan = chooseVoiceSpans(
     peopleNeeded(project, batch),
-    earlier.map((part) => ({ index: part.index, voices: part.seenContinuity || "" })),
+    earlier.map((part) => ({ index: part.index, voices: part.voiceCuts || part.seenContinuity || "" })),
   );
   if (!plan.length) return;
   const key = createHash("sha256")
@@ -632,7 +632,7 @@ async function ensureVoiceReference(project: Project, batch: Batch) {
     if (!src) continue;
     const saved = await storeGeneratedFile({
       project,
-      buffer: await clipVideoBuffer(await readPublicFile(src), [{ start: span.start, end: span.end }]),
+      buffer: await cutSpokenClip(await readPublicFile(src), span.start, span.end),
       relativeParts: [project.id, "voices", `part-${String(batch.index).padStart(2, "0")}-${slugify(span.name)}.mp4`],
       contentType: "video/mp4",
     });
@@ -661,6 +661,50 @@ function peopleNeeded(project: Project, batch: Batch) {
     }
   }
   return [...speakers, ...present.filter((name) => !speakers.some((item) => item.toLowerCase() === name.toLowerCase()))];
+}
+
+function speakersInPart(project: Project, batch: Batch) {
+  const names: string[] = [];
+  for (const index of batch.sceneIndexes) {
+    const scene = project.scenes.find((item) => item.index === index);
+    for (const line of scene?.dialogue || []) {
+      const speaker = (line.speaker || "").trim();
+      if (!speaker || line.voiceover || /^(?:narrator|voice-?over|vo)$/i.test(speaker)) continue;
+      const known = project.characters.find((item) => item.name.trim().toLowerCase() === speaker.toLowerCase());
+      const name = known?.name || speaker;
+      if (!names.some((item) => item.toLowerCase() === name.toLowerCase())) names.push(name);
+    }
+  }
+  return names;
+}
+
+async function ensureSpeakingCuts(project: Project, batch: Batch) {
+  if (!realisticProseCast(project)) return;
+  const src = durableVideoSrc(batch);
+  if (!src) return;
+  const names = speakersInPart(project, batch);
+  const key = createHash("sha256")
+    .update(`${src}\nspeak-cuts-v1\n${names.join("|")}`)
+    .digest("hex")
+    .slice(0, 20);
+  if (batch.voiceCutKey === key && batch.voiceCuts) return;
+  if (!names.length) {
+    batch.voiceCuts = "VOICES: none";
+    batch.voiceCutKey = key;
+    batch.voiceCutAttempts = 0;
+    return;
+  }
+  if ((batch.voiceCutAttempts || 0) >= 2) return;
+  try {
+    batch.voiceCuts = await watchSpeakingCuts(await readPublicFile(src), names, batch.duration || 0);
+    batch.voiceCutKey = key;
+    batch.voiceCutAttempts = 0;
+    console.info("speaking cuts", project.id, batch.index, batch.voiceCuts);
+  } catch (error) {
+    batch.voiceCutAttempts = (batch.voiceCutAttempts || 0) + 1;
+    console.warn("speaking cuts", project.id, batch.index, error instanceof Error ? error.message : error);
+  }
+  await saveProject(project);
 }
 
 async function ensureVoiceIndex(project: Project, next: Batch) {
@@ -823,7 +867,13 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
     if (previous && durableVideoSrc(previous)) {
-      if (storyClipCast(project)) {
+      if (realisticProseCast(project)) {
+        const earlier = await ensureVoiceIndex(project, batch);
+        for (const part of earlier) await ensureSpeakingCuts(project, part);
+        if (earlier.some((part) => speakersInPart(project, part).length > 0 && !part.voiceCuts && (part.voiceCutAttempts || 0) < 2)) {
+          return { ready: false };
+        }
+      } else if (storyClipCast(project)) {
         const earlier = await ensureVoiceIndex(project, batch);
         if (earlier.some((part) => !part.seenContinuity?.trim() && (part.seenAttempts || 0) < 2)) return { ready: false };
       } else {
@@ -850,7 +900,7 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       if (savedVoiceRefs(batch).length) await saveSoon(project);
     }
     const hasVoiceRef = savedVoiceRefs(batch).length > 0;
-    if (previous && !hasVoiceRef && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
+    if (previous && !realisticProseCast(project) && !hasVoiceRef && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
@@ -862,7 +912,9 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     }
     const handoffReady = savedVoiceRefs(batch).length
       ? /at most 4 seconds/i.test(batch.videoPrompt || "")
-      : /last 5 seconds|short cut of the previous part/i.test(batch.videoPrompt || "");
+      : realisticProseCast(project)
+        ? true
+        : /last 5 seconds|short cut of the previous part/i.test(batch.videoPrompt || "");
     if (previous && !realKieVideoTaskId(batch.kieVideoTaskId) && batch.kieVideoTaskId !== "pending") {
       const prompt = batch.videoPrompt || "";
       const momentText = batch.sceneIndexes
@@ -1555,9 +1607,7 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
       return { imageEntries, videoEntries: [] as PromptRef[] };
     }
     const speakers = await speakerVideoRefs(project, batch, abortSignal);
-    if (speakers.length) return { imageEntries, videoEntries: speakers };
-    const tail = await previousTailRef(project, batch, abortSignal);
-    return { imageEntries, videoEntries: tail ? [tail] : [] };
+    return { imageEntries, videoEntries: speakers };
   }
   const imageEntries = await stableImageEntries(project, abortSignal, true);
   const seen = new Set(imageEntries.map((item) => item.url));

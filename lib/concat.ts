@@ -74,25 +74,25 @@ export async function tailVideoBuffer(buffer: Buffer, seconds = 5) {
   }
 }
 
-export async function clipVideoBuffer(buffer: Buffer, ranges: { start: number; end: number }[]) {
-  const clean = ranges.filter((range) => range.end - range.start >= 2).slice(0, 4);
-  if (!clean.length) return tailVideoBuffer(buffer, 7);
+export async function clipVideoPieces(pieces: { buffer: Buffer; start: number; end: number }[]) {
+  const clean = pieces.filter((piece) => piece.end - piece.start >= 2).slice(0, 4);
+  if (!clean.length) throw new Error("No clip is long enough.");
   const dir = await mkdtemp(path.join(os.tmpdir(), "clips-"));
-  const input = path.join(dir, "in.mp4");
-  await writeFile(input, buffer);
   try {
     const files: string[] = [];
     for (let index = 0; index < clean.length; index += 1) {
-      const range = clean[index];
+      const piece = clean[index];
+      const input = path.join(dir, `in-${index}.mp4`);
       const out = path.join(dir, `clip-${index}.mp4`);
+      await writeFile(input, piece.buffer);
       await runFfmpeg([
         "-y",
         "-ss",
-        range.start.toFixed(2),
+        piece.start.toFixed(2),
         "-i",
         input,
         "-t",
-        (range.end - range.start).toFixed(2),
+        (piece.end - piece.start).toFixed(2),
         "-c:v",
         "libx264",
         "-preset",
@@ -116,6 +116,45 @@ export async function clipVideoBuffer(buffer: Buffer, ranges: { start: number; e
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+export async function cutSpokenClip(buffer: Buffer, start: number, end: number) {
+  const length = Math.min(4, end - start);
+  if (length < 1) throw new Error("That speaking cut is too short.");
+  const dir = await mkdtemp(path.join(os.tmpdir(), "voice-"));
+  const input = path.join(dir, "in.mp4");
+  const out = path.join(dir, "clip.mp4");
+  await writeFile(input, buffer);
+  try {
+    await runFfmpeg([
+      "-y",
+      "-ss",
+      Math.max(0, start).toFixed(2),
+      "-i",
+      input,
+      "-t",
+      length.toFixed(2),
+      "-c:v",
+      "libx264",
+      "-preset",
+      "veryfast",
+      "-crf",
+      "23",
+      "-c:a",
+      "aac",
+      "-movflags",
+      "+faststart",
+      out,
+    ]);
+    return await readFile(out);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+export async function clipVideoBuffer(buffer: Buffer, ranges: { start: number; end: number }[]) {
+  const clean = ranges.filter((range) => range.end - range.start >= 2).slice(0, 4);
+  if (!clean.length) return tailVideoBuffer(buffer, 7);
+  return clipVideoPieces(clean.map((range) => ({ buffer, start: range.start, end: range.end })));
 }
 
 export async function concatVideoBuffers(buffers: Buffer[]) {

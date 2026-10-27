@@ -65,6 +65,35 @@ function sameSpeaker(mark: string, name: string) {
   return left === right || left.endsWith(` ${right}`) || right.endsWith(` ${left}`);
 }
 
+function flattenSpeakingCuts(raw: string) {
+  const body = raw.replace(/\r/g, "").replace(/^\s*VOICES\s*:\s*/i, "").trim();
+  const lines = body.split("\n").map((line) => line.replace(/^[-*]\s*/, "").trim()).filter(Boolean);
+  return `VOICES: ${lines.join(", ")}`;
+}
+
+export function speakingCutsTooLong(raw: string) {
+  return voiceMarks(flattenSpeakingCuts(raw)).some((mark) => mark.end - mark.start > 4.05);
+}
+
+export function speakingCutLine(raw: string, durationSeconds: number) {
+  const text = raw.replace(/\r/g, "").trim();
+  if (!text || /^(?:none|n\/a|empty|nobody|no one)\b/i.test(text)) return "VOICES: none";
+  const wrapped = flattenSpeakingCuts(text);
+  const duration = Number(durationSeconds) > 0 ? Number(durationSeconds) : 0;
+  const marks = voiceMarks(wrapped)
+    .map((mark) => {
+      let start = Math.max(0, mark.start);
+      let end = mark.end;
+      if (duration && end > duration + 0.05) end = duration;
+      if (end - start > 4) end = start + 4;
+      if (duration && start >= duration) return { ...mark, start: 0, end: 0 };
+      return { ...mark, start, end };
+    })
+    .filter((mark) => mark.end - mark.start >= 1.5);
+  if (!marks.length) return "";
+  return `VOICES: ${marks.map((mark) => `${mark.name} ${mark.start.toFixed(1)}-${mark.end.toFixed(1)}`).join(", ")}`;
+}
+
 export function chooseVoiceSpans(needed: string[], parts: { index: number; voices: string }[]) {
   const newest = [...parts].sort((left, right) => right.index - left.index);
   const chosen: VoiceSpan[] = [];
@@ -78,7 +107,7 @@ export function chooseVoiceSpans(needed: string[], parts: { index: number; voice
     }
   }
   return chosen.map((span) => {
-    const length = Math.min(4, Math.max(2, span.end - span.start));
+    const length = Math.min(4, span.end - span.start);
     return { ...span, end: span.start + length };
   });
 }
