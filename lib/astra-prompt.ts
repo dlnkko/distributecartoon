@@ -82,6 +82,9 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
         : "In CHARACTER ROLES & POSITIONS, keep one bullet per character, place, and product already listed. Each bullet keeps the written description and the position. Do not invent a person, a vehicle, or a place. Do not add an @Image tag.",
       "Write visible action. A vague finish becomes the last sip or the last bite, then the hand lowers. A vehicle that pulls away accelerates and drives out of the frame. Name the place already in the draft instead of saying room. Keep positions until the action moves someone.",
       "When these scenes change feeling, add one Tone line under GLOBAL SETUP, using the feeling, the light, and the people this draft already shows.",
+      /realistic handheld shaky camera, raw iphone footage/i.test(trimmed)
+        ? "Keep 'realistic handheld shaky camera, raw iphone footage.' on every scene that already opens with it, and at the top when the draft puts it there. Do not add it to a scene that does not have it. In those scenes the camera is an iPhone a character is holding. It may move to focus on something or to show something. Do not turn that scene into a locked tripod shot."
+        : "",
       /@Image\d+/.test(trimmed)
         ? "A product image stays only in a scene that already has it. When it sits on a surface the action names, say that tag rests flat on that surface. When a person handles it, it stays in their hands. Leave it out of every other scene. When a scene says the product is still visible after it was used, keep that sentence and its tag."
         : "When the draft describes a product in words, keep that description. Leave the product out of a scene that does not already use it. When a scene says the product is still visible after it was used, keep that sentence.",
@@ -131,6 +134,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     if (carried.some((line) => !revisedFlat.includes(line))) return tightenPrompt(trimmed);
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
     if (/at most 4 seconds/i.test(trimmed) && !/at most 4 seconds/i.test(revised)) return trimmed;
+    const ugcLead = /realistic handheld shaky camera, raw iphone footage/gi;
+    if ([...trimmed.matchAll(ugcLead)].length !== [...revised.matchAll(ugcLead)].length) return trimmed;
     if (/seen in @Video\d+/i.test(trimmed) && !/seen in @Video\d+/i.test(revised)) return trimmed;
     if (/Clothes have changed/i.test(trimmed) && !/Clothes have changed/i.test(revised)) return trimmed;
     if (/still visible after it was used/i.test(trimmed) && !/still visible after it was used/i.test(revised)) return trimmed;

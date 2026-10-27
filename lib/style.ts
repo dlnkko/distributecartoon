@@ -1420,6 +1420,22 @@ function addressesCamera(scene: Scene | undefined) {
   );
 }
 
+const UGC_LOOK = "realistic handheld shaky camera, raw iphone footage.";
+
+function sceneIsUgc(scene: { summary?: string; title?: string; camera?: string } | undefined, extra = "") {
+  const text = `${scene?.summary || ""} ${scene?.title || ""} ${scene?.camera || ""} ${extra}`.replace(/\s+/g, " ");
+  if (/\b(?:ugc|selfie(?:-|\s)?style|selfie|vlog|tiktok)\b/i.test(text)) return true;
+  if (/\b(?:holds?|holding|grips?)\s+(?:up\s+)?(?:the\s+|a\s+|his\s+|her\s+|their\s+)?camera\b/i.test(text)) return true;
+  if (/\b(?:films?|filming|records?|recording)\b[^.]{0,60}\b(?:on|with|through)\s+(?:his|her|their|a|the)\s+(?:phone|iphone)\b/i.test(text)) return true;
+  if (/\b(?:phone|iphone)\s+(?:camera|footage)\b/i.test(text)) return true;
+  if (/\b(?:phone|iphone)\b[^.]{0,32}\b(?:to record|recording|to film|filming)\b/i.test(text)) return true;
+  return false;
+}
+
+function ugcLookLine() {
+  return `${UGC_LOOK} An iPhone in a character's hand is the camera. It moves to focus on something or to show something. Keep that phone-in-hand realism.`;
+}
+
 function eyesOffCamera(scene: Scene | undefined, project: Project) {
   if (addressesCamera(scene)) return "";
   const names = sceneOnScreenNames(scene, project);
@@ -2490,6 +2506,12 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       conversationCamera = "";
       conversationPlace = "";
     }
+    const ugc = project.style === "realistic" && sceneIsUgc(scene, shot.action || "");
+    if (ugc) {
+      camera = "Handheld iPhone";
+      conversationCamera = "";
+      conversationPlace = "";
+    }
     const previousCamera = usedCameras[usedCameras.length - 1] || "";
     usedCameras.push(camera);
     const rawSummary = positiveContinuity(
@@ -2608,7 +2630,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       ...(graphicScene(scene) ? [] : sceneSays(project, scene, people, narratorTag, slice)),
       ...cards.cards.map((card) => `On-screen text: "${spokenQuote(card)}"`).filter((line) => !line.endsWith(': ""')),
     ];
-    const shotName = cameraTitle(camera).replace(/[.]+$/, "");
+    const shotName = ugc ? "Handheld iPhone" : cameraTitle(camera).replace(/[.]+$/, "");
     const outfit = !changeClothes || /Clothes have changed/i.test(`${visible} ${placement}`) ? "" : outfitChangeLine(seen.outfit);
     const actionLine = [
       graphicScene(scene) ? "The frame holds the card." : heardBeforeReaction(project, scene, slice, peopleHere, visible),
@@ -2622,7 +2644,8 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       .trim();
     return [
       `SCENE ${i + 1} | Duration: ${cutSeconds[i]}s | Shot: ${shotName}`,
-      `- CAMERA: ${shotName}.`,
+      ugc ? ugcLookLine() : "",
+      `- CAMERA: ${ugc ? "Handheld iPhone. The phone moves to frame what this scene shows." : `${shotName}.`}`,
       stateLine,
       facts,
       `- ACTION: ${actionLine || "The action in this scene plays out."}`,
@@ -2655,14 +2678,17 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     .filter(Boolean);
   const productBullets = taggedProductBullets.length ? taggedProductBullets : [proseProduct].filter(Boolean);
   const spokenLanguage = project.dialogueLanguage === "spanish" ? "Spanish" : "English";
-  const styleLine =
-    project.style === "realistic"
+  const everySceneIsUgc = blocks.length > 0 && blocks.every((block) => block.includes(UGC_LOOK));
+  const styleLine = everySceneIsUgc
+    ? "Style: realistic handheld shaky camera, raw iphone footage."
+    : project.style === "realistic"
       ? "Style: Realistic live-action, handheld, natural shadows."
       : project.style === "claymation"
         ? "Style: Claymation."
         : "Style: Pixar.";
   const header = [
     dialogueLanguageLine(project),
+    everySceneIsUgc ? ugcLookLine() : "",
     "[GLOBAL SETUP]",
     styleLine,
     song
