@@ -227,6 +227,42 @@ export function scriptIdentityCue(project: Project, name: string) {
   return describeMentions(localMentions(scenes, name, others), name);
 }
 
+function withBody(base: string, blob: string) {
+  const extra = bodyFacts(blob).filter((fact) => fact && !base.toLowerCase().includes(fact.toLowerCase()));
+  return [base, ...extra].filter(Boolean).join(", ");
+}
+
+function bodyFacts(text: string) {
+  const build = text.match(/\b(heavyset|overweight|muscular|skinny|slim|stocky|broad|lean|chubby)\b/i)?.[1] || "";
+  const hair =
+    text.match(/\b((?:short|long|curly|straight|gray|grey|black|brown|blonde|blond)\s+hair|a beard|bald)\b/i)?.[1] || "";
+  const decade = text.match(/\b(?:in\s+(?:his|her|their)\s+)?(\d0)s\b/i)?.[1];
+  const years = ageIn(text);
+  const age = years ? `${years} years old` : decade ? `in ${decade}s` : "";
+  const worn = text.match(
+    /\b((?:gray|grey|blue|black|white|red|green|brown|navy|pink|yellow|beige|olive|purple|orange)\s+)?(hoodie|t-?shirt|tee|shirt|blouse|dress|skirt|jeans|pants|trousers|shorts|jacket|coat|sweater|polo|tank top|suit|uniform|scrubs)\b/i,
+  );
+  const clothes = worn ? `wearing a ${worn[0].replace(/\s+/g, " ").trim()}` : "";
+  return [age, build, hair, clothes].filter(Boolean);
+}
+
+function factsBeside(project: Project, name: string) {
+  const blob = [project.scriptText || "", ...project.scenes.map((scene) => `${scene.title || ""} ${scene.summary || ""}`)].join("\n");
+  const named = new RegExp(`(?<![\\p{L}\\p{N}])${escapeRegExp(name)}(?![\\p{L}\\p{N}])`, "iu");
+  const near = blob
+    .split(/(?<=[.!?\n])\s+/)
+    .filter((sentence) => named.test(sentence))
+    .slice(0, 8)
+    .join(" ");
+  return bodyFacts(near);
+}
+
+export function lookIsThin(description: string) {
+  const text = description.replace(/[.]/g, "").replace(/\s+/g, " ").trim();
+  if (/^(?:an adult (?:man|woman)|a human (?:boy|girl|baby)|a (?:boy|girl|baby|human))$/i.test(text)) return true;
+  return text.split(/\s+/).filter(Boolean).length < 10;
+}
+
 function word(pattern: string) {
   return new RegExp(`(?<![\\p{L}\\p{N}])(?:${pattern})(?![\\p{L}\\p{N}])`, "iu");
 }
@@ -249,9 +285,8 @@ function describeMentions(mentions: string[], name: string) {
   const species = speciesAbout(blob, name);
   const age = ageIn(blob);
   const speciesWord = species.replace(/^(a|an)\s+/, "");
-  if (species && age) return aged(age, speciesWord);
-  if (species) return species;
-  if (humanKinName(name) && !age) return humanKinPhrase(name);
+  if (species && age) return withBody(aged(age, speciesWord), blob);
+  if (species) return withBody(species, blob);
   const before = mentions.map((mention) => textBeforeName(mention, name)).join(" ");
   const titled = `${before} ${mentions.map((mention) => mention.split(",").slice(1).join(",")).join(" ")}`;
   const femaleChild = word("niña|nina|girl|daughter").test(titled) || word("hija").test(before);
@@ -260,29 +295,30 @@ function describeMentions(mentions: string[], name: string) {
   const maleAdult = word("pap[aá]|padre|father|dad|hombre|man|señor|senor").test(titled);
   const baby = word("beb[eé]|baby|toddler|infant").test(titled);
   if (age > 0 && age < 13) {
-    if (baby) return aged(age, "baby");
-    if (femaleChild) return aged(age, "girl");
-    if (maleChild) return aged(age, "boy");
-    return aged(age, "child");
+    if (baby) return withBody(aged(age, "baby"), blob);
+    if (femaleChild) return withBody(aged(age, "girl"), blob);
+    if (maleChild) return withBody(aged(age, "boy"), blob);
+    return withBody(aged(age, "child"), blob);
   }
   if (age >= 13 && age < 18) {
-    if (femaleChild || femaleAdult) return aged(age, "girl");
-    if (maleChild || maleAdult) return aged(age, "boy");
-    return aged(age, "teenager");
+    if (femaleChild || femaleAdult) return withBody(aged(age, "girl"), blob);
+    if (maleChild || maleAdult) return withBody(aged(age, "boy"), blob);
+    return withBody(aged(age, "teenager"), blob);
   }
   if (age >= 18) {
-    if (femaleAdult) return aged(age, "woman");
-    if (maleAdult) return aged(age, "man");
-    return aged(age, "adult");
+    if (femaleAdult) return withBody(aged(age, "woman"), blob);
+    if (maleAdult) return withBody(aged(age, "man"), blob);
+    return withBody(aged(age, "adult"), blob);
   }
   if ((femaleAdult || maleAdult) && !(femaleChild || maleChild)) {
-    return femaleAdult ? "an adult woman" : "an adult man";
+    return withBody(femaleAdult ? "an adult woman" : "an adult man", blob);
   }
-  if (femaleAdult && femaleChild) return "an adult woman";
-  if (maleAdult && maleChild) return "an adult man";
-  if (baby) return "a baby";
-  if (femaleChild) return "a girl";
-  if (maleChild) return "a boy";
+  if (femaleAdult && femaleChild) return withBody("an adult woman", blob);
+  if (maleAdult && maleChild) return withBody("an adult man", blob);
+  if (baby) return withBody("a baby", blob);
+  if (femaleChild) return withBody("a girl", blob);
+  if (maleChild) return withBody("a boy", blob);
+  if (humanKinName(name)) return withBody(humanKinPhrase(name), blob);
   return "";
 }
 
@@ -351,6 +387,9 @@ function mergeRealisticDescription(project: Project, character: Project["charact
   if (!next && !lead && humanKinName(character.name)) next = humanKinPhrase(character.name);
   if (lead && !alreadyCovered(next, lead)) next = [lead, next].filter(Boolean).join(". ");
   if (look && !next.toLowerCase().includes(look.toLowerCase())) next = [next, look].filter(Boolean).join(". ");
+  for (const fact of factsBeside(project, character.name)) {
+    if (!next.toLowerCase().includes(fact.toLowerCase())) next = [next, fact].filter(Boolean).join(", ");
+  }
   next = next.replace(/\s{2,}/g, " ").replace(/\.\s*\./g, ".").trim();
   if (next) character.description = next;
 }
@@ -407,6 +446,11 @@ export function applyScriptLooks(project: Project) {
     if (!role && humanKinName(character.name)) {
       const scrubbed = stripMentionedAnimals(character.description || "");
       character.description = scrubbed || humanKinPhrase(character.name);
+      for (const fact of factsBeside(project, character.name)) {
+        if (!character.description.toLowerCase().includes(fact.toLowerCase())) {
+          character.description = `${character.description}, ${fact}`;
+        }
+      }
       continue;
     }
     if (!known) continue;

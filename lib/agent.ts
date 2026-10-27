@@ -2,7 +2,7 @@ import { getSecrets } from "./config";
 import { clampTotalDuration, createId, slugify, normalizeAspectRatio } from "./ids";
 import { generateBatchVideo, planSeedanceBatches, startProduce, summarizeLibrary, ensureProductUnderstanding } from "./pipeline";
 import { driveProduce } from "./produce";
-import { applyScriptLooks, castBrief } from "./cast-roster";
+import { applyScriptLooks, castBrief, lookIsThin } from "./cast-roster";
 import { diversifyInventedCast, englishExtraName, englishSpeakerName, packedScenePrompt, stampProductPlacement } from "./style";
 import { dropSpeechFragments } from "./speech-echo";
 import { balancePartSceneSeconds, estimateSceneSeconds, fitSpokenScenes, parseDurationFromText, sceneHasStory, sceneSpeechFloor, seedancePartDurations, shouldGenerateOneShot, storyArc, userTimedSeconds } from "./timing";
@@ -87,7 +87,7 @@ Current task: PLAN ONLY.
 Before extract_storyboard, use the STORY READING. AIM is what the film is for, ABOUT is the story, PROBLEM is the trouble, SOLUTION is the fix and where it is used, and PICTURES is what the camera shows, in order. Write the scenes from PICTURES. Where each person stands and how far apart they are comes from that beat. Part 2 starts from the consequence of part 1.
 Call extract_storyboard exactly once with every scene, dialogue, action (summary), camera direction, and estimated_seconds. The title is a short film name from the story. Never name the film after its length.
 Build one continuous film. Keep every cause in the order the user told it. Scene 1 opens on the first beat. Inside one continuous moment, each later scene begins at the exact place, distance, screen sides, and body state where the previous scene ended. If one character sees the other and is not seen back, keep that as its own beat with the distance and the eyelines, and start the next beat from there. Do not skip the approach, the run, the collapse, or the carry. Change location inside that moment only by showing the move. Going somewhere else is its own scene, in that new place, including the opening, the middle, and the ending. A few minutes later, or a harder feeling, stays on the ground they are already on. Do not invent a second environment for that, and do not rewrite the ground as a different landscape.
-Each character keeps the same height, build, face, and features in every shot. Dialogue does not set species: a child who says a drawing is a dog stays a human child. An animal species is only when the script says that character is the animal, such as "Biscuit is a dog". Change size or body only when the user's story explicitly says that change happens in that shot. Clothes may change; the person does not.
+Each character's description is the person, the same as in any other film. Write the approximate age, the build, the face, the hair, the skin, and the clothes they wear when the film starts. A role name is not a description. Father, Man, Mother, Woman, Son, and Daughter still need that full look. Use the age, body, and clothes the script already shows. Decide only what the script leaves open. Do not stop at "an adult man", "an adult woman", or "a human boy".
 A human woman with no uploaded photo is a new person every film. Pick her name, face, age, hair, and skin tone at random. Do not name her Maya. Do not default to dark skin. Fair, olive, tan, light brown, warm brown, and deep brown are all available, and the choice changes from film to film.
 A supporting character introduced once is that same person for the whole film. If the hero returns with his friends, those are the friends already introduced, with the same names, not new people. Never let a character's reference number later mean a place.
 Each spoken line belongs to exactly one speaker. A character speaks only their own lines. Never copy a line onto another character, and never let two characters say the same sentence.
@@ -149,7 +149,7 @@ const tools = [
               description: {
                 type: "string",
                 description:
-                  "Visual appearance of this character alone: species, colors, clothes. Species is this character's own body. An animal they mention, draw, hold, or say is not their species. Kid, Dad, Mom, Boy, Girl, Wife, and Husband are human unless the script says that character is an animal. For a woman with no photo, pick a skin tone at random and do not default to dark skin. No plot, no other characters, no fight or scene. With a Setup photo, only what the photo shows.",
+                  "The person, not the role. Approximate age, build, face, hair, skin, and the clothes they wear at the start. Father, Man, Mother, Woman, Son, and Daughter still get that full look. Use the age, body, and clothes the script already shows, and decide only what it leaves open. Do not stop at an adult man, an adult woman, or a human boy. Species is this character's own body. An animal they mention, draw, hold, or say is not their species. For a woman with no photo, pick a skin tone at random and do not default to dark skin. No plot, no other characters, no fight or scene. With a Setup photo, only what the photo shows.",
               },
               voice_notes: { type: "string" },
               is_extra: {
@@ -1420,6 +1420,12 @@ async function executeTool(
       refineStoryLeads(project);
       diversifyInventedCast(project);
       applyScriptLooks(project);
+      const thin = project.characters.filter((character) => !character.isExtra && lookIsThin(character.description || ""));
+      if (thin.length) {
+        throw new Error(
+          `Describe ${thin.map((character) => character.name).join(", ")} as a person: approximate age, build, face, hair, skin, and the clothes they start in. Do not stop at "an adult man" or "a human boy". Use the body and clothes the script already shows, and decide the rest.`,
+        );
+      }
       dropUnscriptedDialogue(project);
       project.title = filmTitle(requestedTitle, project.scenes);
       project.durationPending = false;
