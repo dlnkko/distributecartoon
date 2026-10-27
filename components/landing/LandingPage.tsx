@@ -19,6 +19,7 @@ import {
 } from "@/components/landing/copy";
 import { track } from "@/components/landing/track";
 import { VideoCard } from "@/components/landing/VideoCard";
+import { MEMBERSHIP_MINUTES } from "@/lib/plans";
 
 export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: string }) {
   const [mode, setMode] = useState(initialMode);
@@ -65,8 +66,8 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
         <Brand tone="accent" />
         <ModeToggle mode={mode} base={base} onPick={pickMode} />
         <nav className="flex items-center gap-2">
-          <a href="#workflow" className="hidden rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold sm:inline-flex">
-            How you pay
+          <a href="#pricing" className="hidden rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold sm:inline-flex">
+            Pricing
           </a>
           <a href="/login" className="cf-btn btn-primary whitespace-nowrap px-3 py-2 text-sm font-semibold sm:px-4">
             Sign in
@@ -431,7 +432,21 @@ function BrandBody() {
   );
 }
 
+function money(price: number) {
+  return price.toLocaleString("en-US", { style: "currency", currency: "USD" });
+}
+
 function WorkflowPay({ mode }: { mode: Mode }) {
+  const [index, setIndex] = useState(0);
+  const pick = MEMBERSHIP_MINUTES[index] || MEMBERSHIP_MINUTES[0];
+  const perMinute = pick.price / pick.minutes;
+
+  function choose(next: number) {
+    setIndex(next);
+    const plan = MEMBERSHIP_MINUTES[next];
+    if (plan) track("membership_minutes", { mode, minutes: String(plan.minutes), price: String(plan.price) });
+  }
+
   return (
     <section id="workflow" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
       <Reveal>
@@ -440,9 +455,66 @@ function WorkflowPay({ mode }: { mode: Mode }) {
           The membership is Clickframes: the story, the shots, and the direction. The video itself runs on your KIE account. After the plan is active, you add your KIE API key, and every film is billed there. That is why each video stays cheap.
         </p>
       </Reveal>
+      <Reveal>
+        <article id="pricing" className="mt-8 scroll-mt-24 rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:p-8">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">Membership</p>
+          <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+            <div>
+              <p className="land-display text-4xl sm:text-5xl">{pick.minutes.toLocaleString("en-US")} min</p>
+              <p className="mt-1 text-sm text-[var(--cf-muted)]">of video each month</p>
+            </div>
+            <div className="sm:text-right">
+              <p className="land-display text-4xl sm:text-5xl">{money(pick.price)}</p>
+              <p className="mt-1 text-sm text-[var(--cf-muted)]">{money(perMinute)} per minute · billed monthly</p>
+            </div>
+          </div>
+          <label className="mt-8 block">
+            <span className="sr-only">Minutes of video per month</span>
+            <input
+              type="range"
+              className="cf-range"
+              min={0}
+              max={MEMBERSHIP_MINUTES.length - 1}
+              step={1}
+              value={index}
+              aria-valuemin={MEMBERSHIP_MINUTES[0].minutes}
+              aria-valuemax={MEMBERSHIP_MINUTES[MEMBERSHIP_MINUTES.length - 1].minutes}
+              aria-valuenow={pick.minutes}
+              aria-valuetext={`${pick.minutes} minutes, ${money(pick.price)} per month`}
+              onChange={(event) => choose(Number(event.target.value))}
+            />
+          </label>
+          <div className="mt-4 flex flex-wrap gap-2">
+            {MEMBERSHIP_MINUTES.map((plan, planIndex) => {
+              const on = planIndex === index;
+              return (
+                <button
+                  key={plan.minutes}
+                  type="button"
+                  aria-pressed={on}
+                  onClick={() => choose(planIndex)}
+                  className={`rounded-full border px-3 py-1 text-xs tabular-nums ${on ? "border-white/40 bg-white/10 font-semibold text-white" : "border-white/10 text-[var(--cf-muted)]"}`}
+                >
+                  {plan.minutes.toLocaleString("en-US")}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">
+            Workflow for {pick.minutes.toLocaleString("en-US")} minutes of finished video. The render stays on your KIE key.
+          </p>
+          <a
+            href="/login"
+            onClick={() => track("membership_checkout_click", { mode, minutes: String(pick.minutes), price: String(pick.price) })}
+            className="cf-btn btn-primary mt-6 inline-flex rounded-xl px-5 py-3 text-sm font-semibold"
+          >
+            Get this membership
+          </a>
+        </article>
+      </Reveal>
       <div className="mt-8 grid gap-4 md:grid-cols-3">
         {[
-          ["Membership", "One plan for the workflow. The price is the price of using Clickframes, not a pile of video seconds."],
+          ["Membership", "Pick how many minutes of video you need each month. That price is the workflow."],
           ["Your KIE key", "As soon as the plan is active, Clickframes asks for your KIE API key and uses it only for your films."],
           ["Cheap video", "KIE bills the render on your key. You are not buying seconds from us."],
         ].map(([title, text], index) => (
@@ -454,9 +526,6 @@ function WorkflowPay({ mode }: { mode: Mode }) {
           </Reveal>
         ))}
       </div>
-      <a href="/login" className="cf-btn btn-primary mt-8 inline-flex rounded-xl px-5 py-3 text-sm font-semibold">
-        Sign in
-      </a>
       {mode === "brands" ? (
         <div id="agency" className="mt-14 scroll-mt-24">
           <h3 className="land-display text-3xl">{BRAND_AGENCY.title}</h3>

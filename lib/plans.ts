@@ -78,6 +78,23 @@ export const MONTHLY_PLANS: Plan[] = [
 export const LEAD_PLANS = MONTHLY_PLANS.slice(0, 2);
 export const SLIDER_PLANS = MONTHLY_PLANS.slice(2);
 
+export const MEMBERSHIP_MINUTES: { minutes: number; price: number }[] = [
+  { minutes: 5, price: 9.99 },
+  { minutes: 10, price: 19.99 },
+  { minutes: 30, price: 54.99 },
+  { minutes: 60, price: 109.99 },
+  { minutes: 120, price: 209.99 },
+  { minutes: 180, price: 299.99 },
+  { minutes: 300, price: 499.99 },
+  { minutes: 400, price: 649.99 },
+  { minutes: 500, price: 799.99 },
+  { minutes: 600, price: 949.99 },
+  { minutes: 700, price: 1099.99 },
+  { minutes: 800, price: 1249.99 },
+  { minutes: 900, price: 1399.99 },
+  { minutes: 1000, price: 1549.99 },
+];
+
 export const TOPUP_PLANS: Plan[] = [
   { id: "top25", name: "25 credits", price: 17.99, seconds: 25, perCredit: "$0.72", blurb: "25 credits, once.", kind: "topup", whopPlanId: "plan_1KiWmXRec8BJL", purchaseUrl: "https://whop.com/checkout/plan_1KiWmXRec8BJL" },
   { id: "top50", name: "50 credits", price: 32.99, seconds: 50, perCredit: "$0.66", blurb: "50 credits, once.", kind: "topup", whopPlanId: "plan_12X6dO3SCOw7v", purchaseUrl: "https://whop.com/checkout/plan_12X6dO3SCOw7v" },

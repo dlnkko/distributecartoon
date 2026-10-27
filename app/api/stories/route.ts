@@ -7,6 +7,7 @@ import { applySavedProduct, savedProductFromRow, type SavedProduct } from "@/lib
 import { createProject, saveProject } from "@/lib/store";
 import { createClient } from "@/lib/supabase/server";
 import { isDialogueLanguage, type DialogueLanguage } from "@/lib/types";
+import { takeWorkflowPrep } from "@/lib/workflow-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -40,8 +41,8 @@ export async function POST(request: Request) {
     const product = await ownedProduct(productId, user.id);
     if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
     if (body.action === "approve") return await approveStory(body, product, user.id);
-    if (body.action === "vary") return await varyBrief(body, product);
-    return await readBrief(body, product);
+    if (body.action === "vary") return await varyBrief(body, product, user.id);
+    return await readBrief(body, product, user.id);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Couldn't write that story.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -85,7 +86,9 @@ async function pageText(product: SavedProduct, supplied?: string) {
   return "";
 }
 
-async function readBrief(body: { language?: string }, product: SavedProduct) {
+async function readBrief(body: { language?: string }, product: SavedProduct, userId: string) {
+  const prep = await takeWorkflowPrep(userId, "brief");
+  if (!prep.ok) return NextResponse.json({ error: prep.error }, { status: prep.status });
   const page = await pageText(product);
   if (!page && ![product.useNotes, product.whenNotes, product.extraContext].some((item) => item.trim())) {
     return NextResponse.json({ error: "This product needs a page or a note about how it is used." }, { status: 422 });
@@ -105,9 +108,12 @@ async function readBrief(body: { language?: string }, product: SavedProduct) {
 async function varyBrief(
   body: { field?: string; pain?: string; audience?: string; who?: string; page?: string; language?: string },
   product: SavedProduct,
+  userId: string,
 ) {
   const field = body.field === "pain" || body.field === "audience" || body.field === "person" ? body.field : "";
   if (!field) return NextResponse.json({ error: "Pick which field to vary." }, { status: 400 });
+  const prep = await takeWorkflowPrep(userId, "brief");
+  if (!prep.ok) return NextResponse.json({ error: prep.error }, { status: prep.status });
   const page = await pageText(product, body.page);
   if (!page && ![product.useNotes, product.whenNotes, product.extraContext].some((item) => item.trim())) {
     return NextResponse.json({ error: "This product needs a page or a note about how it is used." }, { status: 422 });
@@ -141,6 +147,8 @@ async function approveStory(
   if (!pain || !audience || !who) {
     return NextResponse.json({ error: "Approve a pain point, an audience, and who the story follows." }, { status: 422 });
   }
+  const prep = await takeWorkflowPrep(userId, "story");
+  if (!prep.ok) return NextResponse.json({ error: prep.error }, { status: prep.status });
   const page = await pageText(product, body.page);
   const language: DialogueLanguage = isDialogueLanguage(body.language) ? body.language : "english";
   const story = await writeDramaStory({

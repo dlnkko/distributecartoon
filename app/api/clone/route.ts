@@ -10,6 +10,7 @@ import { applySavedProduct, savedProductFromRow, type SavedProduct } from "@/lib
 import { createProject, saveProject } from "@/lib/store";
 import { createClient } from "@/lib/supabase/server";
 import { isDialogueLanguage, type DialogueLanguage } from "@/lib/types";
+import { takeWorkflowPrep } from "@/lib/workflow-limit";
 
 export const runtime = "nodejs";
 export const maxDuration = 800;
@@ -69,6 +70,8 @@ export async function POST(request: Request) {
     if (buffer.length > CLONE_UPLOAD_MAX_BYTES) return NextResponse.json({ error: "That video is too large." }, { status: 413 });
     const length = await probeVideoDuration(buffer, ext);
     assertCloneLength(length);
+    const prep = await takeWorkflowPrep(user.id, "clone");
+    if (!prep.ok) return NextResponse.json({ error: prep.error }, { status: prep.status });
     const source = await readCloneSource(buffer, mime);
     const page = String(body.page || "").trim() || product.pageContext || "";
     const story = await adaptCloneStory({

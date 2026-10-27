@@ -12,6 +12,7 @@ import { MAX_CONCURRENT_RENDERS, RENDER_WAIT_MESSAGE, projectDeliveredSrc, proje
 import { activeMembership } from "@/lib/billing";
 import { generationCreditCost } from "@/lib/credits";
 import { spendCredits } from "@/lib/spend-credits";
+import { takeWorkflowPrep } from "@/lib/workflow-limit";
 import { whopReady } from "@/lib/whop";
 
 export const runtime = "nodejs";
@@ -196,6 +197,11 @@ export async function POST(request: Request) {
       bus.send({ type: "done" });
     });
     return streamEvents(work, bus);
+  }
+
+  const prep = await takeWorkflowPrep(user.id, "plan");
+  if (!prep.ok) {
+    return new Response(JSON.stringify({ error: prep.error }), { status: prep.status });
   }
 
   project.pendingTask = { kind: "plan", startedAt: new Date().toISOString() };
