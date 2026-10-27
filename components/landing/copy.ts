@@ -75,7 +75,7 @@ export const COPY = {
   personal: {
     label: "Personal",
     title: "Any idea. Animated like a billion dollar studio made it.",
-    sub: "No prompting. Just know what you want. Your characters stay the same in every shot, and your animation is ready in about 10 minutes.",
+    sub: "Every film on this page was one-shotted. You write the idea. We direct it. Your own KIE key pays the model.",
     cta: "I want to bring my idea to life",
     films: "Watch the films",
     trust: "You own every video you make.",
@@ -85,21 +85,21 @@ export const COPY = {
   },
   brands: {
     label: "Brands",
-    title: "The ads breaking the market right now. Made in one click.",
-    sub: "Drop in a script or storyboard, upload your product, and get a professional ad in minutes. No editors, no paid retries, no picking AI models.",
+    title: "The ads breaking the market right now. One\u2011shotted.",
+    sub: "A script, your product, one generation. You pay the model on your KIE key. You pay us for the direction that makes the first take the ad.",
     cta: "I want my winning ad",
     films: "Watch the ads",
     trust: "Built for organic and paid.",
-    metaTitle: "The ads breaking the market right now, made in one click",
+    metaTitle: "The ads breaking the market right now, one-shotted",
     metaDescription:
-      "Script or storyboard in, professional animated ad out. Drama animation ads and Suno ads in minutes, with no editors.",
+      "A script and your product, one generation. You pay the model on your KIE key. You pay Clickframes for the direction.",
   },
 } as const;
 
 export const PERSONAL_EDGE = [
-  { title: "Cinematic on the first try", text: "A well made film from the first generation. No rounds of trial and error." },
-  { title: "Continuity up to 3 minutes", text: "Same voices, looks, places, and scenes from start to finish. Up to 5 minutes is coming soon." },
-  { title: "Stories that needed a studio budget", text: "The films you used to dream about now fit in your hands." },
+  { title: "One-shotted", text: "The films on this page were generated once. The first take is the film, or about 90% of it." },
+  { title: "The same face the whole way", text: "Voices, looks, and places stay put from the first shot to the last." },
+  { title: "The bad takes never get made", text: "You are not spending the budget on generations you throw away." },
 ];
 
 export const BRAND_PAIN = [
@@ -116,18 +116,24 @@ export const BRAND_AGENCY = {
 
 export const STEPS = [
   {
-    title: "Drop in your idea",
-    text: "A script, a storyboard, a photo, or a Suno song. We read the story before generating anything.",
+    title: "Write it in plain language",
+    text: "A script, a storyboard, a photo, or a song. The way you would explain it to a friend.",
   },
   {
-    title: "We lock the look",
-    text: "Characters, products, places, and logos stay consistent in every shot.",
+    title: "We direct the first take",
+    text: "Clickframes locks the look, the shots, and the continuity, so the first generation is the film, or about 90% of it.",
   },
   {
-    title: "Get your animation",
-    text: "Pixar, claymation, or live action, cut to length, voices already in the picture.",
+    title: "Render on your KIE key",
+    text: "You add your own KIE API key. The model bills your KIE account. The membership is only the workflow.",
   },
 ];
+
+export const RENDER_COMPARE = [
+  { name: "KIE", price: 42, note: "Your key. You pay the model.", yours: true },
+  { name: "Higgsfield", price: 44, note: "Plus plan, if every credit is used.", yours: false },
+  { name: "Fal", price: 66, note: "Same model, their API price.", yours: false },
+] as const;
 
 export function faqFor(mode: Mode) {
   return [
@@ -145,7 +151,11 @@ export function faqFor(mode: Mode) {
     { q: "How long does it take?", a: "About 10 minutes for most animations." },
     {
       q: "What do I pay for?",
-      a: "A membership for the Clickframes workflow. The video runs on your own KIE API key, so the render is billed on your KIE account and stays cheap.",
+      a: "Two bills. The membership is the Clickframes workflow. The video is billed on your own KIE API key, so you pay the model directly.",
+    },
+    {
+      q: "Why do I need a KIE key?",
+      a: "KIE is the API that runs the video model. You create a key on your KIE account, paste it into Clickframes, and every film is charged there. We never resell the seconds.",
     },
     { q: "How long can a video be?", a: "Up to 3 minutes today. Up to 5 minutes is coming soon." },
     { q: "Who owns the video?", a: "You do. You own all the rights to every video you create on Clickframes." },

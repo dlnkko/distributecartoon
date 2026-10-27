@@ -11,6 +11,7 @@ import {
   FILMS,
   PERSONAL_EDGE,
   PERSONAL_HERO,
+  RENDER_COMPARE,
   STEPS,
   ZOOM_URL,
   faqFor,
@@ -20,7 +21,7 @@ import {
 import { startCheckout } from "@/components/landing/checkout";
 import { track } from "@/components/landing/track";
 import { VideoCard } from "@/components/landing/VideoCard";
-import { MEMBERSHIP_MINUTES } from "@/lib/plans";
+import { LANDING_MINUTES } from "@/lib/plans";
 
 export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: string }) {
   const [mode, setMode] = useState(initialMode);
@@ -63,7 +64,7 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
 
   return (
     <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 py-3 sm:px-6">
+      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 bg-[#0b0b0d]/70 px-4 py-3 backdrop-blur-md sm:px-6">
         <Brand tone="accent" />
         <ModeToggle mode={mode} base={base} onPick={pickMode} />
         <nav className="flex items-center gap-2">
@@ -77,23 +78,12 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
       </header>
 
       <div key={mode} className="land-swap">
-      <section id="hero" className={mode === "brands" ? "relative isolate min-h-[100svh] overflow-hidden" : "relative overflow-hidden"}>
-        {mode === "brands" ? <HeroVideo clip={BRAND_HERO} /> : null}
-        <div className={`pointer-events-none absolute inset-0 ${mode === "brands" ? "bg-gradient-to-t from-[#0b0b0d] via-[#0b0b0d]/70 to-[#0b0b0d]/25" : ""}`} />
-        {mode === "personal" ? (
-          <div className="relative mx-auto grid max-w-6xl items-center gap-10 px-4 py-8 sm:px-6 lg:grid-cols-[1.15fr_0.85fr] lg:py-16">
-            <Reveal>
-              <HeroCopy copy={copy} mode={mode} />
-            </Reveal>
-            <Reveal delay={120}>
-              <VideoCard clip={PERSONAL_HERO} ratio="aspect-[9/16]" play="always" quiet className="land-film mx-auto w-full max-w-[280px] sm:max-w-xs" />
-            </Reveal>
-          </div>
-        ) : (
-          <Reveal className="relative mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-4xl flex-col items-start justify-end px-4 pb-16 sm:px-6">
-            <HeroCopy copy={copy} mode={mode} light />
-          </Reveal>
-        )}
+      <section id="hero" className="relative isolate min-h-[100svh] overflow-hidden">
+        <HeroVideo clip={mode === "brands" ? BRAND_HERO : PERSONAL_HERO} />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0b0b0d] via-[#0b0b0d]/75 to-[#0b0b0d]/45" />
+        <Reveal className="relative mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-4xl flex-col items-start justify-end px-4 pb-16 sm:px-6">
+          <HeroCopy copy={copy} mode={mode} light />
+        </Reveal>
       </section>
 
       {mode === "personal" ? (
@@ -102,22 +92,9 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
         <BrandBody />
       )}
 
-      <section className="mx-auto max-w-6xl px-4 py-8 sm:px-6">
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">How it works</h2>
-        </Reveal>
-        <div className="mt-8 grid gap-8 md:grid-cols-3">
-          {STEPS.map((step, index) => (
-            <Reveal key={step.title} delay={index * 80}>
-              <article className="border-t border-white/10 pt-5">
-                <p className="text-sm tabular-nums text-[var(--cf-muted)]">{String(index + 1).padStart(2, "0")}</p>
-                <h3 className="mt-3 text-lg font-medium">{step.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{step.text}</p>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-      </section>
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+        <PointRow title="How it works" items={STEPS} />
+      </div>
 
       <WorkflowPay mode={mode} />
 
@@ -254,7 +231,7 @@ function HeroVideo({ clip }: { clip: Film }) {
       ) : (
         <video
           ref={video}
-          className="h-full w-full scale-105 object-cover"
+          className={`h-full w-full scale-105 object-cover ${clip.ratio === "9:16" ? "object-[center_28%]" : "object-center"}`}
           poster={clip.poster}
           muted
           loop
@@ -355,35 +332,62 @@ function FilmRail({ films, start = 0 }: { films: Film[]; start?: number }) {
   );
 }
 
+function PointRow({
+  title,
+  text,
+  items,
+  close,
+}: {
+  title: string;
+  text?: string;
+  items: readonly { title: string; text: string }[];
+  close?: string;
+}) {
+  return (
+    <section>
+      <Reveal>
+        <h2 className="land-display max-w-3xl text-3xl sm:text-4xl">{title}</h2>
+        {text ? <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">{text}</p> : null}
+      </Reveal>
+      <div className="mt-8 grid overflow-hidden rounded-3xl border border-white/10 bg-[var(--cf-surface)] md:grid-cols-3">
+        {items.map((item, index) => (
+          <article key={item.title} className="border-b border-white/10 p-6 last:border-b-0 md:border-b-0 md:border-r md:p-7 md:last:border-r-0">
+            <p className="text-[11px] tabular-nums tracking-[0.18em] text-[var(--cf-muted)]">{String(index + 1).padStart(2, "0")}</p>
+            <h3 className="mt-4 text-lg font-medium">{item.title}</h3>
+            <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
+          </article>
+        ))}
+      </div>
+      {close ? <p className="mt-4 text-sm text-[var(--cf-muted)]">{close}</p> : null}
+    </section>
+  );
+}
+
+function FilmBlock({ title, text, start = 0 }: { title: string; text: string; start?: number }) {
+  return (
+    <section id="films" className="scroll-mt-24">
+      <Reveal>
+        <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">One-shotted</p>
+        <h2 className="land-display mt-2 text-3xl sm:text-4xl">{title}</h2>
+        <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">{text}</p>
+      </Reveal>
+      <FilmRail films={FILMS} start={start} />
+    </section>
+  );
+}
+
 function PersonalBody() {
   return (
-    <div className="mx-auto max-w-6xl space-y-20 px-4 py-10 sm:px-6">
-      <section id="films" className="scroll-mt-24">
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">Stories, ready to watch.</h2>
-          <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
-            Write it the way you would tell a friend. These films started that way.
-          </p>
-        </Reveal>
-        <FilmRail films={FILMS} />
-      </section>
-
-      <section>
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">What no other tool gives you.</h2>
-        </Reveal>
-        <div className="mt-8 grid gap-8 md:grid-cols-3">
-          {PERSONAL_EDGE.map((item, index) => (
-            <Reveal key={item.title} delay={index * 80}>
-              <article className="border-t border-white/10 pt-5">
-                <h3 className="text-lg font-medium">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-              </article>
-            </Reveal>
-          ))}
-        </div>
-        <p className="mt-6 text-sm text-[var(--cf-muted)]">You own all the rights to every video you create.</p>
-      </section>
+    <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
+      <FilmBlock
+        title="Stories, ready to watch."
+        text="Every film here was one-shotted. Written the way you would tell a friend, generated once."
+      />
+      <PointRow
+        title="What no other tool gives you."
+        items={PERSONAL_EDGE}
+        close="You own all the rights to every video you create."
+      />
     </div>
   );
 }
@@ -391,43 +395,23 @@ function PersonalBody() {
 function BrandBody() {
   return (
     <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
-      <section>
-        <Reveal>
-          <h2 className="land-display max-w-3xl text-3xl sm:text-4xl">Making the ads that win has never been this easy.</h2>
-          <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">
-            A script or storyboard with your idea, story, or angle. Your product. One click. A professional ad.
-          </p>
-        </Reveal>
-        <div className="mt-8 grid gap-8 md:grid-cols-3">
-          {BRAND_PAIN.map((item, index) => (
-            <Reveal key={item.title} delay={index * 80}>
-              <article className="border-t border-white/10 pt-5">
-                <h3 className="text-lg font-medium">{item.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-              </article>
-            </Reveal>
-          ))}
+      <PointRow
+        title="Making the ads that win has never been this easy."
+        text="A script, your product, one generation. The ads below were one-shotted. You pay the model on your KIE key, not a stack of retries."
+        items={BRAND_PAIN}
+        close="The ad you had in mind, in minutes, with no third party."
+      />
+      <FilmBlock title="Ads, ready to run." text="Every ad in this row was one-shotted." start={1} />
+      <Reveal>
+        <div className="flex flex-col items-start justify-between gap-6 rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:flex-row sm:items-end sm:p-8">
+          <div>
+            <h2 className="land-display text-3xl sm:text-4xl">{BRAND_AGENCY.title}</h2>
+            <p className="mt-3 max-w-md text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
+          </div>
+          <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="cf-btn btn-primary shrink-0 px-5 py-3 text-sm font-semibold">
+            {BRAND_AGENCY.cta}
+          </a>
         </div>
-        <Reveal>
-          <p className="mt-6 max-w-xl text-lg leading-relaxed">The ad you had in mind, in minutes, with no third party.</p>
-        </Reveal>
-      </section>
-
-      <section id="films" className="scroll-mt-24">
-        <Reveal>
-          <h2 className="land-display text-3xl sm:text-4xl">Ads, ready to run.</h2>
-        </Reveal>
-        <FilmRail films={FILMS} start={1} />
-      </section>
-
-      <Reveal className="flex flex-col items-start justify-between gap-6 border-t border-white/10 pt-8 sm:flex-row sm:items-end">
-        <div>
-          <h2 className="land-display text-3xl sm:text-4xl">{BRAND_AGENCY.title}</h2>
-          <p className="mt-3 max-w-md text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
-        </div>
-        <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="cf-btn btn-primary shrink-0 px-5 py-3 text-sm font-semibold">
-          {BRAND_AGENCY.cta}
-        </a>
       </Reveal>
     </div>
   );
@@ -439,97 +423,102 @@ function money(price: number) {
 
 function WorkflowPay({ mode }: { mode: Mode }) {
   const [index, setIndex] = useState(0);
-  const pick = MEMBERSHIP_MINUTES[index] || MEMBERSHIP_MINUTES[0];
+  const pick = LANDING_MINUTES[index] || LANDING_MINUTES[0];
   const perMinute = pick.price / pick.minutes;
+  const dearest = Math.max(...RENDER_COMPARE.map((row) => row.price));
 
   function choose(next: number) {
     setIndex(next);
-    const plan = MEMBERSHIP_MINUTES[next];
+    const plan = LANDING_MINUTES[next];
     if (plan) track("membership_minutes", { mode, minutes: String(plan.minutes), price: String(plan.price) });
   }
 
   return (
     <section id="workflow" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
       <Reveal>
-        <h2 className="land-display text-3xl sm:text-4xl">You pay for the workflow</h2>
+        <h2 className="land-display text-3xl sm:text-4xl">You pay the model. You pay us for the direction.</h2>
+        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--cf-muted)]">
+          KIE is an API for the same video models, at the model's price. You create a key on your KIE account and paste it into Clickframes. Every film is then billed on that key, straight to the model. Fal and Higgsfield sell the same models with their own price, and a generation you throw away costs the same as a good one.
+        </p>
         <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--cf-muted)]">
-          The membership is Clickframes: the story, the shots, and the direction. The video itself runs on your KIE account. After the plan is active, you add your KIE API key, and every film is billed there. That is why each video stays cheap.
+          The membership is only the workflow. It is the direction that one-shots a video, or gets it about 90% done, so you are not spending the afternoon and the budget fighting the model.
         </p>
       </Reveal>
       <Reveal>
-        <article id="pricing" className="mt-8 scroll-mt-24 rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:p-8">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">Membership</p>
-          <div className="mt-4 flex flex-wrap items-end justify-between gap-6">
+        <div className="mt-10">
+          <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">A 5-minute film, one pass</p>
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {RENDER_COMPARE.map((row) => (
+              <article key={row.name} className={`rounded-2xl border p-5 ${row.yours ? "border-[#5B8CFF]/50 bg-[#5B8CFF]/10" : "border-white/10 bg-[var(--cf-surface)]"}`}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <h3 className="text-lg font-medium">{row.name}</h3>
+                  <p className="land-display text-3xl tabular-nums">{money(row.price)}</p>
+                </div>
+                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
+                  <div className={`h-full rounded-full ${row.yours ? "cf-grad" : "bg-white/35"}`} style={{ width: `${Math.round((row.price / dearest) * 100)}%` }} />
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-[var(--cf-muted)]">{row.note}</p>
+                <p className="mt-1 text-xs tabular-nums text-[var(--cf-muted)]">Three passes, {money(row.price * 3)}</p>
+              </article>
+            ))}
+          </div>
+          <p className="mt-3 max-w-3xl text-xs leading-relaxed text-[var(--cf-muted)]">
+            Seedance 2.5 at 480p, five minutes of output, published rates as of October 2026. KIE is $0.14 a second. Fal is about $0.22 a second. Higgsfield Plus is $49 for 1,000 credits, about 15 credits per 5 seconds.
+          </p>
+        </div>
+      </Reveal>
+      <Reveal>
+        <article id="pricing" className="mt-10 scroll-mt-24 rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:p-8">
+          <div className="flex flex-wrap items-end justify-between gap-6">
             <div>
-              <p className="land-display text-4xl sm:text-5xl">{pick.minutes.toLocaleString("en-US")} min</p>
-              <p className="mt-1 text-sm text-[var(--cf-muted)]">of video each month</p>
+              <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">Workflow membership</p>
+              <p className="land-display mt-3 text-4xl sm:text-5xl">{pick.minutes} min</p>
+              <p className="mt-1 text-sm text-[var(--cf-muted)]">of finished video each month</p>
             </div>
             <div className="sm:text-right">
               <p className="land-display text-4xl sm:text-5xl">{money(pick.price)}</p>
-              <p className="mt-1 text-sm text-[var(--cf-muted)]">{money(perMinute)} per minute · billed monthly</p>
+              <p className="mt-1 text-sm text-[var(--cf-muted)]">{money(perMinute)} per minute, billed monthly</p>
             </div>
           </div>
-          <label className="mt-8 block">
-            <span className="sr-only">Minutes of video per month</span>
-            <input
-              type="range"
-              className="cf-range"
-              min={0}
-              max={MEMBERSHIP_MINUTES.length - 1}
-              step={1}
-              value={index}
-              aria-valuemin={MEMBERSHIP_MINUTES[0].minutes}
-              aria-valuemax={MEMBERSHIP_MINUTES[MEMBERSHIP_MINUTES.length - 1].minutes}
-              aria-valuenow={pick.minutes}
-              aria-valuetext={`${pick.minutes} minutes, ${money(pick.price)} per month`}
-              onChange={(event) => choose(Number(event.target.value))}
-            />
-          </label>
-          <div className="mt-4 flex flex-wrap gap-2">
-            {MEMBERSHIP_MINUTES.map((plan, planIndex) => {
+          <div className="mt-8 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Minutes of video per month">
+            {LANDING_MINUTES.map((plan, planIndex) => {
               const on = planIndex === index;
               return (
                 <button
-                  key={plan.minutes}
+                  key={plan.id}
                   type="button"
-                  aria-pressed={on}
+                  role="radio"
+                  aria-checked={on}
                   onClick={() => choose(planIndex)}
-                  className={`rounded-full border px-3 py-1 text-xs tabular-nums ${on ? "border-white/40 bg-white/10 font-semibold text-white" : "border-white/10 text-[var(--cf-muted)]"}`}
+                  className={`rounded-2xl border px-2 py-4 text-center transition-colors ${on ? "border-transparent bg-white text-[#141417]" : "border-white/10 bg-transparent text-[var(--cf-muted)] hover:border-white/25"}`}
                 >
-                  {plan.minutes.toLocaleString("en-US")}
+                  <span className="block text-xl font-semibold tabular-nums sm:text-2xl">{plan.minutes}</span>
+                  <span className="mt-1 block text-[10px] uppercase tracking-[0.16em]">min</span>
+                  <span className="mt-3 block text-xs font-medium tabular-nums sm:text-sm">{money(plan.price)}</span>
                 </button>
               );
             })}
           </div>
           <p className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">
-            Workflow for {pick.minutes.toLocaleString("en-US")} minutes of finished video. The render stays on your KIE key.
+            {pick.minutes} minutes of workflow. The render stays on your KIE key.
           </p>
-          <button
-            type="button"
-            onClick={() => {
-              track("membership_checkout_click", { mode, minutes: String(pick.minutes), price: String(pick.price) });
-              void startCheckout(pick.id).catch(() => undefined);
-            }}
-            className="cf-btn btn-primary mt-6 inline-flex rounded-xl px-5 py-3 text-sm font-semibold"
-          >
-            Get this membership
-          </button>
+          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+            <button
+              type="button"
+              onClick={() => {
+                track("membership_checkout_click", { mode, minutes: String(pick.minutes), price: String(pick.price) });
+                void startCheckout(pick.id).catch(() => undefined);
+              }}
+              className="cf-btn btn-primary rounded-xl px-5 py-3 text-sm font-semibold"
+            >
+              Get this membership
+            </button>
+            <a href={`mailto:${CONTACT_EMAIL}`} className="text-sm text-[var(--cf-muted)] hover:text-white">
+              Need more than 60 minutes? {CONTACT_EMAIL}
+            </a>
+          </div>
         </article>
       </Reveal>
-      <div className="mt-8 grid gap-4 md:grid-cols-3">
-        {[
-          ["Membership", "Pick how many minutes of video you need each month. That price is the workflow."],
-          ["Your KIE key", "As soon as the plan is active, Clickframes asks for your KIE API key and uses it only for your films."],
-          ["Cheap video", "KIE bills the render on your key. You are not buying seconds from us."],
-        ].map(([title, text], index) => (
-          <Reveal key={title} delay={index * 80}>
-            <article className="h-full rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6">
-              <h3 className="text-lg font-medium">{title}</h3>
-              <p className="mt-3 text-sm leading-relaxed text-[var(--cf-muted)]">{text}</p>
-            </article>
-          </Reveal>
-        ))}
-      </div>
       {mode === "brands" ? (
         <div id="agency" className="mt-14 scroll-mt-24">
           <h3 className="land-display text-3xl">{BRAND_AGENCY.title}</h3>

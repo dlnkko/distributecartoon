@@ -99,7 +99,7 @@ export const MEMBERSHIP_MINUTES: Array<Plan & { minutes: number }> = [
   minutePlan(5, 9.99, "plan_VKR9Kyz2NlLFs", "monthly"),
   minutePlan(10, 19.99, "plan_1VhyW1qVWrq6B", "monthly"),
   minutePlan(30, 54.99, "plan_iU8eh9SCxNXmP", "monthly"),
-  minutePlan(60, 109.99, "plan_O481kXlGPGIt5", "monthly"),
+  minutePlan(60, 99.99, "plan_O481kXlGPGIt5", "monthly"),
   minutePlan(120, 209.99, "plan_jkcys0UUPvgAg", "monthly"),
   minutePlan(180, 299.99, "plan_Ui3JdSRbeVSrd", "monthly"),
   minutePlan(300, 499.99, "plan_Dh1OTFaT7s4JQ", "monthly"),
@@ -111,6 +111,8 @@ export const MEMBERSHIP_MINUTES: Array<Plan & { minutes: number }> = [
   minutePlan(900, 1399.99, "plan_cpIFWA4vaw6tl", "monthly"),
   minutePlan(1000, 1549.99, "plan_HlIdOFPLQ7hXS", "monthly"),
 ];
+
+export const LANDING_MINUTES = MEMBERSHIP_MINUTES.filter((plan) => plan.minutes <= 60);
 
 export const MINUTE_TOPUPS: Array<Plan & { minutes: number }> = [
   minutePlan(10, 19.99, "plan_Q6zbO303j76IY", "topup"),
