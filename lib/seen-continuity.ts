@@ -38,7 +38,53 @@ function readLine(raw: string, label: string) {
 }
 
 export function referenceRanges(raw: string) {
-  const match = raw.match(/(?:^|\n)\s*CLIPS\s*:\s*([^\n]+)/i);
+  return fitRangeDurations(readRanges(raw, "CLIPS"));
+}
+
+export type VoiceSpan = { name: string; start: number; end: number; partIndex: number };
+
+export function voiceMarks(raw: string) {
+  const match = raw.match(/(?:^|\n)\s*VOICES\s*:\s*([^\n]+)/i);
+  const line = (match?.[1] || "").trim();
+  if (!line || /^(?:none|n\/a|empty|nothing|not applicable)\b/i.test(line)) return [];
+  const found: { name: string; start: number; end: number }[] = [];
+  for (const pair of line.matchAll(/([A-Za-z][A-Za-z0-9' .-]{0,40}?)\s+(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)/g)) {
+    const name = pair[1].replace(/[,;]+$/, "").trim();
+    const start = Number(pair[2]);
+    const end = Number(pair[3]);
+    if (!name || !Number.isFinite(start) || !Number.isFinite(end) || end - start < 1.5) continue;
+    found.push({ name, start, end });
+  }
+  return found;
+}
+
+function sameSpeaker(mark: string, name: string) {
+  const left = mark.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  const right = name.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+  if (!left || !right) return false;
+  return left === right || left.endsWith(` ${right}`) || right.endsWith(` ${left}`);
+}
+
+export function chooseVoiceSpans(needed: string[], parts: { index: number; voices: string }[]) {
+  const newest = [...parts].sort((left, right) => right.index - left.index);
+  const chosen: VoiceSpan[] = [];
+  for (const name of needed) {
+    if (chosen.some((span) => sameSpeaker(span.name, name))) continue;
+    for (const part of newest) {
+      const mark = voiceMarks(part.voices).find((item) => sameSpeaker(item.name, name));
+      if (!mark) continue;
+      chosen.push({ name, partIndex: part.index, start: mark.start, end: mark.end });
+      break;
+    }
+  }
+  return chosen.map((span) => {
+    const length = Math.min(4, Math.max(2, span.end - span.start));
+    return { ...span, end: span.start + length };
+  });
+}
+
+function readRanges(raw: string, label: string) {
+  const match = raw.match(new RegExp(`(?:^|\\n)\\s*${label}\\s*:\\s*([^\\n]+)`, "i"));
   const line = (match?.[1] || "").trim();
   if (!line || /^(?:none|n\/a|empty|nothing|not applicable)\b/i.test(line)) return [];
   const found: { start: number; end: number }[] = [];
@@ -47,12 +93,15 @@ export function referenceRanges(raw: string) {
     const end = Number(pair[2]);
     if (Number.isFinite(start) && Number.isFinite(end) && end - start >= 1.5) found.push({ start, end });
   }
-  const sorted = found.sort((left, right) => left.start - right.start);
+  return found.sort((left, right) => left.start - right.start);
+}
+
+function fitRangeDurations(found: { start: number; end: number }[]) {
   const kept: { start: number; end: number }[] = [];
   let cursor = -1;
-  for (const range of sorted) {
+  for (const range of found) {
     if (range.start < cursor - 0.2) continue;
-    const cap = sorted.length === 1 ? 7 : 3.5;
+    const cap = found.length === 1 ? 7 : 3.5;
     const end = Math.min(range.end, range.start + cap);
     if (end - range.start < 2) continue;
     kept.push({ start: range.start, end });

@@ -10,7 +10,7 @@ import { ensureArchivedVideo, getProject, saveProject } from "./store";
 import { batchAwaitingVideo, durableVideoSrc, projectDeliveredSrc, realKieVideoTaskId, storeFailureShouldRegenerate, storyBatchNeedsSubmit } from "./video-jobs";
 import { describeProductImage, readAttachedProduct } from "./product-use-video";
 import { watchRenderedPart } from "./continuity-watch";
-import { clothesShouldChange, parseSeenCard, partKeepsCarriedProduct, previousSeenCard, referenceRanges, seenCardMatters } from "./seen-continuity";
+import { chooseVoiceSpans, clothesShouldChange, parseSeenCard, partKeepsCarriedProduct, previousSeenCard, referenceRanges, seenCardMatters } from "./seen-continuity";
 import { REALISTIC_REFERENCE_FALLBACK_SECONDS, realisticProseCast, storyClipCast } from "./realistic-prose";
 import { ownerProductContext, productUnderstandingBrief } from "./product-facts";
 import { scrapeProductPage } from "./product-page";
@@ -577,7 +577,7 @@ function tailUrl(batch?: Batch) {
 }
 
 function voiceWatchKey(src: string) {
-  return createHash("sha256").update(`${src}\ncarry-on`).digest("hex").slice(0, 20);
+  return createHash("sha256").update(`${src}\nvoices3-speak`).digest("hex").slice(0, 20);
 }
 
 async function savePartTail(project: Project, batch: Batch) {
@@ -606,6 +606,67 @@ async function proseReferenceClip(buffer: Buffer, card: string) {
     console.warn("reference clip failed", error instanceof Error ? error.message : error);
     return tailVideoBuffer(buffer, REALISTIC_REFERENCE_FALLBACK_SECONDS);
   }
+}
+
+function savedVoiceRefs(batch?: Batch) {
+  return (batch?.voiceRefs || []).filter((item) => item.name.trim() && (item.remoteUrl || item.publicPath));
+}
+
+async function ensureVoiceReference(project: Project, batch: Batch) {
+  if (!realisticProseCast(project) || !previousStoryBatch(project, batch)) return;
+  const earlier = [...project.batches].filter((item) => item.index < batch.index && durableVideoSrc(item));
+  const plan = chooseVoiceSpans(
+    peopleNeeded(project, batch),
+    earlier.map((part) => ({ index: part.index, voices: part.seenContinuity || "" })),
+  );
+  if (!plan.length) return;
+  const key = createHash("sha256")
+    .update(plan.map((span) => `${span.partIndex}:${span.name}:${span.start.toFixed(2)}-${span.end.toFixed(2)}`).join("|"))
+    .digest("hex")
+    .slice(0, 20);
+  if (batch.voiceRefKey === key && savedVoiceRefs(batch).length === plan.length) return;
+  const refs: NonNullable<Batch["voiceRefs"]> = [];
+  for (const span of plan) {
+    const part = earlier.find((item) => item.index === span.partIndex);
+    const src = part ? durableVideoSrc(part) : "";
+    if (!src) continue;
+    const saved = await storeGeneratedFile({
+      project,
+      buffer: await clipVideoBuffer(await readPublicFile(src), [{ start: span.start, end: span.end }]),
+      relativeParts: [project.id, "voices", `part-${String(batch.index).padStart(2, "0")}-${slugify(span.name)}.mp4`],
+      contentType: "video/mp4",
+    });
+    refs.push({ name: span.name, publicPath: saved.publicPath, remoteUrl: saved.publicPath });
+  }
+  if (!refs.length) return;
+  batch.voiceRefs = refs;
+  batch.voiceRefKey = key;
+}
+
+function peopleNeeded(project: Project, batch: Batch) {
+  const speakers: string[] = [];
+  const present: string[] = [];
+  for (const index of batch.sceneIndexes) {
+    const scene = project.scenes.find((item) => item.index === index);
+    if (!scene) continue;
+    for (const name of charactersPresent(project, scene)) {
+      if (!present.some((item) => item.toLowerCase() === name.toLowerCase())) present.push(name);
+    }
+    for (const line of scene.dialogue || []) {
+      const speaker = (line.speaker || "").trim();
+      if (!speaker || line.voiceover || /^(?:narrator|voice-?over|vo)$/i.test(speaker)) continue;
+      const known = project.characters.find((item) => item.name.trim().toLowerCase() === speaker.toLowerCase());
+      const name = known?.name || speaker;
+      if (!speakers.some((item) => item.toLowerCase() === name.toLowerCase())) speakers.push(name);
+    }
+  }
+  return [...speakers, ...present.filter((name) => !speakers.some((item) => item.toLowerCase() === name.toLowerCase()))];
+}
+
+async function ensureVoiceIndex(project: Project, next: Batch) {
+  const earlier = [...project.batches].filter((item) => item.index < next.index && durableVideoSrc(item)).sort((left, right) => left.index - right.index);
+  for (const part of earlier) await ensureRenderedContinuity(project, part, next);
+  return earlier;
 }
 
 function directingNotes(project: Project) {
@@ -648,7 +709,7 @@ async function ensureRenderedContinuity(project: Project, previous?: Batch, next
         ? `PEOPLE IN THIS FILM: ${project.characters
             .filter((character) => !character.isExtra && character.name.trim())
             .map((character) => character.name.trim())
-            .join(", ")}. LOOKS and CLIPS come from the video, not from a written description. Every one of these people who appears needs a look, and a moment in CLIPS where they are visible and speaking.`
+            .join(", ")}. LOOKS and VOICES come from the video, not from a written description. Every person who speaks needs a look and a VOICES range of at most 4 seconds while they are speaking. Leave out anyone who does not speak.`
         : "",
     ]
       .filter(Boolean)
@@ -762,29 +823,34 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
     const previous = previousStoryBatch(project, batch);
     if (previous && !durableVideoSrc(previous)) return { ready: false };
     if (previous && durableVideoSrc(previous)) {
-      await ensureRenderedContinuity(project, previous, batch);
-      if (!previous.seenContinuity?.trim() && (previous.seenAttempts || 0) < 2) return { ready: false };
+      if (storyClipCast(project)) {
+        const earlier = await ensureVoiceIndex(project, batch);
+        if (earlier.some((part) => !part.seenContinuity?.trim() && (part.seenAttempts || 0) < 2)) return { ready: false };
+      } else {
+        await ensureRenderedContinuity(project, previous, batch);
+        if (!previous.seenContinuity?.trim() && (previous.seenAttempts || 0) < 2) return { ready: false };
+      }
       if (seenCardMatters(parseSeenCard(previous.seenContinuity || "")) && !/(?:^|\n)Continuity:\s+\S/.test(batch.videoPrompt || "")) {
         batch.promptReady = false;
       }
       if (
         realisticProseCast(project) &&
-        (!/\bthe same\b/i.test(batch.videoPrompt || "") || !/seen in @Video\d+/i.test(batch.videoPrompt || ""))
+        (!/\bthe same\b/i.test(batch.videoPrompt || "") ||
+          (savedVoiceRefs(batch).length > 0 && !/seen in @Video\d+/i.test(batch.videoPrompt || "")))
       ) {
         batch.promptReady = false;
       }
     }
-    const previousSrc = previous ? durableVideoSrc(previous) : "";
-    const voicesReady = Boolean(previous && previousSrc && previous.seenContinuityKey === voiceWatchKey(previousSrc));
-    const staleCut = Boolean(
-      previous &&
-      storyClipCast(project) &&
-      tailUrl(previous) &&
-      previous.tailCutKey !== "voices" &&
-      voicesReady &&
-      (previous.tailAttempts || 0) < 4,
-    );
-    if (previous && ((!tailUrl(previous) && (previous.tailAttempts || 0) < 2) || staleCut)) {
+    if (previous && storyClipCast(project)) {
+      try {
+        await ensureVoiceReference(project, batch);
+      } catch (error) {
+        console.warn("voice reference", project.id, batch.index, error instanceof Error ? error.message : error);
+      }
+      if (savedVoiceRefs(batch).length) await saveSoon(project);
+    }
+    const hasVoiceRef = savedVoiceRefs(batch).length > 0;
+    if (previous && !hasVoiceRef && !tailUrl(previous) && (previous.tailAttempts || 0) < 2) {
       previous.tailAttempts = (previous.tailAttempts || 0) + 1;
       try {
         await savePartTail(project, previous);
@@ -794,9 +860,9 @@ async function stepStoryParts(project: Project): Promise<StepResult> {
       await saveSoon(project);
       if (!tailUrl(previous)) return { ready: false };
     }
-    const handoffReady = storyClipCast(project)
-      ? /short cut of the previous part/i.test(batch.videoPrompt || "")
-      : /last 5 seconds/i.test(batch.videoPrompt || "");
+    const handoffReady = savedVoiceRefs(batch).length
+      ? /at most 4 seconds/i.test(batch.videoPrompt || "")
+      : /last 5 seconds|short cut of the previous part/i.test(batch.videoPrompt || "");
     if (previous && !realKieVideoTaskId(batch.kieVideoTaskId) && batch.kieVideoTaskId !== "pending") {
       const prompt = batch.videoPrompt || "";
       const momentText = batch.sceneIndexes
@@ -1428,6 +1494,16 @@ async function stableCharacterVideos(project: Project, abortSignal?: AbortSignal
   return videos;
 }
 
+async function speakerVideoRefs(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef[]> {
+  if (!realisticProseCast(project)) return [];
+  const entries: PromptRef[] = [];
+  for (const ref of savedVoiceRefs(batch)) {
+    const url = await resolveUploadUrl(ref.remoteUrl, ref.publicPath, abortSignal);
+    if (url) entries.push({ url, kind: "video", name: ref.name, notes: "speaker" });
+  }
+  return entries;
+}
+
 async function previousTailRef(project: Project, batch: Batch, abortSignal?: AbortSignal): Promise<PromptRef | undefined> {
   const previous = previousStoryBatch(project, batch);
   const src = tailUrl(previous);
@@ -1478,6 +1554,8 @@ async function collectRealisticReferences(project: Project, batch: Batch, abortS
     if (shouldGenerateOneShot(project.targetDurationSeconds, project.scenes)) {
       return { imageEntries, videoEntries: [] as PromptRef[] };
     }
+    const speakers = await speakerVideoRefs(project, batch, abortSignal);
+    if (speakers.length) return { imageEntries, videoEntries: speakers };
     const tail = await previousTailRef(project, batch, abortSignal);
     return { imageEntries, videoEntries: tail ? [tail] : [] };
   }
@@ -2013,7 +2091,7 @@ async function runGenerateBatchVideo(
       aspectRatio: normalizeAspectRatio(project.aspectRatio),
       referenceImageUrls: imageEntries.map((item) => item.url),
       referenceVideoUrls: videoEntries.map((item) => item.url),
-      referenceAudioUrls: audioUrls.length ? audioUrls : undefined,
+      referenceAudioUrls: audioUrls,
       generateAudio: project.song ? false : true,
       provider: "kie",
       resolution: "480p",

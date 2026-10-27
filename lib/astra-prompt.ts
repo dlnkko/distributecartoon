@@ -95,8 +95,8 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
       "Keep every 'Audio (Off-screen / Intercom Speaker)' label and every 'Dialogue (On-screen Lip-sync)' label. An intercom, phone, radio, narrator, or other voice that is not a face in the frame stays off-screen, and the visible person listens without moving their lips. A person who is in the frame and speaks is Dialogue (On-screen Lip-sync). If a freeze, a squint, a startle, or another reaction is caused by a reply, a line, or a sound in that same scene, the ACTION hears that cause first and the reaction comes after. Do not open that action on the reaction. Leave an action that is not waiting on something heard in that scene as written.",
       "If the draft includes @Audio1, keep @Audio1 playing from the first frame, with each quoted lyric in its scene. Nobody sings and nobody mouths the words. Do not add a singing mouth.",
       prior
-        ? /short cut of the previous part/i.test(trimmed)
-          ? "A previous part prompt is included. The attached video is a short cut of the previous part. It includes every person who speaks, even when they are not in the final seconds. Match each of them. Replay a gesture only when this draft says that beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
+        ? /speaking, at most 4 seconds/i.test(trimmed)
+          ? "Each attached video is one person speaking, at most 4 seconds, already named as @Video1, @Video2, and so on. Keep each tag on that same person. Match that face and that voice. Clothes follow this part. Do not attach a person who is not already in the draft. Replay a gesture only when this draft says that beat is still going."
           : "A previous part prompt is included. This clip is the next slice. The last 5 seconds carry clothes and where people ended up. Replay a gesture only when this draft says that same beat is still going. Otherwise the previous action is finished and the new lines are the only words. This part may open in a new place."
         : "",
       sight
@@ -130,7 +130,7 @@ export async function refineSeedancePrompt(draft: string, priorPrompt = "", stor
     const revisedFlat = revised.replace(/\s+/g, " ");
     if (carried.some((line) => !revisedFlat.includes(line))) return tightenPrompt(trimmed);
     if (/last 5 seconds/i.test(trimmed) && !/last 5 seconds/i.test(revised)) return trimmed;
-    if (/short cut of the previous part/i.test(trimmed) && !/short cut of the previous part/i.test(revised)) return trimmed;
+    if (/at most 4 seconds/i.test(trimmed) && !/at most 4 seconds/i.test(revised)) return trimmed;
     if (/seen in @Video\d+/i.test(trimmed) && !/seen in @Video\d+/i.test(revised)) return trimmed;
     if (/Clothes have changed/i.test(trimmed) && !/Clothes have changed/i.test(revised)) return trimmed;
     if (/still visible after it was used/i.test(trimmed) && !/still visible after it was used/i.test(revised)) return trimmed;

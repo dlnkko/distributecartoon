@@ -95,7 +95,7 @@ export async function watchRenderedPart(video: Buffer, context: string, options?
                     ? "LOOKS: one short sentence per named person who is visible, including someone who leaves before the ending. Start with the name, then 'is the same', then only what this video shows: skin, hair, clothes, and where they are, such as in bed or in a doorway. Do not copy a planned description. Example shape only: Sam is the same white man in a white t-shirt, sitting in bed. Ana is the same woman standing in the doorway."
                     : "",
                   options?.describeLooks
-                    ? "CLIPS: a short range, in seconds, for every person who is visible and speaks. Use the moment that person is on screen and talking. If the last 7 seconds already show all of them, return only that one range. If the ending shows only one of them, add an earlier range of about 3 seconds for each missing person, in the order they appear. Use the real times in this video. Total at most 9 seconds. Example shape only: 8.0-11.0, 24.0-27.0."
+                    ? "VOICES: one range per named person who speaks in this video. The range is while their mouth is moving and their voice is heard. At most 4 seconds. Leave out anyone who is only visible and silent. Use the real times. Example shape only: Sam 8.0-12.0, Ana 24.0-28.0."
                     : "",
                   "Return these lines only:",
                   "PEOPLE: who is visible at the end, and what each is doing",
@@ -109,7 +109,7 @@ export async function watchRenderedPart(video: Buffer, context: string, options?
                   "CARRY_POSE: one sentence of the ending position. Empty if the next part opens in a different place.",
                   "OUTFIT: same, or the clothes for the next moment",
                   options?.describeLooks ? "LOOKS: the sentences described above. Empty if no person is visible." : "",
-                  options?.describeLooks ? "CLIPS: the ranges described above. Empty if you cannot tell the times." : "",
+                  options?.describeLooks ? "VOICES: the speaking ranges described above. Empty if nobody speaks." : "",
                   "UNSEEN: what the script still needs that you could not see. Empty if you saw everything that should carry.",
                   "",
                   context.trim(),

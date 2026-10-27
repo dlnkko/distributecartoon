@@ -30,7 +30,7 @@ Pipeline real:
 7. Si el guion pasa de 30s, cada generación dura como máximo 30s de tiempo consecutivo del relato. El total debe cubrir el habla sin parecer apurado. Si el usuario pide un total más corto que el habla, no comprimas el diálogo por debajo de lo que tarda en decirse.
 8. El aspect ratio del proyecto (16:9 o 9:16) ya lo aplica el sistema. No lo cambies salvo que el usuario lo pida.
 9. Animar con Seedance 2.5 Reference-to-Video. Menciona @ImageN / @VideoN en la escena en la que aparecen, no en un preámbulo.
-10. El sistema tagea internamente cada clip por las voces de los leads que hablan ahí. En la siguiente tanda sube COMO MÁXIMO un @Video1: el clip anterior donde estén las voces de los personajes que participan en esa tanda. No adjunta varios videos ni clips de gente que no habla en la escena nueva.
+10. El sistema adjunta un video por personaje que vuelve en esta parte y ya habló antes. Cada video dura como máximo 4 segundos de esa persona hablando. @Video1 es el primero, @Video2 el siguiente. Un personaje nuevo no tiene video. Alguien que no sale en esta parte no se adjunta.
 
 Logo, product, and location:
 - Do NOT generate a standalone product/logo/location still when a photo is uploaded. No packshot, no product-only restyle.

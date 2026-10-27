@@ -1236,6 +1236,12 @@ function buildTags(project: Project, images: PromptRef[], videos: PromptRef[]) {
     else if (item.kind === "previous") {
       refs.push(`${tag} is the previous part. This part starts after it.`);
     }
+    else if (item.kind === "video" && item.notes === "speaker" && item.name.trim()) {
+      people.set(key, tag);
+      refs.push(
+        `${tag} is ${item.name.trim()} speaking, at most 4 seconds. Match this face and this voice. Clothes follow this part. Do not replay the action in this clip.`,
+      );
+    }
     else if (item.kind === "video")
       refs.push(
         project.song
@@ -2359,9 +2365,10 @@ function simpleScenePrompt(options: CompactPromptOptions) {
   const prose = realisticProseCast(project);
   const images = options.images || [];
   const { people, refs, swaps, narratorTag } = buildTags(project, images, options.videos || []);
-  const videoIndex = (options.videos || []).findIndex((item) => item.kind === "video");
-  const seenTag = videoIndex >= 0 ? `@Video${videoIndex + 1}` : "";
-  const tailLine = refs.find((line) => /last 5 seconds|short cut of the previous part/i.test(line)) || "";
+  const speakerLines = refs.filter((line) => /speaking, at most 4 seconds/i.test(line));
+  const tailLine = speakerLines.length
+    ? ""
+    : refs.find((line) => /last 5 seconds|short cut of the previous part/i.test(line)) || "";
   const previousLine = refs.find((line) => /this part starts after it/i.test(line)) || "";
   const characterVideos = (options.videos || []).some((item) => item.kind === "character");
   const scenes = sceneIndexes.map((index) => sceneByIndex(project, index));
@@ -2569,9 +2576,11 @@ function simpleScenePrompt(options: CompactPromptOptions) {
       if (positions.has(key)) continue;
       const tag = people.get(key) || "";
       const look = lookForMoment(project, name, seen.looks, continues, changeClothes).replace(/[.]+$/, "");
+      const ownVideo = people.get(key) || "";
+      const seenIn = /^@Video\d+$/i.test(ownVideo) ? ownVideo : "";
       const identity =
         prose && !/^@Image\d+$/i.test(tag)
-          ? `${name} is ${continues && seenTag ? `${look}, seen in ${seenTag}` : look}.`
+          ? `${name} is ${continues && seenIn ? `${look}, seen in ${seenIn}` : look}.`
           : tag
             ? identityPhrase(project, name, tag)
             : `${name}.`;
@@ -2664,6 +2673,7 @@ function simpleScenePrompt(options: CompactPromptOptions) {
     toneShift(scenes),
     song ? "Each scene shows the event in its quoted lyric. Nobody sings and nobody mouths the words. Mouths stay closed. The song is the only voice. The product is on screen only in the scene that uses it." : "",
     previousLine,
+    ...speakerLines,
     tailLine,
     continues ? "The previous scene already finished. This part starts on its own action. Do not replay the last gesture." : "",
     characterVideos ? "Speaking faces are @Video, with that voice." : "",
