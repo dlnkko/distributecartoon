@@ -1,4 +1,4 @@
-import { PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import { DeleteObjectCommand, GetObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
 
 function r2Config() {
   return {
@@ -40,4 +40,29 @@ export async function uploadToR2(key: string, body: Buffer, contentType: string)
     }),
   );
   return `${config.publicUrl}/${objectKey}`;
+}
+
+export async function readR2Object(key: string) {
+  const config = r2Config();
+  if (!r2Ready()) throw new Error("Cloudflare R2 is not configured.");
+  const result = await client().send(
+    new GetObjectCommand({
+      Bucket: config.bucket,
+      Key: key.replace(/^\/+/, ""),
+    }),
+  );
+  const bytes = await result.Body?.transformToByteArray();
+  if (!bytes?.byteLength) throw new Error("That upload is missing.");
+  return Buffer.from(bytes);
+}
+
+export async function deleteR2Object(key: string) {
+  const config = r2Config();
+  if (!r2Ready()) return;
+  await client().send(
+    new DeleteObjectCommand({
+      Bucket: config.bucket,
+      Key: key.replace(/^\/+/, ""),
+    }),
+  );
 }

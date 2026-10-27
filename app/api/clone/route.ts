@@ -2,8 +2,10 @@ import path from "node:path";
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { adaptCloneStory, assertCloneLength, readCloneSource } from "@/lib/clone-video";
+import { CLONE_MAX_PARTS, CLONE_UPLOAD_MAX_BYTES, clonePartKey, isCloneUploadId } from "@/lib/clone-upload";
 import { clampTotalDuration } from "@/lib/ids";
 import { probeVideoDuration } from "@/lib/product-use-video";
+import { deleteR2Object, readR2Object } from "@/lib/r2";
 import { applySavedProduct, savedProductFromRow, type SavedProduct } from "@/lib/saved-products";
 import { createProject, saveProject } from "@/lib/store";
 import { createClient } from "@/lib/supabase/server";
@@ -29,30 +31,46 @@ async function ownedProduct(id: string, userId: string) {
 export async function POST(request: Request) {
   const user = await getAuthUser();
   if (!user) return NextResponse.json({ error: "Sign in first." }, { status: 401 });
-  const form = await request.formData();
-  const productId = String(form.get("productId") || "").trim();
-  const audience = String(form.get("audience") || "").replace(/\s+/g, " ").trim().slice(0, 240);
-  const pain = String(form.get("pain") || "").replace(/\s+/g, " ").trim().slice(0, 400);
-  const seconds = clampTotalDuration(form.get("seconds"), 30);
-  const language: DialogueLanguage = isDialogueLanguage(String(form.get("language") || "")) ? (String(form.get("language")) as DialogueLanguage) : "english";
-  const file = form.get("file");
+  const body = (await request.json().catch(() => null)) as {
+    uploadId?: string;
+    partCount?: number;
+    name?: string;
+    productId?: string;
+    pain?: string;
+    audience?: string;
+    seconds?: unknown;
+    language?: string;
+    page?: string;
+  } | null;
+  if (!body) return NextResponse.json({ error: "That upload is not valid." }, { status: 400 });
+  const productId = String(body.productId || "").trim();
+  const audience = String(body.audience || "").replace(/\s+/g, " ").trim().slice(0, 240);
+  const pain = String(body.pain || "").replace(/\s+/g, " ").trim().slice(0, 400);
+  const seconds = clampTotalDuration(body.seconds, 30);
+  const language: DialogueLanguage = isDialogueLanguage(String(body.language || "")) ? (String(body.language) as DialogueLanguage) : "english";
+  const uploadId = String(body.uploadId || "").trim();
+  const partCount = Number(body.partCount);
+  const ext = path.extname(String(body.name || "")).toLowerCase();
+  const mime = VIDEO_EXT[ext];
   if (!productId) return NextResponse.json({ error: "Pick a product." }, { status: 400 });
   if (!audience) return NextResponse.json({ error: "Add an audience." }, { status: 422 });
   if (!pain) return NextResponse.json({ error: "Add a pain point." }, { status: 422 });
-  if (!(file instanceof File)) return NextResponse.json({ error: "Upload a video to clone." }, { status: 400 });
-  const ext = path.extname(file.name).toLowerCase();
-  const mime = VIDEO_EXT[ext] || (file.type.startsWith("video/") ? file.type : "");
-  if (!mime) return NextResponse.json({ error: "Upload an mp4, mov, or webm video." }, { status: 415 });
-  if (file.size > 32 * 1024 * 1024) return NextResponse.json({ error: "That video is too large." }, { status: 413 });
+  if (!mime || !isCloneUploadId(uploadId) || !Number.isInteger(partCount) || partCount < 1 || partCount > CLONE_MAX_PARTS) {
+    return NextResponse.json({ error: "Upload an mp4, mov, or webm video." }, { status: 415 });
+  }
 
+  const keys = Array.from({ length: partCount }, (_, index) => clonePartKey(user.id, uploadId, index));
   try {
     const product = await ownedProduct(productId, user.id);
     if (!product) return NextResponse.json({ error: "Product not found." }, { status: 404 });
-    const buffer = Buffer.from(await file.arrayBuffer());
-    const length = await probeVideoDuration(buffer, ext || ".mp4");
+    const parts: Buffer[] = [];
+    for (const key of keys) parts.push(await readR2Object(key));
+    const buffer = Buffer.concat(parts);
+    if (buffer.length > CLONE_UPLOAD_MAX_BYTES) return NextResponse.json({ error: "That video is too large." }, { status: 413 });
+    const length = await probeVideoDuration(buffer, ext);
     assertCloneLength(length);
     const source = await readCloneSource(buffer, mime);
-    const page = String(form.get("page") || "").trim() || product.pageContext || "";
+    const page = String(body.page || "").trim() || product.pageContext || "";
     const story = await adaptCloneStory({
       source,
       productName: product.name,
@@ -69,6 +87,8 @@ export async function POST(request: Request) {
   } catch (error) {
     const message = error instanceof Error ? error.message : "Couldn't adapt that video.";
     return NextResponse.json({ error: message }, { status: 500 });
+  } finally {
+    await Promise.all(keys.map((key) => deleteR2Object(key).catch(() => undefined)));
   }
 }
 

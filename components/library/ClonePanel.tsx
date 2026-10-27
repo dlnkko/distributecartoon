@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { DurationField } from "@/components/DurationField";
+import { CLONE_CHUNK_BYTES, CLONE_UPLOAD_MAX_BYTES } from "@/lib/clone-upload";
 import type { SavedProduct } from "@/lib/saved-products";
 import type { DialogueLanguage, Project } from "@/lib/types";
 
@@ -29,6 +30,7 @@ export function ClonePanel({
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState("");
   const [busy, setBusy] = useState<"" | "fill" | "continue">("");
+  const [note, setNote] = useState("");
   const [error, setError] = useState("");
   const [loaded, setLoaded] = useState(false);
 
@@ -65,7 +67,7 @@ export function ClonePanel({
 
   function pickFile(next: File | null) {
     setError("");
-    if (next && next.size > 32 * 1024 * 1024) {
+    if (next && next.size > CLONE_UPLOAD_MAX_BYTES) {
       setFile(null);
       setError("That video is too large.");
       return;
@@ -96,17 +98,41 @@ export function ClonePanel({
   async function go() {
     if (!productId || !file || !audience.trim() || !pain.trim() || busy) return;
     setBusy("continue");
+    setNote("Uploading the video…");
     setError("");
-    const body = new FormData();
-    body.set("file", file);
-    body.set("productId", productId);
-    body.set("pain", pain.trim());
-    body.set("audience", audience.trim());
-    body.set("seconds", String(seconds));
-    body.set("language", language);
-    if (page) body.set("page", page);
+    const uploadId = crypto.randomUUID();
+    const partCount = Math.ceil(file.size / CLONE_CHUNK_BYTES);
     try {
-      const res = await fetch("/api/clone", { method: "POST", body, signal: AbortSignal.timeout(480_000) });
+      for (let index = 0; index < partCount; index += 1) {
+        setNote(`Uploading ${index + 1} of ${partCount}…`);
+        const piece = new FormData();
+        piece.set("uploadId", uploadId);
+        piece.set("index", String(index));
+        piece.set("chunk", file.slice(index * CLONE_CHUNK_BYTES, (index + 1) * CLONE_CHUNK_BYTES), "part");
+        const sent = await fetch("/api/clone/upload", { method: "POST", body: piece, signal: AbortSignal.timeout(120_000) });
+        const stored = (await sent.json().catch(() => ({}))) as { error?: string };
+        if (!sent.ok) {
+          setError(stored.error || "Couldn't upload that video.");
+          return;
+        }
+      }
+      setNote("Adapting the video…");
+      const res = await fetch("/api/clone", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          uploadId,
+          partCount,
+          name: file.name,
+          productId,
+          pain: pain.trim(),
+          audience: audience.trim(),
+          seconds,
+          language,
+          page,
+        }),
+        signal: AbortSignal.timeout(480_000),
+      });
       const json = (await res.json().catch(() => ({}))) as { project?: Project; error?: string };
       if (!res.ok || !json.project) {
         setError(json.error || "Couldn't adapt that video.");
@@ -117,6 +143,7 @@ export function ClonePanel({
       setError("Couldn't adapt that video.");
     } finally {
       setBusy("");
+      setNote("");
     }
   }
 
@@ -136,7 +163,7 @@ export function ClonePanel({
     <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
       <section className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 sm:p-5">
         <p className="text-sm font-medium">Reference video</p>
-        <p className="mt-0.5 text-xs text-[var(--cf-muted)]">An mp4, mov, or webm under 10 minutes. The shape stays. The cause and the product change.</p>
+        <p className="mt-0.5 text-xs text-[var(--cf-muted)]">An mp4, mov, or webm under 10 minutes and 32 MB. The shape stays. The cause and the product change.</p>
         <label className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[var(--cf-line)] bg-black/20 px-4 py-5 text-center text-sm">
           <input
             type="file"
@@ -252,7 +279,7 @@ export function ClonePanel({
           disabled={!file || !productId || !pain.trim() || !audience.trim() || Boolean(busy)}
           className="btn-primary mt-5 min-h-11 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-5 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:opacity-40"
         >
-          {busy === "continue" ? "Adapting the video…" : "Continue"}
+          {busy === "continue" ? note || "Adapting the video…" : "Continue"}
         </button>
       </section>
       {error ? <p className="text-sm text-[#fb7185]">{error}</p> : null}
