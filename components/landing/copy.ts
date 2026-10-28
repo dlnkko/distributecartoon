@@ -69,8 +69,6 @@ export const FILMS: Film[] = [
 export const PERSONAL_HERO = FILMS[1];
 export const BRAND_HERO = FILMS[0];
 
-export const ZOOM_URL = "https://zoom.us/j/81531268770";
-
 export const COPY = {
   personal: {
     label: "Personal",
@@ -107,12 +105,6 @@ export const BRAND_PAIN = [
   { title: "Editor fees on every ad", text: "A new invoice for every concept you want to test." },
   { title: "Paying again for retries", text: "Every revision on every ad adds to the bill." },
 ];
-
-export const BRAND_AGENCY = {
-  title: "Rather skip the ideation too?",
-  text: "Hire us on an agency plan and we come up with the concepts for you.",
-  cta: "Book a call",
-};
 
 export const STEPS = [
   {

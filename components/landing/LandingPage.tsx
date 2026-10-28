@@ -5,7 +5,6 @@ import { createPortal } from "react-dom";
 import { Brand } from "@/components/Brand";
 import { CONTACT_EMAIL } from "@/lib/site";
 import {
-  BRAND_AGENCY,
   BRAND_HERO,
   BRAND_PAIN,
   COPY,
@@ -14,7 +13,6 @@ import {
   PERSONAL_HERO,
   RENDER_COMPARE,
   STEPS,
-  ZOOM_URL,
   faqFor,
   type Film,
   type Mode,
@@ -403,17 +401,6 @@ function BrandBody() {
         close="The ad you had in mind, in minutes, with no third party."
       />
       <FilmBlock title="Ads, ready to run." text="Every ad in this row was one-shotted." start={1} />
-      <Reveal>
-        <div className="flex flex-col items-start justify-between gap-6 rounded-3xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:flex-row sm:items-end sm:p-8">
-          <div>
-            <h2 className="land-display text-3xl sm:text-4xl">{BRAND_AGENCY.title}</h2>
-            <p className="mt-3 max-w-md text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
-          </div>
-          <a href="#agency" onClick={() => track("agency_jump_click", { mode: "brands" })} className="cf-btn btn-primary shrink-0 px-5 py-3 text-sm font-semibold">
-            {BRAND_AGENCY.cta}
-          </a>
-        </div>
-      </Reveal>
     </div>
   );
 }
@@ -675,21 +662,6 @@ function WorkflowPay({ mode }: { mode: Mode }) {
           </div>
         </article>
       </Reveal>
-      {mode === "brands" ? (
-        <div id="agency" className="mt-14 scroll-mt-24">
-          <h3 className="land-display text-3xl">{BRAND_AGENCY.title}</h3>
-          <p className="mt-2 max-w-xl text-sm text-[var(--cf-muted)]">{BRAND_AGENCY.text}</p>
-          <a
-            href={ZOOM_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={() => track("book_call_click", { mode, place: "agency" })}
-            className="cf-btn btn-primary mt-5 inline-flex rounded-xl px-5 py-3 text-sm font-semibold"
-          >
-            Book a call
-          </a>
-        </div>
-      ) : null}
     </section>
   );
 }
