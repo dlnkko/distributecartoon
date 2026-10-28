@@ -1633,19 +1633,35 @@ export function StudioApp() {
           </button>
           <button
             type="button"
-            onClick={() => leaveStudio("drafts")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
-          >
-            <DraftNavIcon />
-            Drafts
-          </button>
-          <button
-            type="button"
             onClick={() => leaveStudio("products")}
             className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
           >
             <ProductNavIcon />
             Products
+          </button>
+          <button
+            type="button"
+            onClick={() => leaveStudio("stories")}
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+          >
+            <StoryNavIcon />
+            Stories
+          </button>
+          <button
+            type="button"
+            onClick={() => leaveStudio("clone")}
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+          >
+            <CloneNavIcon />
+            Clone
+          </button>
+          <button
+            type="button"
+            onClick={() => leaveStudio("drafts")}
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+          >
+            <DraftNavIcon />
+            Drafts
           </button>
         </nav>
 
@@ -3171,6 +3187,24 @@ function SongNavIcon() {
       <path d="M6 12.2V3.2l7-1.2v8.4" stroke="currentColor" strokeWidth="1.4" strokeLinejoin="round" />
       <circle cx="4.4" cy="12.2" r="1.6" stroke="currentColor" strokeWidth="1.4" />
       <circle cx="11.4" cy="10.4" r="1.6" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function StoryNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M3 3.2h6.2L12.5 6.5V13a.5.5 0 0 1-.5.5H3a.5.5 0 0 1-.5-.5V3.7a.5.5 0 0 1 .5-.5Z" stroke="currentColor" strokeWidth="1.4" />
+      <path d="M5 8h5M5 10.5h3.5" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function CloneNavIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="2" y="3.5" width="8.5" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
+      <rect x="5.5" y="6.5" width="8.5" height="6" rx="1.2" stroke="currentColor" strokeWidth="1.4" />
     </svg>
   );
 }
