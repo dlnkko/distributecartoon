@@ -20,14 +20,21 @@ function admin() {
   return createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
 }
 
-async function renewalDate(membershipId: string | null) {
-  if (!membershipId || !whopConfig().apiKey) return null;
+async function membershipClock(membershipId: string | null) {
+  if (!membershipId || !whopConfig().apiKey) return { renewal: null as number | null, created: null as number | null };
   try {
-    const membership = (await whopClient().memberships.retrieve({ id: membershipId })) as { current_period_end?: string | null };
+    const membership = (await whopClient().memberships.retrieve({ id: membershipId })) as {
+      current_period_end?: string | null;
+      created_at?: string | null;
+    };
     const end = membership.current_period_end ? Date.parse(membership.current_period_end) : NaN;
-    return Number.isFinite(end) && end > Date.now() ? end : null;
+    const created = membership.created_at ? Date.parse(membership.created_at) : NaN;
+    return {
+      renewal: Number.isFinite(end) && end > Date.now() ? end : null,
+      created: Number.isFinite(created) ? created : null,
+    };
   } catch {
-    return null;
+    return { renewal: null, created: null };
   }
 }
 
@@ -38,7 +45,7 @@ export async function workflowMinutes(userId: string): Promise<WorkflowMinutes |
   if (!client || !userId) return null;
   const { data: membership } = await client
     .from("memberships")
-    .select("plan, status, bonus_seconds, whop_membership_id")
+    .select("plan, status, bonus_seconds, whop_membership_id, updated_at")
     .eq("user_id", userId)
     .in("status", ["active", "trialing", "past_due", "canceling", "completed"])
     .maybeSingle();
@@ -46,8 +53,13 @@ export async function workflowMinutes(userId: string): Promise<WorkflowMinutes |
 
   const bonus = Number(membership.bonus_seconds || 0);
   const totalSeconds = (planById(String(membership.plan || ""))?.seconds || 300) + (Number.isFinite(bonus) && bonus > 0 ? bonus : 0);
-  const end = (await renewalDate(membership.whop_membership_id || null)) ?? Date.now() + PERIOD_MS;
-  const start = Math.min(Date.now(), end - PERIOD_MS);
+  const clock = await membershipClock(membership.whop_membership_id || null);
+  const began = clock.created ?? Date.parse(String(membership.updated_at || ""));
+  const anchor = Number.isFinite(began) && began < Date.now() ? began : Date.now() - PERIOD_MS;
+  const periods = Math.floor((Date.now() - anchor) / PERIOD_MS);
+  const end = clock.renewal ?? anchor + (periods + 1) * PERIOD_MS;
+  let start = end - PERIOD_MS;
+  if (start > Date.now()) start = Date.now() - PERIOD_MS;
 
   let usedSeconds = 0;
   for (let from = 0; from < 20000; from += 1000) {
