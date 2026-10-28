@@ -130,8 +130,8 @@ export const STEPS = [
 ];
 
 export const RENDER_COMPARE = [
-  { name: "KIE", price: 42, note: "Your key. You pay the model.", yours: true },
-  { name: "Higgsfield", price: 44, note: "Plus plan, if every credit is used.", yours: false },
+  { name: "KIE", price: 37, note: "Your key. You pay the model.", yours: true },
+  { name: "Higgsfield", price: 55, note: "Same five minutes.", yours: false },
   { name: "Fal", price: 66, note: "Same model, their API price.", yours: false },
 ] as const;
 

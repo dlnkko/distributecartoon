@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Brand } from "@/components/Brand";
 import { CONTACT_EMAIL } from "@/lib/site";
 import {
@@ -417,6 +417,115 @@ function BrandBody() {
   );
 }
 
+function MoreMinutes() {
+  const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setSending(true);
+    setError("");
+    try {
+      const response = await fetch("/api/minutes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          minutes: Number(form.get("minutes")),
+          name: String(form.get("name") || ""),
+          brand: String(form.get("brand") || ""),
+          email: String(form.get("email") || ""),
+          website: String(form.get("website") || ""),
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setError(payload.error || "Couldn't send that. Try again.");
+        return;
+      }
+      setSent(true);
+    } catch {
+      setError("Couldn't send that. Try again.");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="rounded-xl border border-white/15 px-5 py-3 text-sm font-semibold text-white hover:border-white/40"
+      >
+        Need more than 60 minutes?
+      </button>
+    );
+  }
+
+  if (sent) {
+    return <p className="text-sm text-[var(--cf-muted)]">Sent. We'll reply to that email.</p>;
+  }
+
+  return (
+    <form onSubmit={(event) => void submit(event)} className="grid basis-full gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 sm:grid-cols-2">
+      <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+      <label className="block text-xs text-[var(--cf-muted)]">
+        Minutes you need
+        <input
+          name="minutes"
+          type="number"
+          min={61}
+          max={100000}
+          required
+          placeholder="120"
+          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
+        />
+      </label>
+      <label className="block text-xs text-[var(--cf-muted)]">
+        Name
+        <input
+          name="name"
+          required
+          maxLength={80}
+          autoComplete="name"
+          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
+        />
+      </label>
+      <label className="block text-xs text-[var(--cf-muted)]">
+        Brand, if you have one
+        <input
+          name="brand"
+          maxLength={80}
+          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
+        />
+      </label>
+      <label className="block text-xs text-[var(--cf-muted)]">
+        Email
+        <input
+          name="email"
+          type="email"
+          required
+          maxLength={120}
+          autoComplete="email"
+          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
+        />
+      </label>
+      {error ? <p className="text-xs text-[var(--danger)] sm:col-span-2">{error}</p> : null}
+      <div className="flex items-center gap-3 sm:col-span-2">
+        <button type="submit" disabled={sending} className="cf-btn btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50">
+          {sending ? "Sending" : "Send"}
+        </button>
+        <button type="button" onClick={() => setOpen(false)} className="text-sm text-[var(--cf-muted)] hover:text-white">
+          Cancel
+        </button>
+      </div>
+    </form>
+  );
+}
+
 function money(price: number) {
   return price.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
@@ -424,7 +533,6 @@ function money(price: number) {
 function WorkflowPay({ mode }: { mode: Mode }) {
   const [index, setIndex] = useState(0);
   const pick = LANDING_MINUTES[index] || LANDING_MINUTES[0];
-  const perMinute = pick.price / pick.minutes;
   const dearest = Math.max(...RENDER_COMPARE.map((row) => row.price));
 
   function choose(next: number) {
@@ -463,7 +571,7 @@ function WorkflowPay({ mode }: { mode: Mode }) {
             ))}
           </div>
           <p className="mt-3 max-w-3xl text-xs leading-relaxed text-[var(--cf-muted)]">
-            Seedance 2.5 at 480p, five minutes of output, published rates as of October 2026. KIE is $0.14 a second. Fal is about $0.22 a second. Higgsfield Plus is $49 for 1,000 credits, about 15 credits per 5 seconds.
+            Five minutes of finished video, one pass. A generation you throw away costs the same again.
           </p>
         </div>
       </Reveal>
@@ -477,7 +585,7 @@ function WorkflowPay({ mode }: { mode: Mode }) {
             </div>
             <div className="sm:text-right">
               <p className="land-display text-4xl sm:text-5xl">{money(pick.price)}</p>
-              <p className="mt-1 text-sm text-[var(--cf-muted)]">{money(perMinute)} per minute, billed monthly</p>
+              <p className="mt-1 text-sm text-[var(--cf-muted)]">billed monthly</p>
             </div>
           </div>
           <div className="mt-8 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Minutes of video per month">
@@ -502,7 +610,7 @@ function WorkflowPay({ mode }: { mode: Mode }) {
           <p className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">
             {pick.minutes} minutes of workflow. The render stays on your KIE key.
           </p>
-          <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+          <div className="mt-6 flex flex-wrap items-center gap-3">
             <button
               type="button"
               onClick={() => {
@@ -513,9 +621,7 @@ function WorkflowPay({ mode }: { mode: Mode }) {
             >
               Get this membership
             </button>
-            <a href={`mailto:${CONTACT_EMAIL}`} className="text-sm text-[var(--cf-muted)] hover:text-white">
-              Need more than 60 minutes? {CONTACT_EMAIL}
-            </a>
+            <MoreMinutes />
           </div>
         </article>
       </Reveal>
