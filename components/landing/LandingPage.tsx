@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
+import { createPortal } from "react-dom";
 import { Brand } from "@/components/Brand";
 import { CONTACT_EMAIL } from "@/lib/site";
 import {
@@ -417,35 +418,79 @@ function BrandBody() {
   );
 }
 
+const MINUTE_FIELD =
+  "mt-2 w-full rounded-xl border border-white/15 bg-[#101014] px-3.5 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/35 focus:border-white/40 [&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_#101014] [&:-webkit-autofill]:[-webkit-text-fill-color:#fff]";
+
 function MoreMinutes() {
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
 
+  function close() {
+    if (sending) return;
+    setOpen(false);
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && !sending) setOpen(false);
+    }
+    document.addEventListener("keydown", onKey);
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.removeEventListener("keydown", onKey);
+      document.body.style.overflow = previous;
+    };
+  }, [open, sending]);
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
+    const minutes = Number(form.get("minutes"));
+    const name = String(form.get("name") || "").trim();
+    const brand = String(form.get("brand") || "").trim();
+    const email = String(form.get("email") || "").trim();
+    const website = String(form.get("website") || "");
     setSending(true);
     setError("");
     try {
       const response = await fetch("/api/minutes", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          minutes: Number(form.get("minutes")),
-          name: String(form.get("name") || ""),
-          brand: String(form.get("brand") || ""),
-          email: String(form.get("email") || ""),
-          website: String(form.get("website") || ""),
-        }),
+        body: JSON.stringify({ minutes, name, brand, email, website }),
       });
+      if (response.ok) {
+        setSent(true);
+        return;
+      }
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      if (!response.ok) {
+      if (response.status !== 502 || website) {
         setError(payload.error || "Couldn't send that. Try again.");
         return;
       }
-      setSent(true);
+      const direct = await fetch(`https://formsubmit.co/ajax/${encodeURIComponent(CONTACT_EMAIL)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
+        body: JSON.stringify({
+          name,
+          email,
+          brand: brand || "None",
+          minutes: String(minutes),
+          _subject: `More minutes: ${minutes} for ${name}`,
+          _template: "table",
+          _captcha: "false",
+          _replyto: email,
+        }),
+      });
+      const result = (await direct.json().catch(() => null)) as { success?: string | boolean } | null;
+      if (direct.ok && (result?.success === true || result?.success === "true")) {
+        setSent(true);
+        return;
+      }
+      setError(payload.error || "Couldn't send that. Try again.");
     } catch {
       setError("Couldn't send that. Try again.");
     } finally {
@@ -453,8 +498,8 @@ function MoreMinutes() {
     }
   }
 
-  if (!open) {
-    return (
+  return (
+    <>
       <button
         type="button"
         onClick={() => setOpen(true)}
@@ -462,67 +507,72 @@ function MoreMinutes() {
       >
         Need more than 60 minutes?
       </button>
-    );
-  }
-
-  if (sent) {
-    return <p className="text-sm text-[var(--cf-muted)]">Sent. We'll reply to that email.</p>;
-  }
-
-  return (
-    <form onSubmit={(event) => void submit(event)} className="grid basis-full gap-3 rounded-2xl border border-white/10 bg-black/20 p-4 sm:grid-cols-2">
-      <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
-      <label className="block text-xs text-[var(--cf-muted)]">
-        Minutes you need
-        <input
-          name="minutes"
-          type="number"
-          min={61}
-          max={100000}
-          required
-          placeholder="120"
-          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
-        />
-      </label>
-      <label className="block text-xs text-[var(--cf-muted)]">
-        Name
-        <input
-          name="name"
-          required
-          maxLength={80}
-          autoComplete="name"
-          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
-        />
-      </label>
-      <label className="block text-xs text-[var(--cf-muted)]">
-        Brand, if you have one
-        <input
-          name="brand"
-          maxLength={80}
-          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
-        />
-      </label>
-      <label className="block text-xs text-[var(--cf-muted)]">
-        Email
-        <input
-          name="email"
-          type="email"
-          required
-          maxLength={120}
-          autoComplete="email"
-          className="mt-1 w-full rounded-xl border border-white/10 bg-black/20 px-3 py-2.5 text-sm text-white outline-none focus:border-white/30"
-        />
-      </label>
-      {error ? <p className="text-xs text-[var(--danger)] sm:col-span-2">{error}</p> : null}
-      <div className="flex items-center gap-3 sm:col-span-2">
-        <button type="submit" disabled={sending} className="cf-btn btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50">
-          {sending ? "Sending" : "Send"}
-        </button>
-        <button type="button" onClick={() => setOpen(false)} className="text-sm text-[var(--cf-muted)] hover:text-white">
-          Cancel
-        </button>
-      </div>
-    </form>
+      {open
+        ? createPortal(
+            <div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" onClick={close}>
+              <div
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="more-minutes-title"
+                className="w-full max-w-[440px] rounded-3xl border border-white/15 bg-[#1b1b20] p-6 text-[#f4f4f5] shadow-2xl"
+                style={{ colorScheme: "dark" }}
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#a1a1aa]">Membership</p>
+                    <h3 id="more-minutes-title" className="land-display mt-2 text-3xl text-white">
+                      More than 60 minutes
+                    </h3>
+                  </div>
+                  <button type="button" onClick={close} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-xl leading-none text-[#a1a1aa] hover:bg-white/10 hover:text-white">
+                    ×
+                  </button>
+                </div>
+                {sent ? (
+                  <div className="mt-6">
+                    <p className="text-sm leading-relaxed text-white">Sent. We'll reply to that email.</p>
+                    <button type="button" onClick={close} className="cf-btn btn-primary mt-6 rounded-xl px-5 py-2.5 text-sm font-semibold">
+                      Close
+                    </button>
+                  </div>
+                ) : (
+                  <form onSubmit={(event) => void submit(event)} className="mt-6 grid gap-4">
+                    <p className="text-sm leading-relaxed text-[#a1a1aa]">Tell us how many minutes you need. We reply to the email you leave here.</p>
+                    <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
+                    <label className="block text-xs text-[#a1a1aa]">
+                      Minutes you need
+                      <input name="minutes" type="number" min={61} max={100000} required placeholder="120" autoFocus className={MINUTE_FIELD} />
+                    </label>
+                    <label className="block text-xs text-[#a1a1aa]">
+                      Name
+                      <input name="name" required maxLength={80} autoComplete="name" className={MINUTE_FIELD} />
+                    </label>
+                    <label className="block text-xs text-[#a1a1aa]">
+                      Brand, if you have one
+                      <input name="brand" maxLength={80} autoComplete="organization" className={MINUTE_FIELD} />
+                    </label>
+                    <label className="block text-xs text-[#a1a1aa]">
+                      Email
+                      <input name="email" type="email" required maxLength={120} autoComplete="email" className={MINUTE_FIELD} />
+                    </label>
+                    {error ? <p className="text-sm text-[#f07178]">{error}</p> : null}
+                    <div className="mt-1 flex items-center gap-3">
+                      <button type="submit" disabled={sending} className="cf-btn btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50">
+                        {sending ? "Sending" : "Send"}
+                      </button>
+                      <button type="button" onClick={close} className="text-sm text-[#a1a1aa] hover:text-white">
+                        Cancel
+                      </button>
+                    </div>
+                  </form>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
+    </>
   );
 }
 
