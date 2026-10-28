@@ -18,7 +18,7 @@ import { LibraryShell } from "@/components/library/LibraryShell";
 import { SavedProductPicker } from "@/components/library/ProductsPanel";
 import type { LibraryDraft, LibraryZone } from "@/components/library/types";
 import { MembershipPanel } from "@/components/library/MembershipPanel";
-import { KieKeyGate } from "@/components/KieKeyGate";
+import { KieKeyCard, KieKeyGate } from "@/components/KieKeyGate";
 import { WhopPay } from "@/components/WhopPay";
 import { IMAGE_TOO_SMALL, MIN_IMAGE_PIXELS } from "@/lib/images";
 import { realisticProseCast } from "@/lib/realistic-prose";
@@ -1949,13 +1949,7 @@ export function StudioApp() {
               </button>
             </div>
             <dl className="mt-5 space-y-3 text-sm">
-              <div className="flex items-end justify-between rounded-2xl bg-[var(--bg)] px-4 py-3">
-                <dt>
-                  <span className="block text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Video billing</span>
-                  <span className="display mt-1 block text-xl">Your KIE key</span>
-                </dt>
-                <dd className="max-w-[140px] text-right text-xs text-[var(--muted)]">The membership pays for the workflow.</dd>
-              </div>
+              <KieKeyCard />
               <div className="rounded-2xl border border-[var(--line)] p-3">
                 <p className="px-1 text-[11px] uppercase tracking-[0.16em] text-[var(--muted)]">Membership</p>
                 <div className="mt-2">

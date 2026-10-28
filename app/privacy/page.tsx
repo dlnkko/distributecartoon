@@ -19,6 +19,7 @@ export default function PrivacyPage() {
       <LegalSection title="What we collect">
         <p>When you sign in with Google, we receive the name, email address, and profile photo Google shares for that account.</p>
         <p>When you make a video, we store what you submit: scripts, photos, songs, look notes, and the images and videos we generate from them. We also store your credit balance, plan, and the status of a payment.</p>
+        <p>If you add a KIE API key, it is encrypted on our server before it is stored, and the database only holds that sealed copy. The key is never sent back to your browser. It is used only to render your own films, and you can remove it from your account at any time.</p>
         <p>We keep a session cookie so you stay signed in, and a cookie that remembers a sign-out so the public site loads. We do not use that cookie to follow you across other sites.</p>
       </LegalSection>
       <LegalSection title="How we use it">
