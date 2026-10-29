@@ -47,7 +47,7 @@ function BriefField({
         onChange={(event) => onChange(event.target.value)}
         maxLength={maxLength}
         rows={rows}
-        className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none"
+        className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] px-3 py-2 text-sm outline-none"
       />
     </div>
   );
@@ -215,13 +215,13 @@ export function StoriesPanel({
                   setProductId(product.id);
                   clearBrief();
                 }}
-                className={`no-press flex min-h-16 items-center gap-3 rounded-xl border px-3 py-2 text-left ${selected ? "border-[#7A6CFF] bg-[rgba(122,108,255,0.12)]" : "border-[var(--cf-line)] bg-white/5 hover:bg-white/10"}`}
+                className={`no-press flex min-h-16 items-center gap-3 rounded-xl border px-3 py-2 text-left ${selected ? "border-[#5b6cff] bg-[rgba(61,90,254,0.12)]" : "border-[var(--cf-line)] bg-black/[0.04] hover:bg-black/[0.06]"}`}
               >
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={mediaSrc(photo)} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
                 ) : (
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-white/10 text-xs text-[var(--cf-muted)]">Page</span>
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-black/[0.06] text-xs text-[var(--cf-muted)]">Page</span>
                 )}
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{product.name}</span>
@@ -241,7 +241,7 @@ export function StoriesPanel({
         <div className="mt-4">
           <p className="text-sm font-medium">Language</p>
           <p className="mt-0.5 text-xs text-[var(--cf-muted)]">You choose this. The page suggestions follow it.</p>
-          <div className="mt-2 flex w-fit rounded-xl bg-white/5 p-[3px]" role="group" aria-label="Story language">
+          <div className="mt-2 flex w-fit rounded-xl bg-black/[0.04] p-[3px]" role="group" aria-label="Story language">
             {(["english", "spanish"] as const).map((item) => (
               <button
                 key={item}
@@ -251,7 +251,7 @@ export function StoriesPanel({
                   setLanguage(item);
                   clearBrief();
                 }}
-                className={`min-h-9 rounded-lg px-4 text-sm capitalize ${language === item ? "bg-white/10 text-white" : "text-[var(--cf-muted)]"}`}
+                className={`min-h-9 rounded-lg px-4 text-sm capitalize ${language === item ? "bg-black/[0.06] text-[var(--cf-ink)]" : "text-[var(--cf-muted)]"}`}
               >
                 {item}
               </button>
@@ -317,7 +317,7 @@ export function StoriesPanel({
           </button>
         </section>
       ) : null}
-      {error ? <p className="text-sm text-[#fb7185]">{error}</p> : null}
+      {error ? <p className="text-sm text-[#e11d48]">{error}</p> : null}
     </div>
   );
 }

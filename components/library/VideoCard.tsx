@@ -67,7 +67,7 @@ export function VideoCard({
   }, [preview]);
 
   return (
-    <article className={`cf-card group relative rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] shadow-[0_16px_40px_rgba(0,0,0,0.28),inset_0_1px_0_rgba(255,255,255,0.06)] ${list ? "flex overflow-hidden" : ""}`}>
+    <article className={`cf-card group relative rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] shadow-[0_12px_30px_-18px_rgba(12,12,12,0.22),0_1px_2px_rgba(12,12,12,0.04)] ${list ? "flex overflow-hidden" : ""}`}>
       <button
         type="button"
         onClick={onPlay}
@@ -133,10 +133,10 @@ export function VideoCard({
         </button>
         {menu ? (
           <div role="menu" className="absolute left-0 top-12 w-40 overflow-hidden rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] py-1 shadow-2xl">
-            <button type="button" role="menuitem" onClick={onEdit} className="no-press block min-h-11 w-full px-3 text-left text-sm hover:bg-white/5">
+            <button type="button" role="menuitem" onClick={onEdit} className="no-press block min-h-11 w-full px-3 text-left text-sm hover:bg-black/[0.04]">
               Edit
             </button>
-            <a role="menuitem" href={downloadHref(src, downloadName)} download={downloadName} className="block min-h-11 px-3 py-3 text-sm hover:bg-white/5">
+            <a role="menuitem" href={downloadHref(src, downloadName)} download={downloadName} className="block min-h-11 px-3 py-3 text-sm hover:bg-black/[0.04]">
               Download
             </a>
           </div>
@@ -147,7 +147,7 @@ export function VideoCard({
         <div className="flex min-w-0 flex-1 flex-col justify-center px-4 py-3">
           <p className="truncate text-base font-medium">{title}</p>
           <p className="mt-1 text-xs text-[var(--cf-muted)]">{timeAgo(item.createdAt)}</p>
-          <p className="mt-2 w-fit rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white/80">Ready</p>
+          <p className="mt-2 w-fit rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-[#3f434b]">Ready</p>
         </div>
       ) : null}
     </article>
@@ -158,18 +158,18 @@ export function ProcessingCard({ item, view }: { item: LibraryGenerating; view: 
   const list = view === "list";
   return (
     <article className={`cf-card overflow-hidden rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] ${list ? "flex" : ""}`}>
-      <div className={`relative aspect-video overflow-hidden bg-[#101014] ${list ? "w-[42%] max-w-[220px] shrink-0" : ""}`}>
-        <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_30%_20%,rgba(91,140,255,0.35),transparent_42%),linear-gradient(160deg,#1b1b20,#0b0b0d)]" />
+      <div className={`relative aspect-video overflow-hidden bg-[#eef1ff] ${list ? "w-[42%] max-w-[220px] shrink-0" : ""}`}>
+        <div className="absolute inset-0 animate-pulse bg-[radial-gradient(circle_at_30%_20%,rgba(61,90,254,0.22),transparent_45%),linear-gradient(160deg,#eef1ff,#f6f7f9)]" />
         <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
         <div className="absolute inset-0 grid place-items-center">
-          <p className="status-breathe text-sm font-medium text-white">
+          <p className="status-breathe text-sm font-medium text-[var(--cf-ink)]">
             <span className="status-dots">Processing</span>
           </p>
         </div>
         <span className="absolute right-2 top-2 rounded-full bg-black/50 px-2 py-1 text-[11px] tabular-nums text-white backdrop-blur-md">{item.duration}s</span>
-        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-3">
-          <span className="block truncate text-base font-medium text-white">{item.title}</span>
-          <span className="mt-1 inline-flex rounded-full bg-white/10 px-2 py-0.5 text-[11px] text-white">Processing</span>
+        <span className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-white/90 to-transparent p-3">
+          <span className="block truncate text-base font-medium text-[var(--cf-ink)]">{item.title}</span>
+          <span className="mt-1 inline-flex rounded-full bg-black/[0.06] px-2 py-0.5 text-[11px] text-[var(--cf-ink)]">Processing</span>
         </span>
       </div>
       {list ? (
@@ -188,9 +188,9 @@ export function CreateCard({ onCreate, view, locked = false, notice = "" }: { on
       type="button"
       onClick={onCreate}
       disabled={locked}
-      className={`no-press cf-card flex min-h-11 items-center justify-center gap-3 rounded-[20px] border border-dashed border-white/15 bg-transparent px-4 text-left text-white hover:border-[#5B8CFF]/70 hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-white/15 disabled:hover:bg-transparent ${view === "list" ? "min-h-24" : "aspect-video"}`}
+      className={`no-press cf-card flex min-h-11 items-center justify-center gap-3 rounded-[20px] border border-dashed border-black/10 bg-transparent px-4 text-left text-[var(--cf-ink)] hover:border-[#3d5afe]/70 hover:bg-black/[0.04] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:border-black/10 disabled:hover:bg-transparent ${view === "list" ? "min-h-24" : "aspect-video"}`}
     >
-      <span className="cf-plus grid h-11 w-11 place-items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-white shadow-[0_8px_20px_rgba(122,108,255,0.3)]">
+      <span className="cf-plus grid h-11 w-11 place-items-center rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] text-white shadow-[0_8px_20px_rgba(61,90,254,0.3)]">
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M8 3.5v9M3.5 8h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
         </svg>

@@ -1581,7 +1581,7 @@ export function StudioApp() {
       ) : null}
 
       <aside
-        className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[var(--cf-line)] bg-[rgba(20,20,23,0.92)] backdrop-blur-xl transition-transform duration-300 md:static md:translate-x-0 ${
+        className={`fixed inset-y-0 left-0 z-40 flex w-[248px] flex-col border-r border-[var(--cf-line)] bg-[rgba(255,255,255,0.86)] backdrop-blur-xl transition-transform duration-300 md:static md:translate-x-0 ${
           sidebarOpen ? "translate-x-0" : "-translate-x-full"
         }`}
       >
@@ -1597,7 +1597,7 @@ export function StudioApp() {
             type="button"
             onClick={() => void createNew()}
             disabled={generating.length >= MAX_CONCURRENT_RENDERS}
-            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(122,108,255,0.32)] disabled:cursor-not-allowed disabled:opacity-40"
+            className="btn-primary cf-create flex min-h-11 w-full items-center gap-3 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-3 text-sm font-semibold text-white shadow-[0_10px_28px_rgba(61,90,254,0.32)] disabled:cursor-not-allowed disabled:opacity-40"
           >
             <span className="cf-plus">
               <PlusIcon />
@@ -1610,15 +1610,15 @@ export function StudioApp() {
             disabled={generating.length >= MAX_CONCURRENT_RENDERS}
             className={`no-press flex min-h-11 w-full items-center gap-3 rounded-xl border px-3 text-sm font-medium disabled:cursor-not-allowed disabled:opacity-40 ${
               step === "song" || project.song
-                ? "border-[#5B8CFF]/40 bg-[linear-gradient(135deg,rgba(91,140,255,0.2),rgba(122,108,255,0.12))] text-white shadow-[0_0_24px_rgba(91,140,255,0.16)]"
-                : "border-white/10 bg-white/5 text-white hover:bg-white/10"
+                ? "border-[#3d5afe]/40 bg-[linear-gradient(135deg,rgba(61,90,254,0.2),rgba(61,90,254,0.12))] text-[var(--cf-ink)] shadow-[0_0_24px_rgba(61,90,254,0.16)]"
+                : "border-black/[0.08] bg-black/[0.04] text-[var(--cf-ink)] hover:bg-black/[0.06]"
             }`}
           >
             <SongNavIcon />
             Create a suno video
           </button>
           {generating.length >= MAX_CONCURRENT_RENDERS ? (
-            <p className="rounded-xl border border-[#5B8CFF]/40 bg-[#5B8CFF]/10 px-3 py-2 text-xs text-[#D6E2FF]">{RENDER_WAIT_MESSAGE}</p>
+            <p className="rounded-xl border border-[#3d5afe]/40 bg-[#3d5afe]/10 px-3 py-2 text-xs text-[#2a3fcf]">{RENDER_WAIT_MESSAGE}</p>
           ) : null}
         </div>
 
@@ -1626,7 +1626,7 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => leaveStudio("videos")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-black/[0.04] hover:text-[var(--cf-ink)]"
           >
             <VideosIcon />
             Your videos
@@ -1634,7 +1634,7 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => leaveStudio("products")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-black/[0.04] hover:text-[var(--cf-ink)]"
           >
             <ProductNavIcon />
             Products
@@ -1642,7 +1642,7 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => leaveStudio("stories")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-black/[0.04] hover:text-[var(--cf-ink)]"
           >
             <StoryNavIcon />
             Stories
@@ -1650,7 +1650,7 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => leaveStudio("clone")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-black/[0.04] hover:text-[var(--cf-ink)]"
           >
             <CloneNavIcon />
             Clone
@@ -1658,7 +1658,7 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => leaveStudio("drafts")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-white/5 hover:text-white"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-3 text-left text-sm text-[var(--cf-muted)] hover:bg-black/[0.04] hover:text-[var(--cf-ink)]"
           >
             <DraftNavIcon />
             Drafts
@@ -1673,9 +1673,9 @@ export function StudioApp() {
           <button
             type="button"
             onClick={() => setPanel("account")}
-            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-white/5"
+            className="no-press flex min-h-11 w-full items-center gap-3 rounded-xl px-2 text-left hover:bg-black/[0.04]"
           >
-            <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-white/10 text-sm">
+            <span className="grid h-9 w-9 place-items-center overflow-hidden rounded-full bg-black/[0.06] text-sm">
               {profile?.avatarUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img src={profile.avatarUrl} alt="" className="h-full w-full object-cover" />
@@ -1692,8 +1692,8 @@ export function StudioApp() {
       </aside>
 
       <section className="flex min-h-0 min-w-0 flex-1 flex-col bg-[var(--cf-bg)]">
-        <header className="sticky top-0 z-20 border-b border-[var(--cf-line)] bg-[rgba(11,11,13,0.78)] px-3 py-4 backdrop-blur-xl md:px-6">
-          <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(91,140,255,0.22),transparent_68%)] blur-3xl" />
+        <header className="sticky top-0 z-20 border-b border-[var(--cf-line)] bg-[rgba(247,248,250,0.82)] px-3 py-4 backdrop-blur-xl md:px-6">
+          <div className="pointer-events-none absolute -top-16 left-10 h-40 w-80 rounded-full bg-[radial-gradient(circle,rgba(61,90,254,0.22),transparent_68%)] blur-3xl" />
           <div className="relative flex items-center gap-2 md:gap-3">
             <button type="button" className="no-press grid size-11 shrink-0 place-items-center rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] md:hidden" aria-label="Open menu" onClick={() => setSidebarOpen(true)}>
               <MenuIcon />
@@ -1706,7 +1706,7 @@ export function StudioApp() {
                 type="button"
                 disabled={working}
                 onClick={() => leaveStudio("drafts")}
-                className="no-press shrink-0 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-sm hover:bg-white/10 disabled:opacity-40"
+                className="no-press shrink-0 rounded-xl border border-black/10 bg-black/[0.04] px-3 py-2 text-sm hover:bg-black/[0.06] disabled:opacity-40"
               >
                 Save to drafts
               </button>
@@ -1714,7 +1714,7 @@ export function StudioApp() {
             <button
               type="button"
               onClick={() => leaveStudio("videos")}
-              className="no-press shrink-0 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 py-2 text-sm hover:bg-white/5"
+              className="no-press shrink-0 rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 py-2 text-sm hover:bg-black/[0.04]"
             >
               <span className="sm:hidden">Library</span>
               <span className="hidden sm:inline">Your videos</span>
@@ -1746,9 +1746,9 @@ export function StudioApp() {
             <div className="absolute inset-0 z-10 grid place-items-center bg-[var(--bg)]/75 p-6">
               <div className="w-full max-w-sm rounded-3xl border border-[var(--line)] bg-white px-6 py-8 text-center shadow-[0_12px_40px_rgba(28,25,23,0.08)]">
                 <div className="relative mx-auto grid size-16 place-items-center" aria-hidden="true">
-                  <span className="absolute inset-0 rounded-full border border-white/10" />
-                  <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-[#5B8CFF] border-r-[#7A6CFF] [animation-duration:1.1s]" />
-                  <span className="size-2.5 rounded-full bg-[#5B8CFF] shadow-[0_0_18px_rgba(91,140,255,0.85)]" />
+                  <span className="absolute inset-0 rounded-full border border-black/[0.08]" />
+                  <span className="absolute inset-0 animate-spin rounded-full border-2 border-transparent border-t-[#3d5afe] border-r-[#5b6cff] [animation-duration:1.1s]" />
+                  <span className="size-2.5 rounded-full bg-[#3d5afe] shadow-[0_0_18px_rgba(61,90,254,0.85)]" />
                 </div>
                 <p className="display mt-5 text-2xl">Fitting the story</p>
                 <p className="mt-2 text-sm leading-6 text-[var(--muted)]">
@@ -1757,8 +1757,8 @@ export function StudioApp() {
                     : "The story is read once. Then the scenes are built."}
                 </p>
                 <p className="mt-1 text-sm text-[var(--ink)]">This takes up to a minute.</p>
-                <div className="relative mx-auto mt-5 h-1 w-40 overflow-hidden rounded-full bg-white/10">
-                  <span className="story-sweep absolute inset-y-0 left-0 w-16 rounded-full bg-[linear-gradient(90deg,#5B8CFF,#7A6CFF)]" />
+                <div className="relative mx-auto mt-5 h-1 w-40 overflow-hidden rounded-full bg-black/[0.06]">
+                  <span className="story-sweep absolute inset-y-0 left-0 w-16 rounded-full bg-[linear-gradient(90deg,#3d5afe,#5b6cff)]" />
                 </div>
               </div>
             </div>
@@ -1946,7 +1946,7 @@ export function StudioApp() {
             </div>
             <CreditsShop />
             <p className="mt-4 text-center text-xs text-[var(--muted)]">
-              Payments follow the <a href="/terms" className="text-[#C5D4FF]">Terms</a>.
+              Payments follow the <a href="/terms" className="text-[#3d5afe]">Terms</a>.
             </p>
           </div>
         </div>
@@ -1978,11 +1978,11 @@ export function StudioApp() {
               Sign out
             </button>
             <p className="mt-4 text-center text-xs text-[var(--muted)]">
-              <a href="/privacy" className="hover:text-white">Privacy</a>
+              <a href="/privacy" className="hover:text-[var(--cf-ink)]">Privacy</a>
               <span className="px-2">·</span>
-              <a href="/terms" className="hover:text-white">Terms</a>
+              <a href="/terms" className="hover:text-[var(--cf-ink)]">Terms</a>
               <span className="px-2">·</span>
-              <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-white">{CONTACT_EMAIL}</a>
+              <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-[var(--cf-ink)]">{CONTACT_EMAIL}</a>
             </p>
           </div>
         </div>
@@ -2001,7 +2001,7 @@ export function StudioApp() {
               controls
               autoPlay
               playsInline
-              className="max-h-[min(78vh,860px)] w-full rounded-2xl bg-black object-contain shadow-[0_40px_80px_rgba(0,0,0,0.55)]"
+              className="max-h-[min(78vh,860px)] w-full rounded-2xl bg-black object-contain shadow-[0_40px_80px_rgba(12,12,12,0.14)]"
             />
             <div className="flex w-full flex-col items-center gap-2 sm:flex-row sm:justify-center sm:gap-3">
               <a
@@ -2049,10 +2049,10 @@ function StepBar({
             <span
               className={`grid size-5 shrink-0 place-items-center rounded-full text-[10px] font-medium ${
                 active
-                  ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_0_16px_rgba(91,140,255,0.45)]"
+                  ? "bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white shadow-[0_0_16px_rgba(61,90,254,0.45)]"
                   : done
                     ? "bg-[var(--accent)] text-white"
-                    : "bg-white/10 text-[var(--cf-muted)]"
+                    : "bg-black/[0.06] text-[var(--cf-muted)]"
               }`}
             >
               {i + 1}
@@ -2075,7 +2075,7 @@ function StepBar({
             ) : (
               content
             )}
-            {i < steps.length - 1 ? <span className={`hidden h-px flex-1 sm:block ${done ? "bg-[linear-gradient(90deg,#5B8CFF,#7A6CFF)]" : "bg-white/10"}`} /> : null}
+            {i < steps.length - 1 ? <span className={`hidden h-px flex-1 sm:block ${done ? "bg-[linear-gradient(90deg,#3d5afe,#5b6cff)]" : "bg-black/[0.06]"}`} /> : null}
           </li>
         );
       })}
@@ -2133,15 +2133,15 @@ function ScriptStep({
             onClick={() => setInfoOpen((open) => !open)}
             className={`grid size-7 place-items-center rounded-full text-[13px] font-semibold ${
               infoOpen
-                ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white"
-                : "border border-white/15 bg-white/5 text-[var(--cf-muted)] hover:border-[#5B8CFF]/70 hover:text-white"
+                ? "bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white"
+                : "border border-black/10 bg-black/[0.04] text-[var(--cf-muted)] hover:border-[#3d5afe]/70 hover:text-[var(--cf-ink)]"
             }`}
           >
             <InfoIcon />
           </button>
         </div>
         {infoOpen ? (
-          <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] p-4 text-sm leading-6 shadow-[0_18px_50px_rgba(0,0,0,0.35)]">
+          <div className="mt-3 w-full max-w-md rounded-2xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] p-4 text-sm leading-6 shadow-[0_18px_50px_rgba(12,12,12,0.1)]">
             <p>You can add the script in only one way: upload a PDF or Word file, or type the text. Not both.</p>
             <button
               type="button"
@@ -2162,11 +2162,11 @@ function ScriptStep({
         title={typing ? "Clear the typed text to upload a file." : undefined}
         className={`mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed px-5 text-center transition-colors ${
           uploadLocked
-            ? "cursor-not-allowed border-white/10 bg-[var(--cf-surface)] text-[var(--cf-muted)] opacity-60"
-            : "border-white/15 bg-[var(--cf-surface)] hover:bg-[var(--cf-surface-2)]"
+            ? "cursor-not-allowed border-black/[0.08] bg-[var(--cf-surface)] text-[var(--cf-muted)] opacity-60"
+            : "border-black/10 bg-[var(--cf-surface)] hover:bg-[var(--cf-surface-2)]"
         }`}
       >
-        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(91,140,255,0.22),rgba(122,108,255,0.16))] text-white">
+        <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(61,90,254,0.22),rgba(61,90,254,0.16))] text-[var(--cf-ink)]">
           <ScriptIcon />
         </span>
         <span className="text-sm font-medium">{fileAttached ? scriptName : "Upload PDF or Word"}</span>
@@ -2193,7 +2193,7 @@ function ScriptStep({
           type="button"
           disabled={busy || !canContinue}
           onClick={onContinue}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(61,90,254,0.28)] disabled:opacity-40"
         >
           {busy ? "Working…" : "Continue"}
         </button>
@@ -2254,12 +2254,12 @@ function SongStep({
         type="button"
         onClick={onPickSong}
         disabled={busy}
-        className="mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed border-white/15 bg-[var(--cf-surface)] px-5 text-center hover:bg-[var(--cf-surface-2)]"
+        className="mt-4 flex min-h-[148px] flex-col items-center justify-center gap-1.5 rounded-[20px] border border-dashed border-black/10 bg-[var(--cf-surface)] px-5 text-center hover:bg-[var(--cf-surface-2)]"
       >
         {uploadingName ? (
-          <span className="size-7 animate-spin rounded-full border-2 border-white/20 border-t-[#5B8CFF]" />
+          <span className="size-7 animate-spin rounded-full border-2 border-black/20 border-t-[#3d5afe]" />
         ) : (
-          <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(91,140,255,0.22),rgba(122,108,255,0.16))] text-white">
+          <span className="grid size-10 place-items-center rounded-xl bg-[linear-gradient(135deg,rgba(61,90,254,0.22),rgba(61,90,254,0.16))] text-[var(--cf-ink)]">
             <SongIcon />
           </span>
         )}
@@ -2300,7 +2300,7 @@ function SongStep({
           type="button"
           disabled={busy || !ready}
           onClick={() => onContinue(text)}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(61,90,254,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2491,7 +2491,7 @@ function SetupStep({
           type="button"
           disabled={busy}
           onClick={onContinue}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(61,90,254,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2588,7 +2588,7 @@ function SongLookStep({
               onContinue();
             })();
           }}
-          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
+          className="btn-primary rounded-xl bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(61,90,254,0.28)] disabled:opacity-40"
         >
           Continue
         </button>
@@ -2731,7 +2731,7 @@ function CastStep({
                   : undefined,
               )
             }
-            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40"
+            className="btn-primary rounded-xl bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(61,90,254,0.28)] disabled:opacity-40"
           >
             {`Generate - ${creditCost.toLocaleString("en-US")} credits`}
           </button>
@@ -2797,7 +2797,7 @@ function ProduceStep({
               type="button"
               onClick={onNotifyMe}
               disabled={notifyReady}
-              className="rounded-full border border-white/15 bg-white/5 px-3 py-1.5 text-sm font-medium disabled:opacity-70"
+              className="rounded-full border border-black/10 bg-black/[0.04] px-3 py-1.5 text-sm font-medium disabled:opacity-70"
             >
               {notifyReady ? "Notifications on" : "Notify me when ready"}
             </button>
@@ -2840,7 +2840,7 @@ function ProduceStep({
             type="button"
             disabled={!affordable}
             onClick={onGenerate}
-            className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(122,108,255,0.28)] disabled:opacity-40 sm:w-auto"
+            className="btn-primary w-full rounded-xl bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] px-5 py-2.5 text-sm font-medium text-white shadow-[0_10px_28px_rgba(61,90,254,0.28)] disabled:opacity-40 sm:w-auto"
           >
             {`Generate - ${creditCost.toLocaleString("en-US")} credits`}
           </button>
@@ -2853,12 +2853,12 @@ function ProduceStep({
 
 function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (value: AspectRatio) => void }) {
   return (
-    <div className="flex w-full items-center rounded-xl bg-white/5 p-[3px]">
+    <div className="flex w-full items-center rounded-xl bg-black/[0.04] p-[3px]">
       <button
         type="button"
         onClick={() => onChange("16:9")}
         className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
-          value === "16:9" ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
+          value === "16:9" ? "bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white shadow-[0_8px_18px_rgba(61,90,254,0.28)]" : "text-[var(--cf-muted)] hover:text-[var(--cf-ink)]"
         }`}
       >
         <LandscapeIcon />
@@ -2871,7 +2871,7 @@ function AspectPicker({ value, onChange }: { value: AspectRatio; onChange: (valu
         type="button"
         onClick={() => onChange("9:16")}
         className={`flex h-11 flex-1 items-center justify-center gap-2 rounded-[10px] px-3 text-left ${
-          value === "9:16" ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
+          value === "9:16" ? "bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white shadow-[0_8px_18px_rgba(61,90,254,0.28)]" : "text-[var(--cf-muted)] hover:text-[var(--cf-ink)]"
         }`}
       >
         <PortraitIcon />
@@ -2894,14 +2894,14 @@ function Segmented({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="flex h-11 w-full items-center rounded-full bg-white/5 p-[3px]">
+    <div className="flex h-11 w-full items-center rounded-full bg-black/[0.04] p-[3px]">
       {options.map((option) => (
         <button
           key={option.id}
           type="button"
           onClick={() => onChange(option.id)}
           className={`h-full flex-1 rounded-full px-2 text-[12px] font-medium leading-none sm:px-3 sm:text-[13px] ${
-            value === option.id ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]" : "text-[var(--cf-muted)] hover:text-white"
+            value === option.id ? "bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white shadow-[0_8px_18px_rgba(61,90,254,0.28)]" : "text-[var(--cf-muted)] hover:text-[var(--cf-ink)]"
           }`}
         >
           {option.label}
@@ -2968,8 +2968,8 @@ function CharacterSlot({
                 onClick={() => onLabel(slot, active ? fallback : option.name)}
                 className={`inline-flex max-w-full min-h-11 touch-manipulation items-center rounded-full border px-3.5 text-left text-[13px] font-medium leading-tight ${
                   active
-                    ? "border-transparent bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white shadow-[0_8px_18px_rgba(122,108,255,0.28)]"
-                    : "border-white/15 bg-[#1c1c21] text-[var(--ink)] hover:border-white/30 hover:bg-white/10"
+                    ? "border-transparent bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white shadow-[0_8px_18px_rgba(61,90,254,0.28)]"
+                    : "border-black/10 bg-[var(--cf-surface)] text-[var(--ink)] hover:border-black/20 hover:bg-black/[0.06]"
                 } disabled:cursor-not-allowed disabled:opacity-35`}
               >
                 <span className="min-w-0 whitespace-normal">{castChipLabel(option.name, option.role)}</span>
@@ -3029,7 +3029,7 @@ function ProductUseVideo({
         type="button"
         disabled={disabled || reading}
         onClick={onPick}
-        className="w-full rounded-lg border border-white/10 px-2.5 py-1.5 text-left text-xs disabled:opacity-50"
+        className="w-full rounded-lg border border-black/[0.08] px-2.5 py-1.5 text-left text-xs disabled:opacity-50"
       >
         {reading ? "Watching the video…" : ready ? "Use video added." : "Upload a use video"}
       </button>
@@ -3077,7 +3077,7 @@ function ProductPageField({
           event.preventDefault();
           if (value.trim() !== url.trim()) onSave(value);
         }}
-        className="w-full rounded-lg border border-white/10 bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-[var(--cf-muted)] disabled:opacity-50"
+        className="w-full rounded-lg border border-black/[0.08] bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-[var(--cf-muted)] disabled:opacity-50"
       />
       <span className="mt-1 block text-[11px] text-[var(--muted)]">
         {reading ? "Reading the page…" : ready ? "Page added." : "Optional."}
@@ -3104,15 +3104,15 @@ function UploadTile({
   onRemove?: () => void;
 }) {
   return (
-    <div className={`flex min-h-[72px] w-full items-center gap-1 rounded-xl border border-dashed border-white/15 bg-[var(--cf-surface)] px-2 py-1.5 ${disabled ? "opacity-50" : ""}`}>
+    <div className={`flex min-h-[72px] w-full items-center gap-1 rounded-xl border border-dashed border-black/10 bg-[var(--cf-surface)] px-2 py-1.5 ${disabled ? "opacity-50" : ""}`}>
       <button type="button" disabled={disabled || uploading} onClick={onClick} className="flex min-w-0 flex-1 items-center gap-2.5 px-0.5 text-left">
         {uploading ? (
-          <span className="size-9 shrink-0 animate-spin rounded-full border-2 border-white/20 border-t-[#5B8CFF]" />
+          <span className="size-9 shrink-0 animate-spin rounded-full border-2 border-black/20 border-t-[#3d5afe]" />
         ) : preview ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={preview} alt="" className="size-9 shrink-0 rounded-lg object-cover" />
         ) : (
-          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(91,140,255,0.22),rgba(122,108,255,0.16))] text-white">
+          <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,rgba(61,90,254,0.22),rgba(61,90,254,0.16))] text-[var(--cf-ink)]">
             <PlusIcon />
           </span>
         )}
@@ -3126,7 +3126,7 @@ function UploadTile({
           type="button"
           disabled={disabled}
           onClick={onRemove}
-          className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-white/5 hover:text-white"
+          className="shrink-0 rounded-lg px-2 py-1 text-[11px] text-[var(--muted)] hover:bg-black/[0.04] hover:text-[var(--cf-ink)]"
         >
           Remove
         </button>
@@ -3343,7 +3343,7 @@ function VideoStage({
   }
 
   return (
-    <article className="theater-in overflow-hidden rounded-[24px] border border-[var(--line)] bg-[#111110] shadow-[0_30px_80px_rgba(28,25,23,0.16)] sm:rounded-[32px]">
+    <article className="theater-in overflow-hidden rounded-[24px] border border-[var(--line)] bg-white shadow-[0_30px_80px_-30px_rgba(12,12,12,0.25)] sm:rounded-[32px]">
       <div className="relative">
         <div
           className="theater-glow pointer-events-none absolute -inset-10 opacity-50"
@@ -3352,13 +3352,13 @@ function VideoStage({
           }}
         />
         <div className="relative px-3 pb-4 pt-4 sm:px-6 sm:pb-5 sm:pt-6">
-          <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] font-medium text-white/70">
+          <div className="mb-4 flex flex-wrap items-center gap-2 text-[11px] font-medium text-[#3f434b]">
             {part && parts ? (
-              <span className="rounded-full bg-white/10 px-2.5 py-1">Part {part} of {parts}</span>
+              <span className="rounded-full bg-black/[0.06] px-2.5 py-1">Part {part} of {parts}</span>
             ) : null}
-            <span className="rounded-full bg-white/10 px-2.5 py-1">{duration}s</span>
-            <span className="rounded-full bg-white/10 px-2.5 py-1 uppercase">{styleName}</span>
-            <span className="rounded-full bg-white/10 px-2.5 py-1">{aspect}</span>
+            <span className="rounded-full bg-black/[0.06] px-2.5 py-1">{duration}s</span>
+            <span className="rounded-full bg-black/[0.06] px-2.5 py-1 uppercase">{styleName}</span>
+            <span className="rounded-full bg-black/[0.06] px-2.5 py-1">{aspect}</span>
           </div>
 
           <div
@@ -3386,7 +3386,7 @@ function VideoStage({
                   <div className="skeleton-scan pointer-events-none absolute inset-y-0 left-0 w-2/3" />
                   <div className="absolute inset-x-4 top-4 space-y-2">
                     <div className="h-2.5 w-2/5 rounded-full bg-white/20" />
-                    <div className="h-2.5 w-3/5 rounded-full bg-white/12" />
+                    <div className="h-2.5 w-3/5 rounded-full bg-white/[0.12]" />
                     <div className="h-2.5 w-1/3 rounded-full bg-white/10" />
                   </div>
                   <div className="absolute inset-0 grid place-items-center px-4">
@@ -3415,7 +3415,7 @@ function VideoStage({
                 <a
                   href={downloadHref(src || "", downloadName || "video.mp4")}
                   download={downloadName || "video.mp4"}
-                  className="btn-primary inline-flex w-full items-center justify-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-medium text-[var(--ink)] shadow-[0_10px_30px_rgba(0,0,0,0.25)] sm:w-auto"
+                  className="btn-primary cf-btn inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-2.5 text-sm font-semibold text-white sm:w-auto"
                 >
                   <DownloadIcon />
                   Download video
@@ -3424,7 +3424,7 @@ function VideoStage({
                   <button
                     type="button"
                     onClick={() => void enterFullScreen()}
-                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/15 bg-white/8 px-5 py-2.5 text-sm font-medium text-white sm:w-auto"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-black/10 bg-black/[0.04] px-5 py-2.5 text-sm font-medium text-[var(--cf-ink)] sm:w-auto"
                   >
                     <ExpandIcon />
                     Full screen
@@ -3432,7 +3432,7 @@ function VideoStage({
                 ) : null}
               </>
             ) : (
-              <span className="rounded-full border border-white/10 px-4 py-2 text-center text-xs text-white/55">
+              <span className="rounded-full border border-black/[0.08] px-4 py-2 text-center text-xs text-[var(--cf-muted)]">
                 Download appears when the video is ready
               </span>
             )}

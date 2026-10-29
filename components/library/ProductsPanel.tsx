@@ -18,7 +18,7 @@ function LocalPhoto({ file }: { file: File }) {
     setSrc(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
-  if (!src) return <span className="h-12 w-12 shrink-0 rounded-lg bg-white/5" />;
+  if (!src) return <span className="h-12 w-12 shrink-0 rounded-lg bg-black/[0.04]" />;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />;
 }
@@ -184,9 +184,9 @@ export function ProductsPanel() {
   if (!open) {
     return (
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
-        {error ? <p className="text-sm text-[#fb7185]">{error}</p> : null}
+        {error ? <p className="text-sm text-[#e11d48]">{error}</p> : null}
         {products.length === 0 ? (
-          <button type="button" onClick={startAdd} className="flex min-h-40 flex-col items-center justify-center rounded-[20px] border border-dashed border-[var(--cf-line)] bg-[var(--cf-surface)] px-6 py-10 text-center shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+          <button type="button" onClick={startAdd} className="flex min-h-40 flex-col items-center justify-center rounded-[20px] border border-dashed border-[var(--cf-line)] bg-[var(--cf-surface)] px-6 py-10 text-center shadow-[0_1px_2px_rgba(12,12,12,0.04)]">
             <span className="display text-2xl">Add your first product</span>
             <span className="mt-2 max-w-sm text-sm text-[var(--cf-muted)]">Save the page, the photos, and how it is used. Then pick it in any video.</span>
           </button>
@@ -194,18 +194,18 @@ export function ProductsPanel() {
           <ul className="flex flex-col gap-2">
             <li>
               <button type="button" onClick={startAdd} className="flex min-h-16 w-full items-center gap-3 rounded-2xl border border-dashed border-[var(--cf-line)] bg-[var(--cf-surface)] px-3 text-left text-sm font-medium">
-                <span className="grid h-10 w-10 place-items-center rounded-xl bg-white/5 text-lg">+</span>
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-black/[0.04] text-lg">+</span>
                 Add a product
               </button>
             </li>
             {products.map((product) => (
               <li key={product.id}>
-                <article className="flex items-center gap-3 rounded-2xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-2.5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+                <article className="flex items-center gap-3 rounded-2xl border border-[var(--cf-line)] bg-[var(--cf-surface)] p-2.5 shadow-[0_1px_2px_rgba(12,12,12,0.04)]">
                   {product.imagePath ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img src={mediaSrc(product.imagePath)} alt="" className="h-12 w-12 rounded-xl object-cover" />
                   ) : (
-                    <span className="grid h-12 w-12 place-items-center rounded-xl bg-white/5 text-[10px] text-[var(--cf-muted)]">No photo</span>
+                    <span className="grid h-12 w-12 place-items-center rounded-xl bg-black/[0.04] text-[10px] text-[var(--cf-muted)]">No photo</span>
                   )}
                   <div className="min-w-0 flex-1">
                     <h3 className="truncate text-sm font-semibold">{product.name}</h3>
@@ -213,7 +213,7 @@ export function ProductsPanel() {
                       {product.photos.length} {product.photos.length === 1 ? "photo" : "photos"} · {product.videos.length} {product.videos.length === 1 ? "video" : "videos"}
                     </p>
                   </div>
-                  <button type="button" onClick={() => edit(product)} className="h-8 rounded-lg border border-white/10 px-3 text-xs">
+                  <button type="button" onClick={() => edit(product)} className="h-8 rounded-lg border border-black/[0.08] px-3 text-xs">
                     Edit
                   </button>
                   <button type="button" disabled={busy} onClick={() => void remove(product.id)} className="h-8 rounded-lg px-3 text-xs text-[var(--cf-muted)]">
@@ -234,7 +234,7 @@ export function ProductsPanel() {
         Products
       </button>
       <form
-        className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+        className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 shadow-[0_1px_2px_rgba(12,12,12,0.04)]"
         onSubmit={(event) => {
           event.preventDefault();
           void saveText();
@@ -298,13 +298,13 @@ export function ProductsPanel() {
               addPhotos(event.target.files);
               event.target.value = "";
             }}
-            className="mt-1 block w-full rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:text-[var(--cf-ink)]"
+            className="mt-1 block w-full rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-black/[0.06] file:px-3 file:py-1.5 file:text-sm file:text-[var(--cf-ink)]"
           />
         </label>
         <p className="mt-1 text-[11px] text-[var(--cf-muted)]">{photoCount} of 5 photos</p>
         <ul className="mt-2 flex flex-col gap-1.5">
           {keptPhotos.map((item) => (
-            <li key={item.path} className="flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
+            <li key={item.path} className="flex items-center gap-2 rounded-xl bg-black/[0.04] px-2 py-1.5">
               {/* eslint-disable-next-line @next/next/no-img-element */}
               <img src={mediaSrc(item.path)} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
               <span className="min-w-0 flex-1 truncate text-xs">{item.path.split("/").pop()}</span>
@@ -314,7 +314,7 @@ export function ProductsPanel() {
             </li>
           ))}
           {photoFiles.map((file, index) => (
-            <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center gap-2 rounded-xl bg-white/5 px-2 py-1.5">
+            <li key={`${file.name}-${file.lastModified}-${index}`} className="flex items-center gap-2 rounded-xl bg-black/[0.04] px-2 py-1.5">
               <LocalPhoto file={file} />
               <span className="min-w-0 flex-1 truncate text-xs">{file.name}</span>
               <button type="button" onClick={() => setPhotoFiles((current) => current.filter((_, item) => item !== index))} className="px-1 text-sm text-[var(--cf-muted)]" aria-label="Remove photo">
@@ -334,28 +334,28 @@ export function ProductsPanel() {
               addVideos(event.target.files);
               event.target.value = "";
             }}
-            className="mt-1 block w-full rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-white/10 file:px-3 file:py-1.5 file:text-sm file:text-[var(--cf-ink)]"
+            className="mt-1 block w-full rounded-xl border border-[var(--cf-line)] bg-[var(--cf-bg)] px-3 py-2 text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-black/[0.06] file:px-3 file:py-1.5 file:text-sm file:text-[var(--cf-ink)]"
           />
         </label>
         <p className="mt-1 text-[11px] text-[var(--cf-muted)]">{videoCount} of 2 videos. Each one can be up to 20 seconds.</p>
         <ul className="mt-1 flex flex-wrap gap-1.5">
           {keptVideos.map((item) => (
             <li key={item.path}>
-              <button type="button" onClick={() => setKeptVideos((current) => current.filter((video) => video.path !== item.path))} className="rounded-lg bg-white/5 px-2 py-1 text-[11px]">
+              <button type="button" onClick={() => setKeptVideos((current) => current.filter((video) => video.path !== item.path))} className="rounded-lg bg-black/[0.04] px-2 py-1 text-[11px]">
                 {item.path.split("/").pop()} ×
               </button>
             </li>
           ))}
           {videoFiles.map((file, index) => (
             <li key={`${file.name}-${index}`}>
-              <button type="button" onClick={() => setVideoFiles((current) => current.filter((_, item) => item !== index))} className="rounded-lg bg-white/5 px-2 py-1 text-[11px]">
+              <button type="button" onClick={() => setVideoFiles((current) => current.filter((_, item) => item !== index))} className="rounded-lg bg-black/[0.04] px-2 py-1 text-[11px]">
                 {file.name} ×
               </button>
             </li>
           ))}
         </ul>
         <p className="mt-2 text-[11px] leading-4 text-[var(--cf-muted)]">This stays on your account.</p>
-        {error ? <p className="mt-2 text-sm text-[#fb7185]">{error}</p> : null}
+        {error ? <p className="mt-2 text-sm text-[#e11d48]">{error}</p> : null}
         <div className="mt-4">
           <button type="submit" disabled={busy} className="btn-primary h-11 rounded-xl bg-[linear-gradient(135deg,var(--cf-accent-a),var(--cf-accent-b))] px-4 text-sm font-semibold text-white disabled:opacity-40">
             {busy ? "Saving…" : "Save product"}
@@ -422,13 +422,13 @@ export function SavedProductPicker({
         type="button"
         disabled={disabled || Boolean(busyId)}
         onClick={() => void toggle(product.id)}
-        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left disabled:opacity-50 ${selected ? "bg-white/[0.06]" : "hover:bg-white/[0.04]"}`}
+        className={`flex w-full items-center gap-3 px-3 py-2.5 text-left disabled:opacity-50 ${selected ? "bg-black/[0.04]" : "hover:bg-black/[0.04]"}`}
       >
         {product.imagePath ? (
           // eslint-disable-next-line @next/next/no-img-element
           <img src={mediaSrc(product.imagePath)} alt="" className="size-11 shrink-0 rounded-xl object-cover" />
         ) : (
-          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-white/10 text-sm font-medium text-[var(--muted)]">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-black/[0.06] text-sm font-medium text-[var(--muted)]">
             {product.name.slice(0, 1).toUpperCase()}
           </span>
         )}
@@ -437,7 +437,7 @@ export function SavedProductPicker({
           <span className="block text-[11px] text-[var(--muted)]">{selected ? "Selected" : "Use this product"}</span>
         </span>
         <span
-          className={`grid size-5 shrink-0 place-items-center rounded-full ${selected ? "bg-[linear-gradient(135deg,#5B8CFF,#7A6CFF)] text-white" : "border border-white/15"}`}
+          className={`grid size-5 shrink-0 place-items-center rounded-full ${selected ? "bg-[linear-gradient(135deg,#3d5afe,#5b6cff)] text-white" : "border border-black/10"}`}
           aria-hidden
         >
           {selected ? (
@@ -452,7 +452,7 @@ export function SavedProductPicker({
 
   return (
     <div>
-      <div className="overflow-hidden rounded-2xl border border-white/10 bg-[#141417]">
+      <div className="overflow-hidden rounded-2xl border border-black/[0.08] bg-[var(--cf-surface)]">
         <button
           type="button"
           disabled={disabled}
@@ -465,9 +465,9 @@ export function SavedProductPicker({
             <path d="M4 6.5 8 10.5 12 6.5" />
           </svg>
         </button>
-        {chosen.length && !open ? <div className="border-t border-white/10">{chosen.map((product) => row(product, true))}</div> : null}
+        {chosen.length && !open ? <div className="border-t border-black/[0.08]">{chosen.map((product) => row(product, true))}</div> : null}
         {open ? (
-          <div className="border-t border-white/10">
+          <div className="border-t border-black/[0.08]">
             {products.length ? (
               products.map((product) => row(product, selectedIds.includes(product.id)))
             ) : (
@@ -476,9 +476,9 @@ export function SavedProductPicker({
             <button
               type="button"
               onClick={onOpenProducts}
-              className="flex w-full items-center gap-3 border-t border-white/10 px-3 py-2.5 text-left text-sm text-[var(--muted)] hover:bg-white/[0.04] hover:text-[var(--ink)]"
+              className="flex w-full items-center gap-3 border-t border-black/[0.08] px-3 py-2.5 text-left text-sm text-[var(--muted)] hover:bg-black/[0.04] hover:text-[var(--ink)]"
             >
-              <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-dashed border-white/15 text-lg leading-none">+</span>
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-dashed border-black/10 text-lg leading-none">+</span>
               Add new product
             </button>
           </div>

@@ -48,7 +48,7 @@ export function MobileNav({
               type="button"
               onClick={item.onClick}
               disabled={item.locked}
-              className={`no-press flex min-h-14 w-full flex-col items-center justify-center gap-1 px-1 text-[10px] whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40 ${item.active ? "text-white" : "text-[var(--cf-muted)]"}`}
+              className={`no-press flex min-h-14 w-full flex-col items-center justify-center gap-1 px-1 text-[10px] whitespace-nowrap disabled:cursor-not-allowed disabled:opacity-40 ${item.active ? "text-[var(--cf-ink)]" : "text-[var(--cf-muted)]"}`}
             >
               <item.icon />
               {item.label}

@@ -31,7 +31,7 @@ export function FilterChips({
     <div className="cf-scroll -mx-1 overflow-x-auto px-1">
       <div ref={rowRef} className="relative flex w-max min-w-full snap-x gap-1 rounded-full border border-[var(--cf-line)] bg-[var(--cf-surface)] p-1">
         <span
-          className="cf-chip-indicator pointer-events-none absolute top-1 bottom-1 rounded-full bg-white/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+          className="cf-chip-indicator pointer-events-none absolute top-1 bottom-1 rounded-full bg-black/[0.06] shadow-[0_1px_2px_rgba(12,12,12,0.04)] transition-all duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
           style={{ left: box.left, width: box.width }}
         />
         {FILTERS.map((item) => {
@@ -43,7 +43,7 @@ export function FilterChips({
               data-active={active ? "true" : "false"}
               aria-pressed={active}
               onClick={() => onChange(item.id)}
-              className={`no-press relative z-10 min-h-11 snap-start rounded-full px-4 text-sm ${active ? "text-white" : "text-[var(--cf-muted)]"}`}
+              className={`no-press relative z-10 min-h-11 snap-start rounded-full px-4 text-sm ${active ? "text-[var(--cf-ink)]" : "text-[var(--cf-muted)]"}`}
             >
               {item.label}
             </button>

@@ -18,10 +18,10 @@ export function LegalDocument({
           <Brand tone="accent" />
         </a>
         <nav className="flex items-center gap-4 text-sm" aria-label="Legal">
-          <a href="/privacy" aria-current={current === "privacy" ? "page" : undefined} className={current === "privacy" ? "font-medium text-white" : "text-[var(--cf-muted)]"}>
+          <a href="/privacy" aria-current={current === "privacy" ? "page" : undefined} className={current === "privacy" ? "font-medium text-[var(--cf-ink)]" : "text-[var(--cf-muted)]"}>
             Privacy
           </a>
-          <a href="/terms" aria-current={current === "terms" ? "page" : undefined} className={current === "terms" ? "font-medium text-white" : "text-[var(--cf-muted)]"}>
+          <a href="/terms" aria-current={current === "terms" ? "page" : undefined} className={current === "terms" ? "font-medium text-[var(--cf-ink)]" : "text-[var(--cf-muted)]"}>
             Terms
           </a>
         </nav>
@@ -31,7 +31,7 @@ export function LegalDocument({
         <p className="mt-3 text-sm text-[var(--cf-muted)]">Last updated October 2, 2026</p>
         <div className="mt-8 space-y-8 text-sm leading-relaxed text-[var(--cf-muted)]">{children}</div>
         <p className="mt-10 text-sm text-[var(--cf-muted)]">
-          Questions: <a className="text-[#C5D4FF]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
+          Questions: <a className="text-[#3d5afe]" href={`mailto:${CONTACT_EMAIL}`}>{CONTACT_EMAIL}</a>
         </p>
       </article>
     </main>

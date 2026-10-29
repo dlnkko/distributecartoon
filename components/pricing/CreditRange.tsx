@@ -33,7 +33,7 @@ export function CreditRange({
             key={`${item}-${itemIndex}`}
             type="button"
             onClick={() => onChange(itemIndex)}
-            className={itemIndex === safe ? "font-semibold text-white" : idleClass}
+            className={itemIndex === safe ? "font-semibold text-[var(--cf-ink)]" : idleClass}
           >
             {item}
           </button>

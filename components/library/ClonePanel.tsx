@@ -164,7 +164,7 @@ export function ClonePanel({
       <section className="rounded-[20px] border border-[var(--cf-line)] bg-[var(--cf-surface)] p-4 sm:p-5">
         <p className="text-sm font-medium">Reference video</p>
         <p className="mt-0.5 text-xs text-[var(--cf-muted)]">An mp4, mov, or webm under 10 minutes and 32 MB. The shape stays. The cause and the product change.</p>
-        <label className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[var(--cf-line)] bg-black/20 px-4 py-5 text-center text-sm">
+        <label className="mt-3 flex min-h-28 cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed border-[var(--cf-line)] bg-[var(--cf-surface-2)] px-4 py-5 text-center text-sm">
           <input
             type="file"
             accept="video/mp4,video/quicktime,video/webm,.mp4,.mov,.webm,.m4v"
@@ -193,13 +193,13 @@ export function ClonePanel({
                   setAudience("");
                   setPage("");
                 }}
-                className={`no-press flex min-h-16 items-center gap-3 rounded-xl border px-3 py-2 text-left ${selected ? "border-[#7A6CFF] bg-[rgba(122,108,255,0.12)]" : "border-[var(--cf-line)] bg-white/5 hover:bg-white/10"}`}
+                className={`no-press flex min-h-16 items-center gap-3 rounded-xl border px-3 py-2 text-left ${selected ? "border-[#5b6cff] bg-[rgba(61,90,254,0.12)]" : "border-[var(--cf-line)] bg-black/[0.04] hover:bg-black/[0.06]"}`}
               >
                 {photo ? (
                   // eslint-disable-next-line @next/next/no-img-element
                   <img src={mediaSrc(photo)} alt="" className="h-12 w-12 shrink-0 rounded-lg object-cover" />
                 ) : (
-                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-white/10 text-xs text-[var(--cf-muted)]">Page</span>
+                  <span className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-black/[0.06] text-xs text-[var(--cf-muted)]">Page</span>
                 )}
                 <span className="min-w-0">
                   <span className="block truncate text-sm font-medium">{product.name}</span>
@@ -236,7 +236,7 @@ export function ClonePanel({
           maxLength={400}
           rows={3}
           disabled={Boolean(busy)}
-          className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none disabled:opacity-60"
+          className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] px-3 py-2 text-sm outline-none disabled:opacity-60"
         />
         <label htmlFor="clone-audience" className="mt-4 block text-sm font-medium">
           Audience
@@ -248,7 +248,7 @@ export function ClonePanel({
           maxLength={240}
           rows={2}
           disabled={Boolean(busy)}
-          className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-black/20 px-3 py-2 text-sm outline-none disabled:opacity-60"
+          className="mt-2 w-full resize-none rounded-xl border border-[var(--cf-line)] bg-[var(--cf-surface-2)] px-3 py-2 text-sm outline-none disabled:opacity-60"
         />
       </section>
 
@@ -259,14 +259,14 @@ export function ClonePanel({
         </div>
         <div className="mt-4">
           <p className="text-sm font-medium">Language</p>
-          <div className="mt-2 flex w-fit rounded-xl bg-white/5 p-[3px]" role="group" aria-label="Clone language">
+          <div className="mt-2 flex w-fit rounded-xl bg-black/[0.04] p-[3px]" role="group" aria-label="Clone language">
             {(["english", "spanish"] as const).map((item) => (
               <button
                 key={item}
                 type="button"
                 aria-pressed={language === item}
                 onClick={() => setLanguage(item)}
-                className={`min-h-9 rounded-lg px-4 text-sm capitalize ${language === item ? "bg-white/10 text-white" : "text-[var(--cf-muted)]"}`}
+                className={`min-h-9 rounded-lg px-4 text-sm capitalize ${language === item ? "bg-black/[0.06] text-[var(--cf-ink)]" : "text-[var(--cf-muted)]"}`}
               >
                 {item}
               </button>
@@ -282,7 +282,7 @@ export function ClonePanel({
           {busy === "continue" ? note || "Adapting the video…" : "Continue"}
         </button>
       </section>
-      {error ? <p className="text-sm text-[#fb7185]">{error}</p> : null}
+      {error ? <p className="text-sm text-[#e11d48]">{error}</p> : null}
     </div>
   );
 }

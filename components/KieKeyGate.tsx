@@ -23,10 +23,10 @@ async function sendKey(apiKey: string) {
 
 function KeyPromise() {
   return (
-    <ul className="mt-4 space-y-2 rounded-2xl border border-white/10 bg-black/20 p-4 text-xs leading-relaxed text-[var(--muted)]">
+    <ul className="mt-4 space-y-2 rounded-2xl border border-black/[0.08] bg-[var(--cf-surface-2)] p-4 text-xs leading-relaxed text-[var(--muted)]">
       {KEY_PROMISE.map((line) => (
         <li key={line} className="flex gap-2">
-          <span aria-hidden="true" className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#5B8CFF]" />
+          <span aria-hidden="true" className="mt-[5px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#3d5afe]" />
           <span>{line}</span>
         </li>
       ))}
@@ -42,7 +42,7 @@ function KeyInput({ value, onChange }: { value: string; onChange: (value: string
       spellCheck={false}
       value={value}
       onChange={(event) => onChange(event.target.value)}
-      className="mt-2 w-full rounded-xl border border-white/10 bg-black/30 px-3 py-2"
+      className="mt-2 w-full rounded-xl border border-black/[0.08] bg-white px-3 py-2"
       placeholder="Paste the key from kie.ai"
       required
     />
@@ -103,7 +103,7 @@ export function KieKeyGate() {
           KIE API key
           <KeyInput value={apiKey} onChange={setApiKey} />
         </label>
-        {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+        {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
         <button type="submit" disabled={busy || apiKey.trim().length < 12} className="cf-btn btn-primary mt-5 w-full rounded-xl py-2.5 text-sm font-semibold">
           {busy ? "Saving…" : "Save key"}
         </button>
@@ -187,7 +187,7 @@ export function KieKeyCard() {
             <button type="submit" disabled={busy || apiKey.trim().length < 12} className="cf-btn btn-primary rounded-xl px-4 py-2 text-sm font-semibold">
               {busy ? "Saving…" : "Save key"}
             </button>
-            <button type="button" onClick={() => setEditing(false)} className="text-sm text-[var(--muted)] hover:text-white">
+            <button type="button" onClick={() => setEditing(false)} className="text-sm text-[var(--muted)] hover:text-[var(--cf-ink)]">
               Cancel
             </button>
           </div>
@@ -198,13 +198,13 @@ export function KieKeyCard() {
             {state?.saved ? "Replace key" : "Add key"}
           </button>
           {state?.saved ? (
-            <button type="button" disabled={busy} onClick={() => void remove()} className="text-sm text-[var(--muted)] hover:text-red-300">
+            <button type="button" disabled={busy} onClick={() => void remove()} className="text-sm text-[var(--muted)] hover:text-red-600">
               {busy ? "Removing…" : "Remove key"}
             </button>
           ) : null}
         </div>
       )}
-      {error ? <p className="mt-3 text-sm text-red-300">{error}</p> : null}
+      {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
     </div>
   );
 }

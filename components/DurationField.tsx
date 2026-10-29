@@ -52,7 +52,7 @@ export function DurationField({
           aria-label="15 seconds shorter"
           disabled={disabled || seconds <= TOTAL_DURATION_MIN}
           onClick={() => commit(seconds - 15)}
-          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white/5 text-xl leading-none text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-black/[0.04] text-xl leading-none text-[var(--cf-ink)] hover:bg-black/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
         >
           −
         </button>
@@ -80,7 +80,7 @@ export function DurationField({
           aria-label="15 seconds longer"
           disabled={disabled || seconds >= TOTAL_DURATION_MAX}
           onClick={() => commit(seconds + 15)}
-          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-white/5 text-xl leading-none text-white hover:bg-white/10 disabled:cursor-not-allowed disabled:opacity-40"
+          className="grid size-11 shrink-0 place-items-center rounded-2xl bg-black/[0.04] text-xl leading-none text-[var(--cf-ink)] hover:bg-black/[0.06] disabled:cursor-not-allowed disabled:opacity-40"
         >
           +
         </button>
@@ -99,7 +99,7 @@ export function DurationField({
         aria-valuenow={seconds}
         aria-valuetext={`${seconds} seconds`}
         onChange={(event) => commit(Number(event.target.value))}
-        style={{ background: `linear-gradient(90deg, #7A6CFF ${fill}%, rgba(255,255,255,0.12) ${fill}%)` }}
+        style={{ background: `linear-gradient(90deg, #3d5afe ${fill}%, rgba(12,12,12,0.1) ${fill}%)` }}
       />
       <div className="mt-1.5 flex justify-between text-[11px] tabular-nums text-[var(--cf-muted)]">
         <span>{clockLabel(TOTAL_DURATION_MIN)}</span>

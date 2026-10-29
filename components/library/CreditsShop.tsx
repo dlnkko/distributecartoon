@@ -47,7 +47,7 @@ export function CreditsShop() {
                 type="button"
                 aria-pressed={on}
                 onClick={() => setIndex(planIndex)}
-                className={`rounded-full border px-3 py-1 text-xs tabular-nums ${on ? "border-white/40 bg-white/10 font-semibold text-white" : "border-white/10 text-[var(--muted)]"}`}
+                className={`rounded-full border px-3 py-1 text-xs tabular-nums ${on ? "border-black/20 bg-black/[0.06] font-semibold text-[var(--cf-ink)]" : "border-black/[0.08] text-[var(--muted)]"}`}
               >
                 {plan.minutes}
               </button>
