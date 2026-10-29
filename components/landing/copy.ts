@@ -43,46 +43,13 @@ export const HERO = {
   trust: "About 10 minutes · You own every ad",
 };
 
-export const BEAT_WORDS = ["THE PROBLEM", "THE TWIST", "THE PRODUCT", "THE AFTER", "NO SKIP", "REPLAYED"];
-
 export const WHY = [
   { title: "Stop the scroll.", text: "It opens inside the conflict, so it never looks like an ad." },
   { title: "Hold every second.", text: "A twist before the product keeps them watching to the end." },
   { title: "Sell the ending.", text: "The product is how the story ends well. Buying is the next step." },
 ];
 
-export const STACK = ["Seedance 2.0", "KIE", "Meta Ads", "Instagram Reels", "TikTok", "YouTube Shorts", "Shopify"];
-
-export const BEATS = [
-  {
-    key: "problem",
-    title: "Open on the problem.",
-    text: ["Start", "inside the pain", " your customer already has. Shown in the body and the room, not said in a voiceover."],
-    lines: ["\"Not again.\"", "\"Why is it always me?\""],
-    span: [0, 0.32],
-  },
-  {
-    key: "turn",
-    title: "Twist the knife.",
-    text: ["It gets worse, or the cause is not what they thought. The", "twist", " is the reason nobody skips."],
-    lines: ["\"It was never the coffee.\""],
-    span: [0.32, 0.5],
-  },
-  {
-    key: "use",
-    title: "Hand over the product.",
-    text: ["The product arrives the way life would hand it over, and they", "use it like a person would", ". No pitch."],
-    lines: ["\"Try mine.\""],
-    span: [0.5, 0.72],
-  },
-  {
-    key: "after",
-    title: "Show the after.",
-    text: ["The same situation, going better. Long enough to", "see the change", ", in their words, not a slogan."],
-    lines: ["\"I slept. Actually slept.\""],
-    span: [0.72, 1],
-  },
-] as const;
+export const STACK = ["Seedance 2.5", "KIE", "Meta Ads", "Instagram Reels", "TikTok", "YouTube Shorts", "Shopify"];
 
 export const CONSISTENCY = [
   { src: "/media/consistency/don-julio-3.jpg", label: "Shot 03" },
@@ -149,7 +116,7 @@ export const CONTROL = [
   "Dialogue that sounds like people, not copy",
   "Swap the pain, the audience or the person in one click",
   "Dialogue in English or Spanish",
-  "Up to 3 minutes per ad, about 10 minutes to render",
+  "Up to 10 minutes per ad",
 ];
 
 export const FEEDS = [
@@ -193,6 +160,6 @@ export const FAQ = [
     q: "What do I pay for?",
     a: "Two bills. The membership is the Clickframes workflow: the story, the shots and the direction. The video itself is billed on your KIE key.",
   },
-  { q: "How long does it take?", a: "About 10 minutes for most ads. Up to 3 minutes of video per ad." },
+  { q: "How long does it take?", a: "Most ads render in about 10 minutes. A single ad can run up to 10 minutes long." },
   { q: "Who owns the ads?", a: "You do. You own all the rights to every ad you create, for organic and paid." },
 ];

@@ -5,8 +5,6 @@ import { createPortal } from "react-dom";
 import { Mark } from "@/components/Brand";
 import { CONTACT_EMAIL } from "@/lib/site";
 import {
-  BEATS,
-  BEAT_WORDS,
   BRIEF_TABS,
   CONSISTENCY,
   CONTROL,
@@ -80,7 +78,6 @@ export function LandingPage() {
       <PhoneShowcase />
       <WhySection />
       <StackRow />
-      <Blueprint />
       <CharacterLock />
       <ControlRoom />
       <Feeds />
@@ -235,35 +232,42 @@ function Hero() {
 }
 
 function PhoneShowcase() {
-  const rows = Array.from({ length: 9 }, (_, index) => index);
+  const [first, second] = PHONE_FILMS;
   return (
-    <section aria-label="What the ads look like" className={WRAP}>
+    <section aria-label="What the ads look like" className={`${WRAP} md:max-w-[56rem]`}>
       <Reveal>
-        <div className="relative h-[460px] overflow-hidden rounded-[2rem] border border-black/[0.06] bg-[#f6f7f9] sm:h-[540px]">
-          <div aria-hidden="true" className="absolute inset-0 flex flex-col justify-center gap-2 opacity-90">
-            {rows.map((row) => (
-              <div
-                key={row}
-                className={`land-marquee flex w-max whitespace-nowrap text-[1.35rem] font-bold tracking-[-0.03em] text-[#d4d7dd] ${row % 2 ? "lp-reverse" : ""}`}
-                style={{ animationDuration: `${38 + row * 3}s` }}
-              >
-                {[0, 1].map((copy) => (
-                  <span key={copy} className="pr-4">
-                    {BEAT_WORDS.map((word, index) => (
-                      <span key={`${word}-${index}`}>
-                        {BEAT_WORDS[(index + row) % BEAT_WORDS.length]}
-                        <span className="px-3 text-[#3d5afe]">•</span>
-                      </span>
-                    ))}
-                  </span>
+        <div className="relative overflow-hidden rounded-[2rem] border border-black/[0.06] bg-[linear-gradient(160deg,#eef1ff_0%,#f6f7f9_55%,#fff0f6_100%)]">
+          <div className="grid items-center gap-10 px-6 py-10 md:grid-cols-[0.9fr_1.1fr] md:px-12 md:py-14">
+            <div className="text-left">
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-[#3d5afe]">Made with Clickframes</p>
+              <h2 className="mt-3 text-[2rem] font-semibold leading-[1.05] tracking-[-0.035em] text-[#0c0c0c] sm:text-[2.5rem]">
+                Two brands.
+                <br />
+                One take each.
+              </h2>
+              <ol className="mt-7 space-y-4">
+                {[first, second].map((film, index) => (
+                  <li key={film.title} className="flex gap-4 border-t border-black/[0.08] pt-4">
+                    <span className="text-sm font-semibold tabular-nums text-[#3d5afe]">0{index + 1}</span>
+                    <span>
+                      <span className="block text-[15px] font-semibold text-[#0c0c0c]">{film.title}</span>
+                      <span className="mt-0.5 block text-sm text-[#6b7079]">{film.text}</span>
+                    </span>
+                  </li>
                 ))}
-              </div>
-            ))}
+              </ol>
+            </div>
+            <div className="relative mx-auto flex w-full max-w-[26rem] items-start justify-center gap-4 pb-16 pt-4">
+              <Phone film={first} className="w-[46%]" eager />
+              <Phone film={second} className="mt-14 w-[46%]" />
+              <span className="absolute -left-2 top-10 z-10 rounded-full bg-white px-3 py-1.5 text-[11px] font-semibold text-[#0c0c0c] shadow-[0_8px_20px_-8px_rgba(12,12,12,0.25)]">
+                <span className="text-[#ff3d8b]">●</span> 0:02 · the problem
+              </span>
+              <span className="absolute bottom-6 right-0 z-10 rounded-full bg-[#3d5afe] px-3 py-1.5 text-[11px] font-semibold text-white shadow-[0_8px_20px_-8px_rgba(61,90,254,0.6)]">
+                0:31 · the product
+              </span>
+            </div>
           </div>
-          <Phone film={PHONE_FILMS[0]} className="left-1/2 top-16 z-10 w-[150px] -translate-x-[150%] -rotate-[8deg] sm:w-[190px] sm:-translate-x-[140%]" />
-          <Phone film={PHONE_FILMS[2]} className="left-1/2 top-16 z-10 w-[150px] translate-x-[50%] rotate-[8deg] sm:w-[190px] sm:translate-x-[40%]" />
-          <Phone film={PHONE_FILMS[1]} className="left-1/2 top-8 z-20 w-[170px] -translate-x-1/2 sm:w-[215px]" eager />
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-24 bg-gradient-to-t from-[#f6f7f9] to-transparent" />
         </div>
       </Reveal>
     </section>
@@ -290,7 +294,7 @@ function Phone({ film, className, eager = false }: { film: Film; className: stri
   }, []);
 
   return (
-    <div className={`absolute aspect-[9/19] rounded-[2.1rem] bg-[#16171a] p-[5px] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/20 ${className}`}>
+    <div className={`relative aspect-[9/19] shrink-0 rounded-[2.1rem] bg-[#16171a] p-[5px] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/20 ${className}`}>
       <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-black">
         <video
           ref={ref}
@@ -376,140 +380,6 @@ function StackRow() {
   );
 }
 
-const TIMELINE = Array.from({ length: 34 }, (_, index) => {
-  const at = (index + 0.5) / 34;
-  const beat = BEATS.find((item) => at >= item.span[0] && at < item.span[1]) ?? BEATS[BEATS.length - 1];
-  return { at, beat: beat.key, tall: index % 3 !== 1 };
-});
-
-const BEAT_COLOR: Record<string, string> = {
-  problem: "bg-[#d9dce2]",
-  turn: "bg-[#b9c7ff]",
-  use: "bg-[#3d5afe]",
-  after: "bg-[#ff7ab8]",
-};
-
-function Blueprint() {
-  const ref = useRef<HTMLElement>(null);
-  const [progress, setProgress] = useState(0);
-
-  useEffect(() => {
-    const node = ref.current;
-    if (!node) return;
-    const update = () => {
-      const box = node.getBoundingClientRect();
-      const room = box.height - window.innerHeight;
-      setProgress(room > 0 ? Math.min(1, Math.max(0, -box.top / room)) : 0);
-    };
-    update();
-    window.addEventListener("scroll", update, { passive: true });
-    window.addEventListener("resize", update);
-    return () => {
-      window.removeEventListener("scroll", update);
-      window.removeEventListener("resize", update);
-    };
-  }, []);
-
-  const active = Math.max(0, BEATS.findIndex((beat) => progress < beat.span[1]));
-  const step = BEATS[active] ?? BEATS[BEATS.length - 1];
-  const seconds = (progress * 40).toFixed(1).padStart(4, "0");
-
-  return (
-    <section ref={ref} id="how" className="relative mt-24 h-[300vh] scroll-mt-20">
-      <div className="sticky top-14 flex min-h-[calc(100svh-3.5rem)] items-center">
-        <div className="mx-auto grid w-full max-w-[44rem] gap-8 px-5 md:max-w-[56rem] md:grid-cols-[1fr_1fr] md:items-center md:gap-12">
-          <div>
-            <Pill>The drama ad blueprint</Pill>
-            <h2 className="mt-4 text-[1.9rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[2.25rem]">
-              Directed beat by beat.
-              <br />
-              Built to be replayed.
-            </h2>
-            <div className="mt-6 grid grid-cols-4 gap-1.5" aria-hidden="true">
-              {BEATS.map((beat, index) => (
-                <span key={beat.key} className={`h-[3px] rounded-full transition-colors duration-300 ${index <= active ? "bg-[#3d5afe]" : "bg-[#e3e5ea]"}`} />
-              ))}
-            </div>
-            <p className="mt-3 text-sm text-[#6b7079]">
-              Step <span className="font-semibold text-[#3d5afe]">{String(active + 1).padStart(2, "0")}</span> / {String(BEATS.length).padStart(2, "0")}
-            </p>
-            <div key={step.key} className="land-stage-copy">
-              <h3 className="mt-2 text-[2.1rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[2.6rem]">{step.title}</h3>
-              <p className="mt-3 max-w-md text-[1.0625rem] leading-relaxed text-[#3f434b]">
-                {step.text[0]} <Chip>{step.text[1]}</Chip>
-                {step.text[2]}
-              </p>
-              <div className="mt-4 flex flex-wrap gap-2">
-                {step.lines.map((line) => (
-                  <span key={line} className="rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-sm font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
-                    {line}
-                  </span>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div>
-            <p className="hidden text-sm leading-relaxed text-[#6b7079] md:block">
-              Clickframes turns your product page into one <Chip>40-second drama ad</Chip>: the pain, the twist, the product and the after.
-            </p>
-            <div className="mt-5 rounded-2xl border border-black/[0.08] bg-white p-4 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.25)]">
-              <div className="flex items-center justify-between text-[11px] text-[#6b7079]">
-                <span className="flex items-center gap-1.5">
-                  <span className="h-1.5 w-1.5 rounded-full bg-[#ff3d8b]" />
-                  drama_ad · 9:16 · seedance 2.0
-                </span>
-                <span className="font-semibold tabular-nums text-[#0c0c0c]">00:{seconds} / 00:40</span>
-              </div>
-              <div className="relative mt-4">
-                <div className="relative h-3 text-[10px] text-[#6b7079]">
-                  {BEATS.map((beat, index) => (
-                    <span
-                      key={beat.key}
-                      className={`absolute top-0 ${index === active ? "font-semibold text-[#3d5afe]" : ""}`}
-                      style={{ left: `${beat.span[0] * 100}%` }}
-                    >
-                      {beat.key === "use" ? "Product" : beat.key === "turn" ? "Twist" : beat.key === "problem" ? "Problem" : "After"}
-                    </span>
-                  ))}
-                </div>
-                <div className="mt-2 flex h-14 items-end gap-[3px]">
-                  {TIMELINE.map((bar, index) => (
-                    <span
-                      key={index}
-                      className={`flex-1 rounded-[3px] transition-opacity duration-200 ${BEAT_COLOR[bar.beat]} ${bar.tall ? "h-full" : "h-3/4"} ${bar.at <= progress ? "opacity-100" : "opacity-40"}`}
-                    />
-                  ))}
-                </div>
-                <span
-                  aria-hidden="true"
-                  className="absolute bottom-0 top-5 w-[2px] rounded-full bg-[#ff3d8b]"
-                  style={{ left: `${progress * 100}%` }}
-                >
-                  <span className="absolute -left-[4px] -top-1 h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#ff3d8b]" />
-                </span>
-              </div>
-              <div className="mt-4 h-1 overflow-hidden rounded-full bg-[#eef0f3]">
-                <div className="h-full rounded-full bg-[#3d5afe]" style={{ width: `${progress * 100}%` }} />
-              </div>
-              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#6b7079]">
-                <span className="flex flex-wrap gap-3">
-                  {BEATS.map((beat) => (
-                    <span key={beat.key} className="flex items-center gap-1">
-                      <span className={`h-2 w-2 rounded-sm ${BEAT_COLOR[beat.key]}`} />
-                      {beat.key === "use" ? "product" : beat.key === "turn" ? "twist" : beat.key}
-                    </span>
-                  ))}
-                </span>
-                <span className="font-semibold text-[#0c0c0c]">1 take</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
 function CharacterLock() {
   return (
     <section className={`${WRAP} pt-16 md:max-w-[56rem]`}>
@@ -571,7 +441,7 @@ function ControlRoom() {
   const file = BRIEF_TABS[tab] ?? BRIEF_TABS[0];
 
   return (
-    <section className={`${WRAP} pt-32 md:max-w-[56rem]`}>
+    <section id="how" className={`${WRAP} scroll-mt-20 pt-32 md:max-w-[56rem]`}>
       <SectionHead
         pill="The brief, written for you"
         title={
@@ -634,7 +504,7 @@ function ControlRoom() {
             ))}
           </ul>
           <p className="mt-4 text-xs leading-relaxed text-[#6b7079]">
-            Runs on <Chip>Seedance 2.0</Chip> through <Chip>KIE</Chip>. KIE bills your own key directly.
+            Runs on <Chip>Seedance 2.5</Chip> through <Chip>KIE</Chip>. KIE bills your own key directly.
           </p>
         </Reveal>
       </div>
