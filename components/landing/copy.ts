@@ -1,5 +1,3 @@
-export type Mode = "personal" | "brands";
-
 export type Film = {
   mp4: string;
   webm: string;
@@ -10,146 +8,191 @@ export type Film = {
   ratio: "9:16" | "16:9";
 };
 
-export function modeFromQuery(value: string | string[] | undefined): Mode {
-  return value === "brands" ? "brands" : "personal";
-}
-
-function film(name: string, label: string, title = "", text = "", ratio: Film["ratio"] = "9:16"): Film {
+function film(name: string, title: string, text = "", ratio: Film["ratio"] = "9:16"): Film {
   return {
     mp4: `/media/${name}.mp4`,
     webm: "",
     poster: `/media/${name}.jpg`,
-    label,
+    label: title,
     title,
     text,
     ratio,
   };
 }
 
-export const FILMS: Film[] = [
-  film(
-    "outback-signal",
-    "Outback Signal",
-    "Outback Signal",
-    "A brand story with one look from the first shot to the last.",
-    "16:9",
-  ),
-  film(
-    "tigre-and-the-last-chance",
-    "Tigre and the last chance",
-    "Tigre and the last chance",
-    "A mother, a child, and a kitten. The same faces the whole way through.",
-  ),
-  film(
-    "don-julio-and-canela",
-    "Don Julio and Canela",
-    "Don Julio and Canela",
-    "Same man, same dog, from the first frame to the last.",
-  ),
-  film(
-    "beto-and-osofuerte",
-    "Beto and OsoFuerte",
-    "Beto and OsoFuerte",
-    "Two minutes, one look, no reshoots.",
-  ),
-  film(
-    "lumabrew-brew-your-mood",
-    "LumaBrew",
-    "LumaBrew",
-    "A product, a morning, and a mood. Told in clay.",
-  ),
-  film(
-    "calm-in-your-ears",
-    "Calm in your ears",
-    "Calm in your ears",
-    "The problem, then the product, in one short film.",
-  ),
+export const PHONE_FILMS: Film[] = [
+  film("lumabrew-brew-your-mood", "LumaBrew", "A product, a morning, and a mood."),
+  film("beto-and-osofuerte", "Beto and OsoFuerte", "Two minutes, one look, no reshoots."),
+  film("calm-in-your-ears", "Calm in your ears", "The problem, then the product."),
 ];
 
-export const PERSONAL_HERO = FILMS[1];
-export const BRAND_HERO = FILMS[0];
+export const WIDE_FILM = film("outback-signal", "Outback Signal", "One look from the first shot to the last.", "16:9");
 
-export const COPY = {
-  personal: {
-    label: "Personal",
-    title: "Any idea. Animated like a billion dollar studio made it.",
-    sub: "Every film on this page was one-shotted. You write the idea. We direct it. Your own KIE key pays the model.",
-    cta: "I want to bring my idea to life",
-    films: "Watch the films",
-    trust: "You own every video you make.",
-    metaTitle: "Any idea, animated like a billion dollar studio made it",
-    metaDescription:
-      "Turn any idea into a studio quality animation. No prompting, consistent characters, ready in about 10 minutes.",
-  },
-  brands: {
-    label: "Brands",
-    title: "The ads breaking the market right now. One\u2011shotted.",
-    sub: "A script, your product, one generation. You pay the model on your KIE key. You pay us for the direction that makes the first take the ad.",
-    cta: "I want my winning ad",
-    films: "Watch the ads",
-    trust: "Built for organic and paid.",
-    metaTitle: "The ads breaking the market right now, one-shotted",
-    metaDescription:
-      "A script and your product, one generation. You pay the model on your KIE key. You pay Clickframes for the direction.",
-  },
-} as const;
+export const META = {
+  title: "Drama ads that sell, one-shotted | Clickframes",
+  description:
+    "Paste your product page. Clickframes writes the story, locks the characters and directs the first take of a drama ad, rendered on your own KIE key.",
+};
 
-export const PERSONAL_EDGE = [
-  { title: "One-shotted", text: "The films on this page were generated once. The first take is the film, or about 90% of it." },
-  { title: "The same face the whole way", text: "Voices, looks, and places stay put from the first shot to the last." },
-  { title: "The bad takes never get made", text: "You are not spending the budget on generations you throw away." },
+export const MARQUEE = ["Drama ads", "One-shotted", "No editors", "Your own KIE key", "About 10 minutes"];
+
+export const HERO = {
+  eyebrow: "The ad format breaking Meta and TikTok right now",
+  title: ["Drama Ads That", "Actually Sell."],
+  cta: "Make my first drama ad",
+  trust: "About 10 minutes · You own every ad",
+};
+
+export const BEAT_WORDS = ["THE PROBLEM", "THE TWIST", "THE PRODUCT", "THE AFTER", "NO SKIP", "REPLAYED"];
+
+export const WHY = [
+  { title: "Stop the scroll.", text: "It opens inside the conflict, so it never looks like an ad." },
+  { title: "Hold every second.", text: "A twist before the product keeps them watching to the end." },
+  { title: "Sell the ending.", text: "The product is how the story ends well. Buying is the next step." },
 ];
 
-export const BRAND_PAIN = [
-  { title: "Editors on their schedule", text: "Waiting days for a cut you needed yesterday." },
-  { title: "Editor fees on every ad", text: "A new invoice for every concept you want to test." },
-  { title: "Paying again for retries", text: "Every revision on every ad adds to the bill." },
+export const STACK = ["Seedance 2.0", "KIE", "Meta Ads", "Instagram Reels", "TikTok", "YouTube Shorts", "Shopify"];
+
+export const BEATS = [
+  {
+    key: "problem",
+    title: "Open on the problem.",
+    text: ["Start", "inside the pain", " your customer already has. Shown in the body and the room, not said in a voiceover."],
+    lines: ["\"Not again.\"", "\"Why is it always me?\""],
+    span: [0, 0.32],
+  },
+  {
+    key: "turn",
+    title: "Twist the knife.",
+    text: ["It gets worse, or the cause is not what they thought. The", "twist", " is the reason nobody skips."],
+    lines: ["\"It was never the coffee.\""],
+    span: [0.32, 0.5],
+  },
+  {
+    key: "use",
+    title: "Hand over the product.",
+    text: ["The product arrives the way life would hand it over, and they", "use it like a person would", ". No pitch."],
+    lines: ["\"Try mine.\""],
+    span: [0.5, 0.72],
+  },
+  {
+    key: "after",
+    title: "Show the after.",
+    text: ["The same situation, going better. Long enough to", "see the change", ", in their words, not a slogan."],
+    lines: ["\"I slept. Actually slept.\""],
+    span: [0.72, 1],
+  },
+] as const;
+
+export const CONSISTENCY = [
+  { src: "/media/consistency/don-julio-3.jpg", label: "Shot 03" },
+  { src: "/media/consistency/don-julio-22.jpg", label: "Shot 22" },
+  { src: "/media/consistency/don-julio-34.jpg", label: "Shot 34" },
+  { src: "/media/consistency/don-julio-55.jpg", label: "Shot 55" },
 ];
 
-export const STEPS = [
+export const BRIEF_TABS = [
   {
-    title: "Write it in plain language",
-    text: "A script, a storyboard, a photo, or a song. The way you would explain it to a friend.",
+    name: "brief.json",
+    lines: [
+      "{",
+      '  "product": "LumaBrew",',
+      '  "pain": "Mornings start flat. Three coffees in, still no focus.",',
+      '  "audience": "Remote workers who start before 8am",',
+      '  "person": "A designer on her first call of the day, camera on",',
+      '  "language": "english"',
+      "}",
+    ],
   },
   {
-    title: "We direct the first take",
-    text: "Clickframes locks the look, the shots, and the continuity, so the first generation is the film, or about 90% of it.",
+    name: "beats.json",
+    lines: [
+      "[",
+      '  { "beat": "problem", "seconds": 12 },',
+      '  { "beat": "turn",    "seconds": 6 },',
+      '  { "beat": "use",     "seconds": 10 },',
+      '  { "beat": "after",   "seconds": 12 }',
+      "]",
+    ],
   },
   {
-    title: "Render on your KIE key",
-    text: "You add your own KIE API key. The model bills your KIE account. The membership is only the workflow.",
+    name: "scene_03.json",
+    lines: [
+      "{",
+      '  "beat": "turn",',
+      '  "seconds": 6,',
+      '  "camera": "close-up, her face lit by the laptop",',
+      '  "action": "she checks her mug: still full, gone cold",',
+      '  "line": "It was never the coffee.",',
+      '  "product_in_shot": false',
+      "}",
+    ],
   },
+  {
+    name: "cast_lock.json",
+    lines: [
+      "{",
+      '  "lead": "same face, same hair, same hoodie, every shot",',
+      '  "product": "same can, same label, same color",',
+      '  "look": "warm clay, soft window light",',
+      '  "places": ["kitchen", "desk", "balcony"]',
+      "}",
+    ],
+  },
+];
+
+export const CONTROL = [
+  "Reads your product page and finds the sharpest pain",
+  "Picks the audience and one real person to follow",
+  "Problem, twist, product, after. Timed to the second",
+  "The same faces, product and logo in every shot",
+  "Dialogue that sounds like people, not copy",
+  "Swap the pain, the audience or the person in one click",
+  "Dialogue in English or Spanish",
+  "Up to 3 minutes per ad, about 10 minutes to render",
+];
+
+export const FEEDS = [
+  { name: "Meta Ads", text: "Run it paid. Test a new story instead of a new hook." },
+  { name: "Reels & TikTok", text: "Same 9:16 file. It plays like a show, not a spot." },
+  { name: "Shorts & YouTube", text: "Go 16:9 when the story needs the room." },
 ];
 
 export const RENDER_COMPARE = [
-  { name: "KIE", price: 37, note: "Your key. You pay the model.", yours: true },
-  { name: "Higgsfield", price: 55, note: "Same five minutes.", yours: false },
+  { name: "KIE", price: 37, note: "Your key. The model's own price.", yours: true },
+  { name: "Higgsfield", price: 55, note: "Same five minutes, their credits.", yours: false },
   { name: "Fal", price: 66, note: "Same model, their API price.", yours: false },
 ] as const;
 
-export function faqFor(mode: Mode) {
-  return [
-    {
-      q: "Do I need to know how to prompt?",
-      a: "No. Write the idea the way you would explain it to a friend. Clickframes handles the rest.",
-    },
-    {
-      q: "Will the characters stay the same?",
-      a:
-        mode === "brands"
-          ? "Yes. Your product, mascot, logo, and characters stay identical from shot to shot."
-          : "Yes. Faces, voices, places, and scenes stay consistent for the whole video.",
-    },
-    { q: "How long does it take?", a: "About 10 minutes for most animations." },
-    {
-      q: "What do I pay for?",
-      a: "Two bills. The membership is the Clickframes workflow. The video is billed on your own KIE API key, so you pay the model directly.",
-    },
-    {
-      q: "Why do I need a KIE key?",
-      a: "KIE is the API that runs the video model. You create a key on your KIE account, paste it into Clickframes, and every film is charged there. We never resell the seconds.",
-    },
-    { q: "How long can a video be?", a: "Up to 3 minutes today. Up to 5 minutes is coming soon." },
-    { q: "Who owns the video?", a: "You do. You own all the rights to every video you create on Clickframes." },
-  ];
-}
+export const INCLUDED = [
+  "The full drama ad workflow",
+  "Story, beats and dialogue written for you",
+  "Locked characters, product and look",
+  "Rendered on your own KIE key",
+  "You own every ad you make",
+];
+
+export const FAQ = [
+  {
+    q: "What is a drama ad?",
+    a: "A short story that sells. A real problem, a twist, the product, and life after it. It plays like an episode, so people watch it to the end instead of skipping it.",
+  },
+  {
+    q: "Do I need to know how to prompt?",
+    a: "No. Paste your product page and Clickframes writes the pain, the audience, the person and the story. You approve it or swap any part in one click.",
+  },
+  {
+    q: "Will my product and characters stay the same?",
+    a: "Yes. Your product, logo, mascot and characters stay identical from the first shot to the last.",
+  },
+  {
+    q: "Why do I need my own KIE key?",
+    a: "KIE runs the video model at the model's own price. Your key bills your KIE account directly, so you never pay our markup on the model, and we never resell seconds.",
+  },
+  {
+    q: "What do I pay for?",
+    a: "Two bills. The membership is the Clickframes workflow: the story, the shots and the direction. The video itself is billed on your KIE key.",
+  },
+  { q: "How long does it take?", a: "About 10 minutes for most ads. Up to 3 minutes of video per ad." },
+  { q: "Who owns the ads?", a: "You do. You own all the rights to every ad you create, for organic and paid." },
+];

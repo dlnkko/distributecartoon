@@ -1,57 +1,45 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
-import { Brand } from "@/components/Brand";
+import { Mark } from "@/components/Brand";
 import { CONTACT_EMAIL } from "@/lib/site";
 import {
-  BRAND_HERO,
-  BRAND_PAIN,
-  COPY,
-  FILMS,
-  PERSONAL_EDGE,
-  PERSONAL_HERO,
+  BEATS,
+  BEAT_WORDS,
+  BRIEF_TABS,
+  CONSISTENCY,
+  CONTROL,
+  FAQ,
+  FEEDS,
+  HERO,
+  INCLUDED,
+  MARQUEE,
+  PHONE_FILMS,
   RENDER_COMPARE,
-  STEPS,
-  faqFor,
+  STACK,
+  WHY,
+  WIDE_FILM,
   type Film,
-  type Mode,
 } from "@/components/landing/copy";
 import { startCheckout } from "@/components/landing/checkout";
 import { track } from "@/components/landing/track";
-import { VideoCard } from "@/components/landing/VideoCard";
 import { LANDING_MINUTES } from "@/lib/plans";
 
-export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: string }) {
-  const [mode, setMode] = useState(initialMode);
-  const copy = COPY[mode];
+const WRAP = "mx-auto w-full max-w-[44rem] px-5";
+const H2 = "text-[2.5rem] font-semibold leading-[1.02] tracking-[-0.035em] text-[#0c0c0c] sm:text-[3.5rem]";
+const SUB = "text-[1.0625rem] leading-relaxed text-[#3f434b]";
+
+export function LandingPage() {
+  const [scrolled, setScrolled] = useState(false);
   const [sticky, setSticky] = useState(false);
-  const [openFaq, setOpenFaq] = useState<string | null>(null);
-
-  useEffect(() => {
-    const sync = () => {
-      const next = new URLSearchParams(window.location.search).get("mode") === "brands" ? "brands" : "personal";
-      setMode(next);
-    };
-    window.addEventListener("popstate", sync);
-    return () => window.removeEventListener("popstate", sync);
-  }, []);
-
-  useEffect(() => {
-    document.title = COPY[mode].metaTitle;
-  }, [mode]);
-
-  function pickMode(next: Mode) {
-    if (next === mode) return;
-    const url = next === "brands" ? `${base}?mode=brands` : base;
-    window.history.pushState(null, "", url);
-    setMode(next);
-  }
 
   useEffect(() => {
     const hero = document.getElementById("hero");
-    if (!hero) return;
-    const update = () => setSticky(hero.getBoundingClientRect().bottom < 80);
+    const update = () => {
+      setScrolled(window.scrollY > 240);
+      if (hero) setSticky(hero.getBoundingClientRect().bottom < 0);
+    };
     update();
     window.addEventListener("scroll", update, { passive: true });
     window.addEventListener("resize", update);
@@ -62,107 +50,130 @@ export function LandingPage({ mode: initialMode, base }: { mode: Mode; base: str
   }, []);
 
   return (
-    <main className={`library-shell min-h-screen text-[var(--cf-ink)] ${sticky ? "pb-24 md:pb-0" : ""}`}>
-      <header className="sticky top-0 z-30 flex items-center justify-between gap-3 bg-[#0b0b0d]/70 px-4 py-3 backdrop-blur-md sm:px-6">
-        <Brand tone="accent" />
-        <ModeToggle mode={mode} base={base} onPick={pickMode} />
-        <nav className="flex items-center gap-2">
-          <a href="#pricing" className="hidden rounded-xl border border-white/15 px-4 py-2 text-sm font-semibold sm:inline-flex">
-            Pricing
+    <main className={`lp min-h-screen overflow-x-clip bg-white text-[#0c0c0c] ${sticky ? "pb-24 md:pb-0" : ""}`}>
+      <TopMarquee />
+      <header className="sticky top-0 z-40 border-b border-black/[0.06] bg-white/80 backdrop-blur-md">
+        <div className="mx-auto flex h-14 w-full max-w-[44rem] items-center justify-between gap-3 px-5">
+          <a href="#top" aria-label="Clickframes, back to top" className="flex items-center gap-2 text-[#0c0c0c]">
+            <Mark className="h-7 w-7" />
+            <span className="text-[1.05rem] font-semibold tracking-[-0.04em]">clickframes</span>
           </a>
-          <a href="/login" className="cf-btn btn-primary whitespace-nowrap px-3 py-2 text-sm font-semibold sm:px-4">
-            Sign in
-          </a>
-        </nav>
+          <p className={`hidden text-sm text-[#3f434b] transition-opacity duration-300 md:block ${scrolled ? "opacity-100" : "opacity-0"}`}>
+            Drama ads. <span className="font-semibold text-[#0c0c0c]">One-shotted.</span>
+          </p>
+          <nav className="flex items-center gap-2">
+            <a href="/login" className="rounded-lg px-3 py-2 text-sm text-[#3f434b] hover:text-[#0c0c0c]">
+              Log in
+            </a>
+            <a
+              href="/login"
+              onClick={() => track("hero_cta_click", { place: "header" })}
+              className="rounded-xl border border-black/10 bg-white px-3.5 py-2 text-sm font-semibold text-[#3d5afe] shadow-[0_2px_10px_rgba(61,90,254,0.12)]"
+            >
+              Get started <span aria-hidden="true">→</span>
+            </a>
+          </nav>
+        </div>
       </header>
 
-      <div key={mode} className="land-swap">
-      <section id="hero" className="relative isolate min-h-[100svh] overflow-hidden">
-        <HeroVideo clip={mode === "brands" ? BRAND_HERO : PERSONAL_HERO} />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0b0b0d] via-[#0b0b0d]/75 to-[#0b0b0d]/45" />
-        <Reveal className="relative mx-auto flex min-h-[calc(100svh-4.5rem)] max-w-4xl flex-col items-start justify-end px-4 pb-16 sm:px-6">
-          <HeroCopy copy={copy} mode={mode} light />
-        </Reveal>
-      </section>
-
-      {mode === "personal" ? (
-        <PersonalBody />
-      ) : (
-        <BrandBody />
-      )}
-
-      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <PointRow title="How it works" items={STEPS} />
-      </div>
-
-      <WorkflowPay mode={mode} />
-
-      <Faq mode={mode} open={openFaq} onToggle={(q) => {
-        setOpenFaq((current) => (current === q ? null : q));
-        track("faq_open", { question: q, mode });
-      }} />
-
-      <footer className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4 py-10 text-xs text-[var(--cf-muted)] sm:px-6">
-        <span>Clickframes</span>
-        <nav className="flex flex-wrap items-center gap-x-4 gap-y-2" aria-label="Legal">
-          <a href="/privacy" className="hover:text-white">Privacy</a>
-          <a href="/terms" className="hover:text-white">Terms</a>
-          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-white">{CONTACT_EMAIL}</a>
-        </nav>
-      </footer>
-      </div>
+      <Hero />
+      <PhoneShowcase />
+      <WhySection />
+      <StackRow />
+      <Blueprint />
+      <CharacterLock />
+      <ControlRoom />
+      <Feeds />
+      <Pricing />
+      <Faq />
+      <FinalCta />
+      <Footer />
 
       {sticky ? (
-        <div className="fixed inset-x-0 bottom-0 z-[80] border-t border-white/10 bg-[#0b0b0d]/95 p-3 md:hidden">
-          <a href="/login" onClick={() => track("hero_cta_click", { mode, place: "sticky" })} className="cf-btn btn-primary block w-full py-3 text-center text-sm font-semibold">
-            {copy.cta}
-          </a>
+        <div className="fixed inset-x-0 bottom-0 z-[60] border-t border-black/10 bg-white/95 p-3 backdrop-blur md:hidden">
+          <Cta place="sticky" className="w-full justify-center" />
         </div>
       ) : null}
     </main>
   );
 }
 
-function ModeToggle({ mode, base, onPick }: { mode: Mode; base: string; onPick: (mode: Mode) => void }) {
+function TopMarquee() {
+  const items = [...MARQUEE, ...MARQUEE, ...MARQUEE];
   return (
-    <div className="relative grid grid-cols-2 rounded-xl bg-white/5 p-1" role="group" aria-label="Audience">
-      <span
-        aria-hidden
-        className={`pointer-events-none col-start-1 row-start-1 rounded-lg cf-grad transition-transform duration-500 ease-[cubic-bezier(0.22,1,0.36,1)] ${mode === "brands" ? "translate-x-full" : "translate-x-0"}`}
-      />
-      {(["personal", "brands"] as const).map((item, index) => (
-        <a
-          key={item}
-          href={item === "brands" ? `${base}?mode=brands` : base}
-          aria-current={mode === item ? "true" : undefined}
-          onClick={(event) => {
-            event.preventDefault();
-            track("mode_toggle", { mode: item });
-            onPick(item);
-          }}
-          className={`relative z-10 row-start-1 rounded-lg px-3 py-1.5 text-center text-sm font-medium transition-colors duration-300 sm:px-4 ${index === 0 ? "col-start-1" : "col-start-2"} ${mode === item ? "text-white" : "text-[var(--cf-muted)]"}`}
-        >
-          {COPY[item].label}
-        </a>
-      ))}
-    </div>
+    <a
+      href="/login"
+      aria-label="Make your first drama ad: sign up now"
+      onClick={() => track("hero_cta_click", { place: "marquee" })}
+      className="lp-bar block overflow-hidden py-2 text-white"
+    >
+      <div className="land-marquee flex w-max items-center gap-6 whitespace-nowrap text-[13px] font-extrabold uppercase italic tracking-tight">
+        {[0, 1].map((copy) => (
+          <div key={copy} className="flex items-center gap-6" aria-hidden={copy === 1}>
+            {items.map((item, index) => (
+              <span key={`${item}-${index}`} className="flex items-center gap-6">
+                {index % MARQUEE.length === 1 ? (
+                  <span className="rounded-md bg-black px-2.5 py-1 not-italic text-white">Start now</span>
+                ) : null}
+                <span>{item}</span>
+                <span className="text-white/60">✦</span>
+              </span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </a>
   );
 }
 
-function Reveal({ children, className = "", delay = 0 }: { children: React.ReactNode; className?: string; delay?: number }) {
+function Pill({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 rounded-full border border-black/[0.08] bg-white px-2.5 py-1 text-xs font-medium text-[#3f434b] shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+      <span className="h-1.5 w-1.5 rounded-full bg-[#3d5afe]" />
+      {children}
+    </span>
+  );
+}
+
+function Chip({ children }: { children: ReactNode }) {
+  return (
+    <span className="inline-block rounded-md bg-[#f2f3f5] px-1.5 py-px font-semibold text-[#0c0c0c] ring-1 ring-black/[0.06]">
+      {children}
+    </span>
+  );
+}
+
+function Cta({ place, label = HERO.cta, className = "" }: { place: string; label?: string; className?: string }) {
+  return (
+    <a
+      href="/login"
+      onClick={() => track("hero_cta_click", { place })}
+      className={`btn-primary lp-cta gap-3 rounded-2xl py-2 pl-5 pr-2 text-[1.0625rem] font-bold tracking-[-0.02em] text-white ${className}`}
+    >
+      {label}
+      <span aria-hidden="true" className="grid h-9 w-9 place-items-center rounded-xl bg-white/20 text-lg">
+        →
+      </span>
+    </a>
+  );
+}
+
+function Reveal({ children, className = "", delay = 0 }: { children: ReactNode; className?: string; delay?: number }) {
   const ref = useRef<HTMLDivElement>(null);
   const [on, setOn] = useState(false);
 
   useEffect(() => {
     const node = ref.current;
     if (!node) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setOn(true);
-      return;
-    }
+    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     const observer = new IntersectionObserver(
-      ([entry]) => setOn(Boolean(entry?.isIntersecting)),
-      { threshold: 0.16, rootMargin: "0px 0px -8% 0px" },
+      ([entry]) => {
+        if (entry?.isIntersecting) {
+          setOn(true);
+          observer.disconnect();
+        }
+      },
+      { threshold: 0.12, rootMargin: "0px 0px -6% 0px" },
     );
     observer.observe(node);
     return () => observer.disconnect();
@@ -175,238 +186,654 @@ function Reveal({ children, className = "", delay = 0 }: { children: React.React
   );
 }
 
-function HeroCopy({
-  copy,
-  mode,
-  light = false,
-}: {
-  copy: (typeof COPY)[Mode];
-  mode: Mode;
-  light?: boolean;
-}) {
-  const ghost = light
-    ? "border-white/25 text-white"
-    : "border-white/15";
+function SectionHead({ pill, title, text, center = true }: { pill: string; title: ReactNode; text?: ReactNode; center?: boolean }) {
   return (
-    <>
-      <h1 className={`land-display max-w-3xl text-5xl leading-[0.95] sm:text-7xl ${light ? "text-white" : ""}`}>{copy.title}</h1>
-      <p className={`mt-5 max-w-xl text-lg leading-relaxed ${light ? "text-white/80" : "text-[var(--cf-muted)]"}`}>{copy.sub}</p>
-      <div className="mt-7 flex flex-wrap items-center gap-3">
-        <a href="#films" onClick={() => track("hero_films_click", { mode })} className={`rounded-xl border px-5 py-3 text-sm font-semibold ${ghost}`}>
-          {copy.films}
-        </a>
-        <a href="/login" onClick={() => track("hero_cta_click", { mode })} className="cf-btn btn-primary px-5 py-3 text-center text-sm font-semibold">
-          {copy.cta}
-        </a>
-      </div>
-      <p className={`mt-4 text-sm ${light ? "text-white/70" : "text-[var(--cf-muted)]"}`}>{copy.trust}</p>
-    </>
+    <Reveal className={center ? "text-center" : ""}>
+      <Pill>{pill}</Pill>
+      <h2 className={`${H2} mt-4`}>{title}</h2>
+      {text ? <p className={`${SUB} mt-4 ${center ? "mx-auto max-w-xl" : "max-w-xl"}`}>{text}</p> : null}
+    </Reveal>
   );
 }
 
-function HeroVideo({ clip }: { clip: Film }) {
-  const [failed, setFailed] = useState(false);
-  const video = useRef<HTMLVideoElement>(null);
+function Hero() {
+  return (
+    <section id="hero" className="relative">
+      <div id="top" className="absolute -top-24" />
+      <div className={`${WRAP} pb-12 pt-14 text-center sm:pt-20`}>
+        <Reveal>
+          <Pill>{HERO.eyebrow}</Pill>
+          <h1 className="mt-6 text-[2.9rem] font-semibold leading-[1] tracking-[-0.04em] text-[#0c0c0c] sm:text-[4.5rem]">
+            {HERO.title[0]}
+            <br />
+            <span className="lp-underline">{HERO.title[1]}</span>
+          </h1>
+          <p className={`${SUB} mx-auto mt-6 max-w-[34rem]`}>
+            Paste your product page. Clickframes writes the story, locks the characters and directs the{" "}
+            <Chip>first take</Chip>. A drama ad people <Chip>watch to the end</Chip>, ready for{" "}
+            <Chip>Meta Ads</Chip>, <Chip>Reels</Chip> and <Chip>TikTok</Chip>.
+          </p>
+          <div className="mt-6 flex items-center justify-center -space-x-2">
+            {[...PHONE_FILMS, WIDE_FILM].map((film) => (
+              <img
+                key={film.poster}
+                src={film.poster}
+                alt=""
+                className="h-9 w-9 rounded-full object-cover ring-2 ring-white shadow-[0_0_0_3.5px_#3d5afe]"
+              />
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-[#6b7079]">Every ad on this page was one-shotted · No editors, no reshoots</p>
+          <div className="mt-7 flex justify-center">
+            <Cta place="hero" />
+          </div>
+          <p className="mt-3 text-[13px] text-[#6b7079]">{HERO.trust}</p>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function PhoneShowcase() {
+  const rows = Array.from({ length: 9 }, (_, index) => index);
+  return (
+    <section aria-label="What the ads look like" className={WRAP}>
+      <Reveal>
+        <div className="relative h-[460px] overflow-hidden rounded-[2rem] border border-black/[0.06] bg-[#f6f7f9] sm:h-[540px]">
+          <div aria-hidden="true" className="absolute inset-0 flex flex-col justify-center gap-2 opacity-90">
+            {rows.map((row) => (
+              <div
+                key={row}
+                className={`land-marquee flex w-max whitespace-nowrap text-[1.35rem] font-bold tracking-[-0.03em] text-[#d4d7dd] ${row % 2 ? "lp-reverse" : ""}`}
+                style={{ animationDuration: `${38 + row * 3}s` }}
+              >
+                {[0, 1].map((copy) => (
+                  <span key={copy} className="pr-4">
+                    {BEAT_WORDS.map((word, index) => (
+                      <span key={`${word}-${index}`}>
+                        {BEAT_WORDS[(index + row) % BEAT_WORDS.length]}
+                        <span className="px-3 text-[#3d5afe]">•</span>
+                      </span>
+                    ))}
+                  </span>
+                ))}
+              </div>
+            ))}
+          </div>
+          <Phone film={PHONE_FILMS[0]} className="left-1/2 top-16 z-10 w-[150px] -translate-x-[150%] -rotate-[8deg] sm:w-[190px] sm:-translate-x-[140%]" />
+          <Phone film={PHONE_FILMS[2]} className="left-1/2 top-16 z-10 w-[150px] translate-x-[50%] rotate-[8deg] sm:w-[190px] sm:translate-x-[40%]" />
+          <Phone film={PHONE_FILMS[1]} className="left-1/2 top-8 z-20 w-[170px] -translate-x-1/2 sm:w-[215px]" eager />
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 h-24 bg-gradient-to-t from-[#f6f7f9] to-transparent" />
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+function Phone({ film, className, eager = false }: { film: Film; className: string; eager?: boolean }) {
+  const ref = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
-    const node = video.current;
-    if (!node) return;
-    node.muted = true;
-    node.defaultMuted = true;
+    const video = ref.current;
+    if (!video) return;
+    video.muted = true;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    void node.play().catch(() => undefined);
-    const onScroll = () => {
-      node.style.transform = `translate3d(0, ${window.scrollY * 0.12}px, 0) scale(1.08)`;
-    };
-    onScroll();
-    window.addEventListener("scroll", onScroll, { passive: true });
-    return () => window.removeEventListener("scroll", onScroll);
-  }, [clip.mp4]);
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry?.isIntersecting) void video.play().catch(() => undefined);
+        else video.pause();
+      },
+      { threshold: 0.2 },
+    );
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, []);
 
   return (
-    <div className="absolute inset-0 -z-10 overflow-hidden">
-      {failed ? (
-        <div className="h-full w-full bg-[url('/media/poster.svg')] bg-cover" />
-      ) : (
+    <div className={`absolute aspect-[9/19] rounded-[2.1rem] bg-[#16171a] p-[5px] shadow-[0_30px_60px_-20px_rgba(0,0,0,0.45)] ring-1 ring-black/20 ${className}`}>
+      <div className="relative h-full w-full overflow-hidden rounded-[1.75rem] bg-black">
         <video
-          ref={video}
-          className={`h-full w-full scale-105 object-cover ${clip.ratio === "9:16" ? "object-[center_28%]" : "object-center"}`}
-          poster={clip.poster}
+          ref={ref}
+          className="absolute inset-0 h-full w-full object-cover"
+          poster={film.poster}
           muted
           loop
           playsInline
-          autoPlay
-          preload="auto"
-          aria-hidden="true"
-          onError={() => setFailed(true)}
+          preload={eager ? "auto" : "metadata"}
+          aria-label={film.title}
         >
-          {clip.webm ? <source src={clip.webm} type="video/webm" /> : null}
-          <source src={clip.mp4} type="video/mp4" />
+          <source src={film.mp4} type="video/mp4" />
         </video>
-      )}
+        <div className="absolute left-1/2 top-2 h-[18px] w-[34%] -translate-x-1/2 rounded-full bg-black" />
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 to-transparent px-3 pb-3 pt-10 text-left">
+          <p className="text-[11px] font-semibold text-white">{film.title}</p>
+          <p className="mt-0.5 text-[10px] leading-snug text-white/70">{film.text}</p>
+        </div>
+      </div>
     </div>
   );
 }
 
-function FilmRail({ films, start = 0 }: { films: Film[]; start?: number }) {
-  const [active, setActive] = useState(start);
-  const scroller = useRef<HTMLDivElement>(null);
-  const film = films[active] ?? films[0];
-  if (!film) return null;
-  const wide = film.ratio === "16:9";
+function WhySection() {
+  return (
+    <section className="pt-24 sm:pt-32">
+      <div className={WRAP}>
+        <SectionHead
+          pill="Why drama ads win"
+          title={
+            <>
+              It doesn&apos;t feel like an ad.
+              <br />
+              That&apos;s why it sells.
+            </>
+          }
+        />
+        <div className="mt-10 grid gap-6 text-center sm:grid-cols-3 sm:gap-4">
+          {WHY.map((item, index) => (
+            <Reveal key={item.title} delay={index * 90}>
+              <h3 className="text-lg font-semibold tracking-[-0.02em]">{item.title}</h3>
+              <p className="mx-auto mt-2 max-w-[15rem] text-sm leading-relaxed text-[#6b7079]">{item.text}</p>
+            </Reveal>
+          ))}
+        </div>
+      </div>
+      <Reveal>
+        <p aria-hidden="true" className="lp-giant mt-16 select-none text-center">
+          NOBODY SKIPS
+          <br />
+          A PLOT TWIST.
+        </p>
+        <p className="mt-4 px-5 text-center text-[1.75rem] font-semibold tracking-[-0.03em] text-[#3d5afe] sm:text-[2.25rem]">
+          Sell with the story, not the interruption.
+        </p>
+      </Reveal>
+    </section>
+  );
+}
 
-  function pick(index: number) {
-    const next = (index + films.length) % films.length;
-    setActive(next);
-    const node = scroller.current?.children[next];
-    if (node instanceof HTMLElement) node.scrollIntoView({ behavior: "smooth", inline: "center", block: "nearest" });
-  }
+function StackRow() {
+  const items = [...STACK, ...STACK];
+  return (
+    <section aria-label="What it runs on" className="pt-24">
+      <p className="text-center text-xs text-[#6b7079]">What your ads run on, start to finish</p>
+      <div className="lp-fade mt-5 overflow-hidden">
+        <div className="land-marquee flex w-max items-center" style={{ animationDuration: "40s" }}>
+          {[0, 1].map((copy) => (
+            <div key={copy} className="flex items-center" aria-hidden={copy === 1}>
+              {items.map((item, index) => (
+                <span key={`${item}-${index}`} className="flex items-center gap-2 px-6 text-[1.05rem] font-medium tracking-[-0.02em] text-[#3f434b]">
+                  <span className="grid h-6 w-6 place-items-center rounded-md bg-[#0c0c0c] text-[10px] font-bold text-white">
+                    {item.slice(0, 1)}
+                  </span>
+                  {item}
+                </span>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+const TIMELINE = Array.from({ length: 34 }, (_, index) => {
+  const at = (index + 0.5) / 34;
+  const beat = BEATS.find((item) => at >= item.span[0] && at < item.span[1]) ?? BEATS[BEATS.length - 1];
+  return { at, beat: beat.key, tall: index % 3 !== 1 };
+});
+
+const BEAT_COLOR: Record<string, string> = {
+  problem: "bg-[#d9dce2]",
+  turn: "bg-[#b9c7ff]",
+  use: "bg-[#3d5afe]",
+  after: "bg-[#ff7ab8]",
+};
+
+function Blueprint() {
+  const ref = useRef<HTMLElement>(null);
+  const [progress, setProgress] = useState(0);
+
+  useEffect(() => {
+    const node = ref.current;
+    if (!node) return;
+    const update = () => {
+      const box = node.getBoundingClientRect();
+      const room = box.height - window.innerHeight;
+      setProgress(room > 0 ? Math.min(1, Math.max(0, -box.top / room)) : 0);
+    };
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    return () => {
+      window.removeEventListener("scroll", update);
+      window.removeEventListener("resize", update);
+    };
+  }, []);
+
+  const active = Math.max(0, BEATS.findIndex((beat) => progress < beat.span[1]));
+  const step = BEATS[active] ?? BEATS[BEATS.length - 1];
+  const seconds = (progress * 40).toFixed(1).padStart(4, "0");
 
   return (
-    <div className="mt-8">
-      <div
-        className={`land-stage group relative overflow-hidden rounded-[1.35rem] bg-[#101014] ${wide ? "is-wide" : ""}`}
-        tabIndex={0}
-        aria-label={film.title}
-        onKeyDown={(event) => {
-          if (event.key === "ArrowRight") {
-            event.preventDefault();
-            pick(active + 1);
-          }
-          if (event.key === "ArrowLeft") {
-            event.preventDefault();
-            pick(active - 1);
-          }
-        }}
-      >
-        <div key={film.mp4} className="land-stage-in absolute inset-0">
-          <img src={film.poster} alt="" className="land-stage-blur absolute inset-0 h-full w-full object-cover" />
-          <div className="absolute inset-0 bg-black/30" />
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className={`relative ${wide ? "h-full w-full" : "land-stage-portrait"}`}>
-              <VideoCard clip={film} ratio="h-full w-full" play="always" quiet className="land-film h-full w-full" />
-              <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-gradient-to-t from-black/80 via-black/30 to-transparent px-4 pb-4 pt-16 sm:px-5 sm:pb-5">
-                <p key={film.title} className="land-stage-copy max-w-xl pr-10">
-                  <span className="text-[11px] tabular-nums tracking-[0.18em] text-white/55">
-                    {String(active + 1).padStart(2, "0")} / {String(films.length).padStart(2, "0")}
+    <section ref={ref} id="how" className="relative mt-24 h-[300vh] scroll-mt-20">
+      <div className="sticky top-14 flex min-h-[calc(100svh-3.5rem)] items-center">
+        <div className="mx-auto grid w-full max-w-[44rem] gap-8 px-5 md:max-w-[56rem] md:grid-cols-[1fr_1fr] md:items-center md:gap-12">
+          <div>
+            <Pill>The drama ad blueprint</Pill>
+            <h2 className="mt-4 text-[1.9rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[2.25rem]">
+              Directed beat by beat.
+              <br />
+              Built to be replayed.
+            </h2>
+            <div className="mt-6 grid grid-cols-4 gap-1.5" aria-hidden="true">
+              {BEATS.map((beat, index) => (
+                <span key={beat.key} className={`h-[3px] rounded-full transition-colors duration-300 ${index <= active ? "bg-[#3d5afe]" : "bg-[#e3e5ea]"}`} />
+              ))}
+            </div>
+            <p className="mt-3 text-sm text-[#6b7079]">
+              Step <span className="font-semibold text-[#3d5afe]">{String(active + 1).padStart(2, "0")}</span> / {String(BEATS.length).padStart(2, "0")}
+            </p>
+            <div key={step.key} className="land-stage-copy">
+              <h3 className="mt-2 text-[2.1rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[2.6rem]">{step.title}</h3>
+              <p className="mt-3 max-w-md text-[1.0625rem] leading-relaxed text-[#3f434b]">
+                {step.text[0]} <Chip>{step.text[1]}</Chip>
+                {step.text[2]}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                {step.lines.map((line) => (
+                  <span key={line} className="rounded-lg border border-black/[0.08] bg-white px-3 py-1.5 text-sm font-semibold shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+                    {line}
                   </span>
-                  <span className="land-display mt-1 block text-2xl text-white sm:text-3xl">{film.title}</span>
-                  <span className="mt-1 block text-sm leading-relaxed text-white/75">{film.text}</span>
-                </p>
+                ))}
+              </div>
+            </div>
+          </div>
+          <div>
+            <p className="hidden text-sm leading-relaxed text-[#6b7079] md:block">
+              Clickframes turns your product page into one <Chip>40-second drama ad</Chip>: the pain, the twist, the product and the after.
+            </p>
+            <div className="mt-5 rounded-2xl border border-black/[0.08] bg-white p-4 shadow-[0_20px_50px_-24px_rgba(0,0,0,0.25)]">
+              <div className="flex items-center justify-between text-[11px] text-[#6b7079]">
+                <span className="flex items-center gap-1.5">
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#ff3d8b]" />
+                  drama_ad · 9:16 · seedance 2.0
+                </span>
+                <span className="font-semibold tabular-nums text-[#0c0c0c]">00:{seconds} / 00:40</span>
+              </div>
+              <div className="relative mt-4">
+                <div className="relative h-3 text-[10px] text-[#6b7079]">
+                  {BEATS.map((beat, index) => (
+                    <span
+                      key={beat.key}
+                      className={`absolute top-0 ${index === active ? "font-semibold text-[#3d5afe]" : ""}`}
+                      style={{ left: `${beat.span[0] * 100}%` }}
+                    >
+                      {beat.key === "use" ? "Product" : beat.key === "turn" ? "Twist" : beat.key === "problem" ? "Problem" : "After"}
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-2 flex h-14 items-end gap-[3px]">
+                  {TIMELINE.map((bar, index) => (
+                    <span
+                      key={index}
+                      className={`flex-1 rounded-[3px] transition-opacity duration-200 ${BEAT_COLOR[bar.beat]} ${bar.tall ? "h-full" : "h-3/4"} ${bar.at <= progress ? "opacity-100" : "opacity-40"}`}
+                    />
+                  ))}
+                </div>
+                <span
+                  aria-hidden="true"
+                  className="absolute bottom-0 top-5 w-[2px] rounded-full bg-[#ff3d8b]"
+                  style={{ left: `${progress * 100}%` }}
+                >
+                  <span className="absolute -left-[4px] -top-1 h-2.5 w-2.5 rotate-45 rounded-[2px] bg-[#ff3d8b]" />
+                </span>
+              </div>
+              <div className="mt-4 h-1 overflow-hidden rounded-full bg-[#eef0f3]">
+                <div className="h-full rounded-full bg-[#3d5afe]" style={{ width: `${progress * 100}%` }} />
+              </div>
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 text-[10px] text-[#6b7079]">
+                <span className="flex flex-wrap gap-3">
+                  {BEATS.map((beat) => (
+                    <span key={beat.key} className="flex items-center gap-1">
+                      <span className={`h-2 w-2 rounded-sm ${BEAT_COLOR[beat.key]}`} />
+                      {beat.key === "use" ? "product" : beat.key === "turn" ? "twist" : beat.key}
+                    </span>
+                  ))}
+                </span>
+                <span className="font-semibold text-[#0c0c0c]">1 take</span>
               </div>
             </div>
           </div>
         </div>
-        <button type="button" aria-label="Previous film" onClick={() => pick(active - 1)} className="land-stage-nav left-3">
-          <span aria-hidden="true">‹</span>
-        </button>
-        <button type="button" aria-label="Next film" onClick={() => pick(active + 1)} className="land-stage-nav right-3">
-          <span aria-hidden="true">›</span>
-        </button>
       </div>
-      <div className="mt-4 flex justify-start sm:justify-center">
-        <div ref={scroller} className="land-rail flex max-w-full gap-2.5 overflow-x-auto px-0.5 pb-1 sm:gap-3" role="tablist" aria-label="Films">
-          {films.map((item, index) => {
-            const on = index === active;
-            const itemWide = item.ratio === "16:9";
-            return (
-              <button
-                key={item.mp4}
-                type="button"
-                role="tab"
-                aria-label={item.title}
-                aria-selected={on}
-                onClick={() => pick(index)}
-                className={`land-thumb shrink-0 ${on ? "is-on" : ""} ${itemWide ? "w-36 sm:w-44" : "w-[4.5rem] sm:w-[5.25rem]"}`}
-              >
-                <span className={`land-thumb-media block overflow-hidden rounded-xl ${itemWide ? "aspect-video" : "aspect-[9/16]"}`}>
-                  <img src={item.poster} alt="" className="h-full w-full object-cover" />
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-    </div>
+    </section>
   );
 }
 
-function PointRow({
-  title,
-  text,
-  items,
-  close,
-}: {
-  title: string;
-  text?: string;
-  items: readonly { title: string; text: string }[];
-  close?: string;
-}) {
+function CharacterLock() {
   return (
-    <section>
+    <section className={`${WRAP} pt-16 md:max-w-[56rem]`}>
+      <SectionHead
+        pill="Character lock"
+        title={
+          <>
+            One face.
+            <br />
+            Every single scene.
+          </>
+        }
+        text="AI ads look cheap when the face changes every shot. Clickframes locks your characters, your product and your look from the first frame to the last. These are real frames from one of our films."
+      />
       <Reveal>
-        <h2 className="land-display max-w-3xl text-3xl sm:text-4xl">{title}</h2>
-        {text ? <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">{text}</p> : null}
+        <div className="mt-10 flex items-center gap-2">
+          <span className="grid h-6 w-6 place-items-center rounded-md bg-[#ffe3ef] text-[11px] font-semibold text-[#ff3d8b]">01</span>
+          <div>
+            <p className="text-sm font-semibold">Same man, same dog, same product, 50 shots apart</p>
+            <p className="text-xs text-[#6b7079]">
+              No reference sheets to build. The lock is <Chip>part of the direction</Chip>.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
+          {CONSISTENCY.map((shot, index) => (
+            <figure key={shot.src} className="relative overflow-hidden rounded-2xl border border-black/[0.06] bg-[#f2f3f5]">
+              <img src={shot.src} alt={`Don Julio and Canela, ${shot.label}`} className="aspect-[3/4] w-full object-cover" />
+              <figcaption className="absolute inset-x-2 bottom-2 flex items-center justify-between rounded-lg bg-white/90 px-2.5 py-1.5 text-[11px] font-semibold backdrop-blur">
+                {shot.label}
+                <span className="font-normal text-[#6b7079]">{String(index + 1).padStart(2, "0")}</span>
+              </figcaption>
+            </figure>
+          ))}
+        </div>
       </Reveal>
-      <div className="mt-8 grid overflow-hidden rounded-3xl border border-white/10 bg-[var(--cf-surface)] md:grid-cols-3">
-        {items.map((item, index) => (
-          <article key={item.title} className="border-b border-white/10 p-6 last:border-b-0 md:border-b-0 md:border-r md:p-7 md:last:border-r-0">
-            <p className="text-[11px] tabular-nums tracking-[0.18em] text-[var(--cf-muted)]">{String(index + 1).padStart(2, "0")}</p>
-            <h3 className="mt-4 text-lg font-medium">{item.title}</h3>
-            <p className="mt-2 text-sm leading-relaxed text-[var(--cf-muted)]">{item.text}</p>
-          </article>
+      <div className="mt-4 grid gap-3 sm:grid-cols-2">
+        {[
+          { n: "02", title: "Your product, untouched", text: "The same can, label and color in every shot it appears in." },
+          { n: "03", title: "Your look, start to finish", text: "Clay, 3D or cinematic. One style for the whole ad." },
+        ].map((card, index) => (
+          <Reveal key={card.n} delay={index * 90}>
+            <div className="h-full rounded-2xl border border-black/[0.08] bg-white p-5">
+              <div className="flex items-center gap-2">
+                <span className="grid h-6 w-6 place-items-center rounded-md bg-[#ffe3ef] text-[11px] font-semibold text-[#ff3d8b]">{card.n}</span>
+                <p className="text-sm font-semibold">{card.title}</p>
+              </div>
+              <p className="mt-2 text-sm leading-relaxed text-[#6b7079]">{card.text}</p>
+            </div>
+          </Reveal>
         ))}
       </div>
-      {close ? <p className="mt-4 text-sm text-[var(--cf-muted)]">{close}</p> : null}
     </section>
   );
 }
 
-function FilmBlock({ title, text, start = 0 }: { title: string; text: string; start?: number }) {
+function ControlRoom() {
+  const [tab, setTab] = useState(0);
+  const file = BRIEF_TABS[tab] ?? BRIEF_TABS[0];
+
   return (
-    <section id="films" className="scroll-mt-24">
+    <section className={`${WRAP} pt-32 md:max-w-[56rem]`}>
+      <SectionHead
+        pill="The brief, written for you"
+        title={
+          <>
+            No prompts.
+            <br />
+            Every detail directed.
+          </>
+        }
+        text="Clickframes reads your product page and writes the brief: the pain, the audience, the person, the beats and the cast. You approve it, or swap any part in one click."
+      />
+      <div className="mt-10 grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-start">
+        <Reveal className="min-w-0">
+          <div className="overflow-hidden rounded-2xl border border-black/[0.08] bg-white shadow-[0_20px_50px_-24px_rgba(0,0,0,0.25)]">
+            <div className="flex items-center gap-1 border-b border-black/[0.06] px-3 py-2">
+              <span className="mr-2 flex gap-1.5" aria-hidden="true">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#ff5f57]" />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#febc2e]" />
+                <span className="h-2.5 w-2.5 rounded-full bg-[#28c840]" />
+              </span>
+              <div role="tablist" aria-label="Brief files" className="flex min-w-0 gap-1 overflow-x-auto">
+                {BRIEF_TABS.map((item, index) => (
+                  <button
+                    key={item.name}
+                    type="button"
+                    role="tab"
+                    aria-selected={tab === index}
+                    onClick={() => setTab(index)}
+                    style={{ fontFamily: "ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" }}
+                    className={`no-press shrink-0 rounded-md px-2 py-1 text-[11px]! ${tab === index ? "bg-[#eef1ff] text-[#3d5afe]" : "text-[#6b7079] hover:text-[#0c0c0c]"}`}
+                  >
+                    {item.name}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <pre className="min-h-[300px] overflow-x-auto px-4 py-4 font-mono text-[12px] leading-[1.75]">
+              {file.lines.map((line, index) => (
+                <div key={`${file.name}-${index}`} className="flex gap-4">
+                  <span className="w-4 shrink-0 select-none text-right text-[#b3b7bf]">{index + 1}</span>
+                  <Code line={line} />
+                </div>
+              ))}
+            </pre>
+            <div className="border-t border-black/[0.06] bg-[#fafbfc] px-4 py-3 text-xs text-[#6b7079]">
+              Written from a product page in seconds. Example brief.
+            </div>
+          </div>
+        </Reveal>
+        <Reveal delay={90} className="min-w-0">
+          <p className="text-sm font-semibold">Your drama ad control room</p>
+          <ul className="mt-3 divide-y divide-black/[0.06]">
+            {CONTROL.map((item) => (
+              <li key={item} className="flex gap-3 py-2.5 text-sm text-[#3f434b]">
+                <span aria-hidden="true" className="mt-0.5 grid h-[18px] w-[18px] shrink-0 place-items-center rounded-full bg-[#3d5afe] text-[10px] font-bold text-white">
+                  ✓
+                </span>
+                {item}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-4 text-xs leading-relaxed text-[#6b7079]">
+            Runs on <Chip>Seedance 2.0</Chip> through <Chip>KIE</Chip>. KIE bills your own key directly.
+          </p>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+function Code({ line }: { line: string }) {
+  const parts = line.split(/("[^"]*")/g);
+  return (
+    <span className="whitespace-pre text-[#0c0c0c]">
+      {parts.map((part, index) => {
+        if (index % 2 === 0) return <span key={index} className="text-[#8a8f98]">{part}</span>;
+        const key = /^\s*:/.test(parts[index + 1] ?? "");
+        return (
+          <span key={index} className={key ? "text-[#3d5afe]" : "text-[#b4237a]"}>
+            {part}
+          </span>
+        );
+      })}
+    </span>
+  );
+}
+
+function Feeds() {
+  const dearest = Math.max(...RENDER_COMPARE.map((row) => row.price));
+  return (
+    <section className={`${WRAP} pt-32 md:max-w-[56rem]`}>
+      <SectionHead
+        pill="Where it runs"
+        title={
+          <>
+            One ad.
+            <br />
+            Every feed.
+          </>
+        }
+        text="Run it paid, post it organic. Each feed has its own audience, so ship the same story everywhere and let the numbers pick the winner."
+      />
       <Reveal>
-        <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">One-shotted</p>
-        <h2 className="land-display mt-2 text-3xl sm:text-4xl">{title}</h2>
-        <p className="mt-3 max-w-xl text-base leading-relaxed text-[var(--cf-muted)]">{text}</p>
+        <div className="relative mt-10 overflow-hidden rounded-[1.5rem] border border-black/[0.06] bg-black">
+          <video className="aspect-video w-full object-cover" poster={WIDE_FILM.poster} muted loop playsInline autoPlay preload="metadata" aria-label={WIDE_FILM.title}>
+            <source src={WIDE_FILM.mp4} type="video/mp4" />
+          </video>
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/70 to-transparent px-5 pb-4 pt-12">
+            <p className="text-sm font-semibold text-white">{WIDE_FILM.title} · 16:9</p>
+            <p className="text-xs text-white/75">{WIDE_FILM.text}</p>
+          </div>
+        </div>
       </Reveal>
-      <FilmRail films={FILMS} start={start} />
+      <div className="mt-4 grid gap-3 sm:grid-cols-3">
+        {FEEDS.map((feed, index) => (
+          <Reveal key={feed.name} delay={index * 80}>
+            <div className="h-full rounded-2xl border border-black/[0.08] bg-white p-5">
+              <p className="text-sm font-semibold">{feed.name}</p>
+              <p className="mt-1.5 text-sm leading-relaxed text-[#6b7079]">{feed.text}</p>
+            </div>
+          </Reveal>
+        ))}
+      </div>
+
+      <Reveal>
+        <div className="mt-20 rounded-[1.75rem] bg-[#f6f7f9] p-6 sm:p-8">
+          <h3 className="text-[1.9rem] font-semibold leading-[1.05] tracking-[-0.035em] sm:text-[2.4rem]">
+            You pay the model.
+            <br />
+            Not the markup.
+          </h3>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-[#3f434b]">
+            Credit platforms resell the same video models at their own price, and every take you throw away costs the same as a good one. Clickframes renders on <Chip>your own KIE key</Chip> at the model&apos;s price. You pay us only for the direction that makes the first take the ad.
+          </p>
+          <p className="mt-6 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#6b7079]">A 5-minute film, one pass</p>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            {RENDER_COMPARE.map((row) => (
+              <article key={row.name} className={`rounded-2xl border bg-white p-5 ${row.yours ? "border-[#3d5afe] shadow-[0_10px_30px_-12px_rgba(61,90,254,0.45)]" : "border-black/[0.08]"}`}>
+                <div className="flex items-baseline justify-between gap-3">
+                  <h4 className="font-semibold">{row.name}</h4>
+                  <p className="text-[1.9rem] font-semibold tabular-nums tracking-[-0.03em]">{money(row.price)}</p>
+                </div>
+                <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-[#eef0f3]">
+                  <div className={`h-full rounded-full ${row.yours ? "bg-[#3d5afe]" : "bg-[#b3b7bf]"}`} style={{ width: `${Math.round((row.price / dearest) * 100)}%` }} />
+                </div>
+                <p className="mt-3 text-sm text-[#6b7079]">{row.note}</p>
+                <p className="mt-1 text-xs tabular-nums text-[#6b7079]">Three passes: {money(row.price * 3)}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </Reveal>
     </section>
   );
 }
 
-function PersonalBody() {
-  return (
-    <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
-      <FilmBlock
-        title="Stories, ready to watch."
-        text="Every film here was one-shotted. Written the way you would tell a friend, generated once."
-      />
-      <PointRow
-        title="What no other tool gives you."
-        items={PERSONAL_EDGE}
-        close="You own all the rights to every video you create."
-      />
-    </div>
-  );
+function money(price: number) {
+  return price.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
 
-function BrandBody() {
+function Pricing() {
+  const [index, setIndex] = useState(0);
+  const pick = LANDING_MINUTES[index] || LANDING_MINUTES[0];
+
+  function choose(next: number) {
+    setIndex(next);
+    const plan = LANDING_MINUTES[next];
+    if (plan) track("membership_minutes", { minutes: String(plan.minutes), price: String(plan.price) });
+  }
+
   return (
-    <div className="mx-auto max-w-6xl space-y-20 px-4 py-16 sm:px-6">
-      <PointRow
-        title="Making the ads that win has never been this easy."
-        text="A script, your product, one generation. The ads below were one-shotted. You pay the model on your KIE key, not a stack of retries."
-        items={BRAND_PAIN}
-        close="The ad you had in mind, in minutes, with no third party."
-      />
-      <FilmBlock title="Ads, ready to run." text="Every ad in this row was one-shotted." start={1} />
-    </div>
+    <section id="pricing" className={`${WRAP} scroll-mt-20 pt-32 md:max-w-[56rem]`}>
+      <SectionHead pill="Pricing" title="Your next winning ad." text="The full workflow, every month. The render stays on your KIE key, at the model's price." />
+      <div className="mt-12 grid gap-10 md:grid-cols-[1.05fr_1fr] md:items-center">
+        <Reveal>
+          <article className="lp-plan rounded-[1.6rem] border border-[#3d5afe]/30 p-6 shadow-[0_30px_60px_-30px_rgba(61,90,254,0.5)]">
+            <div className="flex items-center gap-2">
+              <h3 className="font-semibold">Clickframes membership</h3>
+              <span className="rounded-md bg-[#3d5afe] px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-white">For brands</span>
+            </div>
+            <div className="mt-5 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-[2.6rem] font-semibold leading-none tracking-[-0.04em]">{pick.minutes} min</p>
+                <p className="mt-1 text-xs text-[#6b7079]">of finished video each month</p>
+              </div>
+              <div className="text-right">
+                <p className="text-[2.6rem] font-semibold leading-none tracking-[-0.04em] tabular-nums">{money(pick.price)}</p>
+                <p className="mt-1 text-xs text-[#6b7079]">billed monthly</p>
+              </div>
+            </div>
+            <div className="mt-6 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Minutes of video per month">
+              {LANDING_MINUTES.map((plan, planIndex) => {
+                const on = planIndex === index;
+                return (
+                  <button
+                    key={plan.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => choose(planIndex)}
+                    className={`rounded-xl border px-1 py-3 text-center ${on ? "border-[#3d5afe] bg-[#3d5afe] text-white" : "border-black/[0.08] bg-white text-[#3f434b] hover:border-black/20"}`}
+                  >
+                    <span className="block text-lg font-semibold tabular-nums">{plan.minutes}</span>
+                    <span className="block text-[10px] uppercase tracking-[0.12em] opacity-80">min</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                track("membership_checkout_click", { minutes: String(pick.minutes), price: String(pick.price) });
+                void startCheckout(pick.id).catch(() => undefined);
+              }}
+              className="btn-primary lp-cta mt-6 w-full justify-center gap-2 rounded-2xl py-3.5 text-base! font-bold! text-white"
+            >
+              Get this membership <span aria-hidden="true">→</span>
+            </button>
+            <p className="mt-2 text-center text-xs text-[#6b7079]">Instant access · You own every ad</p>
+            <ul className="mt-5 space-y-2 rounded-xl bg-white/70 p-4 text-sm text-[#3f434b] ring-1 ring-black/[0.05]">
+              {INCLUDED.map((item) => (
+                <li key={item} className="flex gap-2.5">
+                  <span aria-hidden="true" className="text-[#3d5afe]">✓</span>
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 flex justify-center">
+              <MoreMinutes />
+            </div>
+          </article>
+        </Reveal>
+        <Reveal delay={90}>
+          <p className="text-sm font-semibold">How it works</p>
+          <ol className="mt-3 divide-y divide-black/[0.06] border-y border-black/[0.06]">
+            {[
+              { title: "Paste your product page", text: "Or write the idea the way you would tell a friend." },
+              { title: "Approve the story", text: "Pain, audience and person. Swap any of them in one click." },
+              { title: "Render on your KIE key", text: "About 10 minutes. The first take is the ad, or 90% of it." },
+            ].map((item, index) => (
+              <li key={item.title} className="flex gap-4 py-4">
+                <span className="text-sm tabular-nums text-[#b3b7bf]">{String(index + 1).padStart(2, "0")}</span>
+                <div>
+                  <p className="text-sm font-semibold">{item.title}</p>
+                  <p className="mt-0.5 text-sm text-[#6b7079]">{item.text}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs text-[#6b7079]">
+            <span>⚡ Instant access</span>
+            <span>🔑 Your own KIE key</span>
+            <span>🔒 Secure checkout</span>
+          </div>
+        </Reveal>
+      </div>
+    </section>
   );
 }
 
 const MINUTE_FIELD =
-  "mt-2 w-full rounded-xl border border-white/15 bg-[#101014] px-3.5 py-3 text-sm text-white outline-none transition-colors placeholder:text-white/35 focus:border-white/40 [&:-webkit-autofill]:shadow-[inset_0_0_0_1000px_#101014] [&:-webkit-autofill]:[-webkit-text-fill-color:#fff]";
+  "mt-2 w-full rounded-xl border border-black/10 bg-white px-3.5 py-3 text-sm text-[#0c0c0c] outline-none transition-colors placeholder:text-black/30 focus:border-[#3d5afe]";
 
 function MoreMinutes() {
   const [open, setOpen] = useState(false);
@@ -487,68 +914,63 @@ function MoreMinutes() {
 
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="rounded-xl border border-white/15 px-5 py-3 text-sm font-semibold text-white hover:border-white/40"
-      >
+      <button type="button" onClick={() => setOpen(true)} className="text-sm! font-medium! text-[#3d5afe] hover:underline">
         Need more than 60 minutes?
       </button>
       {open
         ? createPortal(
-            <div className="fixed inset-0 z-[80] grid place-items-center bg-black/75 p-4 backdrop-blur-sm" onClick={close}>
+            <div className="lp fixed inset-0 z-[80] grid place-items-center bg-black/40 p-4 backdrop-blur-sm" onClick={close}>
               <div
                 role="dialog"
                 aria-modal="true"
                 aria-labelledby="more-minutes-title"
-                className="w-full max-w-[440px] rounded-3xl border border-white/15 bg-[#1b1b20] p-6 text-[#f4f4f5] shadow-2xl"
-                style={{ colorScheme: "dark" }}
+                className="w-full max-w-[440px] rounded-3xl bg-white p-6 text-[#0c0c0c] shadow-2xl"
                 onClick={(event) => event.stopPropagation()}
               >
                 <div className="flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#a1a1aa]">Membership</p>
-                    <h3 id="more-minutes-title" className="land-display mt-2 text-3xl text-white">
+                    <p className="text-[11px] uppercase tracking-[0.2em] text-[#6b7079]">Membership</p>
+                    <h3 id="more-minutes-title" className="mt-2 text-3xl font-semibold tracking-[-0.03em]">
                       More than 60 minutes
                     </h3>
                   </div>
-                  <button type="button" onClick={close} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-xl leading-none text-[#a1a1aa] hover:bg-white/10 hover:text-white">
+                  <button type="button" onClick={close} aria-label="Close" className="grid h-8 w-8 place-items-center rounded-full text-xl! leading-none text-[#6b7079] hover:bg-black/5">
                     ×
                   </button>
                 </div>
                 {sent ? (
                   <div className="mt-6">
-                    <p className="text-sm leading-relaxed text-white">Sent. We'll reply to that email.</p>
-                    <button type="button" onClick={close} className="cf-btn btn-primary mt-6 rounded-xl px-5 py-2.5 text-sm font-semibold">
+                    <p className="text-sm leading-relaxed">Sent. We&apos;ll reply to that email.</p>
+                    <button type="button" onClick={close} className="btn-primary lp-cta mt-6 rounded-xl px-5 py-2.5 text-sm! font-semibold! text-white">
                       Close
                     </button>
                   </div>
                 ) : (
                   <form onSubmit={(event) => void submit(event)} className="mt-6 grid gap-4">
-                    <p className="text-sm leading-relaxed text-[#a1a1aa]">Tell us how many minutes you need. We reply to the email you leave here.</p>
+                    <p className="text-sm leading-relaxed text-[#6b7079]">Tell us how many minutes you need. We reply to the email you leave here.</p>
                     <input name="website" tabIndex={-1} autoComplete="off" className="hidden" aria-hidden="true" />
-                    <label className="block text-xs text-[#a1a1aa]">
+                    <label className="block text-xs text-[#6b7079]">
                       Minutes you need
                       <input name="minutes" type="number" min={61} max={100000} required placeholder="120" autoFocus className={MINUTE_FIELD} />
                     </label>
-                    <label className="block text-xs text-[#a1a1aa]">
+                    <label className="block text-xs text-[#6b7079]">
                       Name
                       <input name="name" required maxLength={80} autoComplete="name" className={MINUTE_FIELD} />
                     </label>
-                    <label className="block text-xs text-[#a1a1aa]">
-                      Brand, if you have one
+                    <label className="block text-xs text-[#6b7079]">
+                      Brand
                       <input name="brand" maxLength={80} autoComplete="organization" className={MINUTE_FIELD} />
                     </label>
-                    <label className="block text-xs text-[#a1a1aa]">
+                    <label className="block text-xs text-[#6b7079]">
                       Email
                       <input name="email" type="email" required maxLength={120} autoComplete="email" className={MINUTE_FIELD} />
                     </label>
-                    {error ? <p className="text-sm text-[#f07178]">{error}</p> : null}
+                    {error ? <p className="text-sm text-[#dc2626]">{error}</p> : null}
                     <div className="mt-1 flex items-center gap-3">
-                      <button type="submit" disabled={sending} className="cf-btn btn-primary rounded-xl px-5 py-2.5 text-sm font-semibold disabled:opacity-50">
+                      <button type="submit" disabled={sending} className="btn-primary lp-cta rounded-xl px-5 py-2.5 text-sm! font-semibold! text-white disabled:opacity-50">
                         {sending ? "Sending" : "Send"}
                       </button>
-                      <button type="button" onClick={close} className="text-sm text-[#a1a1aa] hover:text-white">
+                      <button type="button" onClick={close} className="text-sm! text-[#6b7079] hover:text-[#0c0c0c]">
                         Cancel
                       </button>
                     </div>
@@ -563,137 +985,94 @@ function MoreMinutes() {
   );
 }
 
-function money(price: number) {
-  return price.toLocaleString("en-US", { style: "currency", currency: "USD" });
-}
-
-function WorkflowPay({ mode }: { mode: Mode }) {
-  const [index, setIndex] = useState(0);
-  const pick = LANDING_MINUTES[index] || LANDING_MINUTES[0];
-  const dearest = Math.max(...RENDER_COMPARE.map((row) => row.price));
-
-  function choose(next: number) {
-    setIndex(next);
-    const plan = LANDING_MINUTES[next];
-    if (plan) track("membership_minutes", { mode, minutes: String(plan.minutes), price: String(plan.price) });
-  }
-
+function Faq() {
+  const [open, setOpen] = useState<string | null>(FAQ[0]?.q ?? null);
   return (
-    <section id="workflow" className="mx-auto max-w-6xl scroll-mt-24 px-4 py-16 sm:px-6">
-      <Reveal>
-        <h2 className="land-display text-3xl sm:text-4xl">You pay the model. You pay us for the direction.</h2>
-        <p className="mt-4 max-w-2xl text-sm leading-relaxed text-[var(--cf-muted)]">
-          KIE is an API for the same video models, at the model's price. You create a key on your KIE account and paste it into Clickframes. Every film is then billed on that key, straight to the model. Fal and Higgsfield sell the same models with their own price, and a generation you throw away costs the same as a good one.
-        </p>
-        <p className="mt-3 max-w-2xl text-sm leading-relaxed text-[var(--cf-muted)]">
-          The membership is only the workflow. It is the direction that one-shots a video, or gets it about 90% done, so you are not spending the afternoon and the budget fighting the model.
-        </p>
+    <section id="faq" className={`${WRAP} scroll-mt-20 pt-32`}>
+      <Reveal className="text-center">
+        <h2 className={H2}>
+          Got questions?
+          <br />
+          We&apos;ve got answers.
+        </h2>
       </Reveal>
-      <Reveal>
-        <div className="mt-10">
-          <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">A 5-minute film, one pass</p>
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            {RENDER_COMPARE.map((row) => (
-              <article key={row.name} className={`rounded-2xl border p-5 ${row.yours ? "border-[#5B8CFF]/50 bg-[#5B8CFF]/10" : "border-white/10 bg-[var(--cf-surface)]"}`}>
-                <div className="flex items-baseline justify-between gap-3">
-                  <h3 className="text-lg font-medium">{row.name}</h3>
-                  <p className="land-display text-3xl tabular-nums">{money(row.price)}</p>
-                </div>
-                <div className="mt-4 h-1.5 overflow-hidden rounded-full bg-white/10">
-                  <div className={`h-full rounded-full ${row.yours ? "cf-grad" : "bg-white/35"}`} style={{ width: `${Math.round((row.price / dearest) * 100)}%` }} />
-                </div>
-                <p className="mt-3 text-sm leading-relaxed text-[var(--cf-muted)]">{row.note}</p>
-                <p className="mt-1 text-xs tabular-nums text-[var(--cf-muted)]">Three passes, {money(row.price * 3)}</p>
-              </article>
-            ))}
-          </div>
-          <p className="mt-3 max-w-3xl text-xs leading-relaxed text-[var(--cf-muted)]">
-            Five minutes of finished video, one pass. A generation you throw away costs the same again.
-          </p>
-        </div>
-      </Reveal>
-      <Reveal>
-        <article id="pricing" className="mt-10 scroll-mt-24 rounded-2xl border border-white/10 bg-[var(--cf-surface)] p-6 sm:p-8">
-          <div className="flex flex-wrap items-end justify-between gap-6">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] text-[var(--cf-muted)]">Workflow membership</p>
-              <p className="land-display mt-3 text-4xl sm:text-5xl">{pick.minutes} min</p>
-              <p className="mt-1 text-sm text-[var(--cf-muted)]">of finished video each month</p>
-            </div>
-            <div className="sm:text-right">
-              <p className="land-display text-4xl sm:text-5xl">{money(pick.price)}</p>
-              <p className="mt-1 text-sm text-[var(--cf-muted)]">billed monthly</p>
-            </div>
-          </div>
-          <div className="mt-8 grid grid-cols-4 gap-2" role="radiogroup" aria-label="Minutes of video per month">
-            {LANDING_MINUTES.map((plan, planIndex) => {
-              const on = planIndex === index;
-              return (
-                <button
-                  key={plan.id}
-                  type="button"
-                  role="radio"
-                  aria-checked={on}
-                  onClick={() => choose(planIndex)}
-                  className={`rounded-2xl border px-2 py-4 text-center transition-colors ${on ? "border-transparent bg-white text-[#141417]" : "border-white/10 bg-transparent text-[var(--cf-muted)] hover:border-white/25"}`}
-                >
-                  <span className="block text-xl font-semibold tabular-nums sm:text-2xl">{plan.minutes}</span>
-                  <span className="mt-1 block text-[10px] uppercase tracking-[0.16em]">min</span>
-                  <span className="mt-3 block text-xs font-medium tabular-nums sm:text-sm">{money(plan.price)}</span>
-                </button>
-              );
-            })}
-          </div>
-          <p className="mt-5 max-w-xl text-sm leading-relaxed text-[var(--cf-muted)]">
-            {pick.minutes} minutes of workflow. The render stays on your KIE key.
-          </p>
-          <div className="mt-6 flex flex-wrap items-center gap-3">
-            <button
-              type="button"
-              onClick={() => {
-                track("membership_checkout_click", { mode, minutes: String(pick.minutes), price: String(pick.price) });
-                void startCheckout(pick.id).catch(() => undefined);
-              }}
-              className="cf-btn btn-primary rounded-xl px-5 py-3 text-sm font-semibold"
-            >
-              Get this membership
-            </button>
-            <MoreMinutes />
-          </div>
-        </article>
-      </Reveal>
-    </section>
-  );
-}
-
-function Faq({
-  mode,
-  open,
-  onToggle,
-}: {
-  mode: Mode;
-  open: string | null;
-  onToggle: (question: string) => void;
-}) {
-  return (
-    <Reveal>
-    <section className="mx-auto max-w-3xl px-4 py-8 sm:px-6">
-      <h2 className="land-display text-4xl">Questions</h2>
-      <div className="mt-6 divide-y divide-white/10 border-y border-white/10">
-        {faqFor(mode).map((item) => {
+      <div className="mt-10 space-y-2">
+        {FAQ.map((item) => {
           const shown = open === item.q;
           return (
-            <div key={item.q}>
-              <button type="button" className="flex w-full items-center justify-between gap-4 py-4 text-left text-base font-medium" aria-expanded={shown} onClick={() => onToggle(item.q)}>
-                {item.q}
-                <span aria-hidden="true">{shown ? "-" : "+"}</span>
-              </button>
-              {shown ? <p className="pb-4 text-sm leading-relaxed text-[var(--cf-muted)]">{item.a}</p> : null}
+            <div key={item.q} className={`rounded-2xl border transition-colors ${shown ? "border-black/[0.08] bg-[#f6f7f9]" : "border-black/[0.06] bg-white"}`}>
+              <h3>
+                <button
+                  type="button"
+                  className="no-press flex w-full items-center justify-between gap-4 px-5 py-4 text-left text-[0.98rem]! font-semibold! tracking-[-0.01em]"
+                  aria-expanded={shown}
+                  onClick={() => {
+                    setOpen(shown ? null : item.q);
+                    if (!shown) track("faq_open", { question: item.q });
+                  }}
+                >
+                  {item.q}
+                  <span aria-hidden="true" className={`grid h-6 w-6 shrink-0 place-items-center rounded-full bg-white text-[#3d5afe] ring-1 ring-black/[0.08] transition-transform ${shown ? "rotate-45" : ""}`}>
+                    +
+                  </span>
+                </button>
+              </h3>
+              {shown ? <p className="px-5 pb-5 text-sm leading-relaxed text-[#3f434b]">{item.a}</p> : null}
             </div>
           );
         })}
       </div>
     </section>
-    </Reveal>
+  );
+}
+
+function FinalCta() {
+  return (
+    <section className={`${WRAP} pb-24 pt-32 text-center`}>
+      <Reveal>
+        <h2 className={H2}>
+          Your next winning ad
+          <br />
+          can run tonight.
+        </h2>
+        <p className={`${SUB} mx-auto mt-4 max-w-md`}>
+          Paste the page, approve the story, render the take. Tomorrow, read the numbers and make the next one.
+        </p>
+        <div className="mt-8 flex justify-center">
+          <Cta place="final" />
+        </div>
+        <p className="mt-3 text-[13px] text-[#6b7079]">About 10 minutes · Your own KIE key · You own every ad</p>
+      </Reveal>
+    </section>
+  );
+}
+
+function Footer() {
+  return (
+    <footer className="border-t border-black/[0.06] bg-[#fafbfc]">
+      <div className={`${WRAP} py-12 md:max-w-[56rem]`}>
+        <div className="flex flex-wrap items-start justify-between gap-8">
+          <div>
+            <a href="#top" className="flex items-center gap-2">
+              <Mark className="h-7 w-7" />
+              <span className="font-semibold tracking-[-0.04em]">clickframes</span>
+            </a>
+            <p className="mt-2 text-sm text-[#6b7079]">Drama ads that sell. One-shotted.</p>
+          </div>
+          <nav aria-label="Footer" className="grid grid-cols-2 gap-x-10 gap-y-2 text-sm text-[#3f434b]">
+            <a href="#how" className="hover:text-[#0c0c0c]">How it works</a>
+            <a href="#pricing" className="hover:text-[#0c0c0c]">Pricing</a>
+            <a href="#faq" className="hover:text-[#0c0c0c]">FAQ</a>
+            <a href="/login" className="hover:text-[#0c0c0c]">Log in</a>
+            <a href="/privacy" className="hover:text-[#0c0c0c]">Privacy</a>
+            <a href="/terms" className="hover:text-[#0c0c0c]">Terms</a>
+          </nav>
+        </div>
+        <div className="mt-10 flex flex-wrap items-center justify-between gap-3 text-xs text-[#6b7079]">
+          <span>© 2026 Clickframes. All rights reserved.</span>
+          <a href={`mailto:${CONTACT_EMAIL}`} className="hover:text-[#0c0c0c]">{CONTACT_EMAIL}</a>
+        </div>
+      </div>
+    </footer>
   );
 }
